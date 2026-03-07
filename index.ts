@@ -5,6 +5,7 @@ import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath } from "./scripts/autoresolver";
 import { getOrCreateDefaultProfile, updateProfile } from "./scripts/profile";
+import db from "./scripts/db";
 
 const IMAGES_BASE = resolve("./images");
 const AVATARS_BASE = resolve("./data/avatars");
@@ -118,6 +119,56 @@ Bun.serve({
           }
 
           return Response.json(updated);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/playback/progress": {
+      GET(req) {
+        const url = new URL(req.url);
+        const src = url.searchParams.get("src");
+        const dir = url.searchParams.get("dir");
+        const profile = getOrCreateDefaultProfile();
+
+        if (src) {
+          const row = db.query(
+            "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND video_src = ?"
+          ).get(profile.id, src) as any;
+          return Response.json(row || null);
+        }
+
+        if (dir) {
+          const rows = db.query(
+            "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at DESC"
+          ).all(profile.id, dir) as any[];
+          return Response.json(rows);
+        }
+
+        // Return most recent playback entries for "continue watching"
+        const rows = db.query(
+          "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND playback_progress.current_time > 0 AND (duration = 0 OR playback_progress.current_time < duration - 10) ORDER BY updated_at DESC LIMIT 20"
+        ).all(profile.id) as any[];
+        return Response.json(rows);
+      },
+      async PUT(req) {
+        try {
+          const profile = getOrCreateDefaultProfile();
+          const body = await req.json();
+          const { video_src, dir_path, current_time, duration } = body;
+          if (!video_src || current_time == null) {
+            return Response.json({ error: "Missing required fields" }, { status: 400 });
+          }
+          db.run(
+            `INSERT INTO playback_progress (profile_id, video_src, dir_path, "current_time", duration, updated_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(profile_id, video_src) DO UPDATE SET
+               "current_time" = excluded."current_time",
+               duration = excluded.duration,
+               updated_at = datetime('now')`,
+            [profile.id, video_src, dir_path || "", current_time, duration || 0]
+          );
+          return Response.json({ ok: true });
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }

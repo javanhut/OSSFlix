@@ -80,4 +80,18 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS playback_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    video_src TEXT NOT NULL,
+    dir_path TEXT NOT NULL,
+    current_time REAL NOT NULL DEFAULT 0,
+    duration REAL NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(profile_id, video_src),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  )
+`);
+
 export default db;

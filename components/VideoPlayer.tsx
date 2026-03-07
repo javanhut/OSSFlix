@@ -6,7 +6,10 @@ type VideoPlayerProps = {
   onHide: () => void;
   src: string;
   title: string;
+  dirPath?: string;
+  initialTime?: number;
   onNext?: () => void;
+  onProgress?: (currentTime: number, duration: number) => void;
 };
 
 function formatTime(seconds: number): string {
@@ -20,7 +23,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoPlayer({ show, onHide, src, title, onNext }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
@@ -51,6 +54,53 @@ export default function VideoPlayer({ show, onHide, src, title, onNext }: VideoP
 
   const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
+  const saveProgressRef = useRef<(force?: boolean) => void>(() => {});
+  const lastSavedTimeRef = useRef(0);
+  const initialTimeAppliedRef = useRef(false);
+  const currentSrcRef = useRef(src);
+  const currentDirRef = useRef(dirPath);
+
+  // Keep refs in sync with props
+  useEffect(() => {
+    if (src) currentSrcRef.current = src;
+    if (dirPath) currentDirRef.current = dirPath;
+  }, [src, dirPath]);
+
+  // Save progress to server
+  saveProgressRef.current = (force = false) => {
+    const video = videoRef.current;
+    const videoSrcToSave = currentSrcRef.current;
+    if (!video || !videoSrcToSave) return;
+    const ct = video.currentTime;
+    const dur = video.duration;
+    if (!isFinite(ct) || (ct === 0 && !force)) return;
+    if (!force && Math.abs(ct - lastSavedTimeRef.current) < 3) return;
+    lastSavedTimeRef.current = ct;
+    onProgress?.(ct, dur);
+    fetch("/api/playback/progress", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        video_src: videoSrcToSave,
+        dir_path: currentDirRef.current || "",
+        current_time: ct,
+        duration: isFinite(dur) ? dur : 0,
+      }),
+    }).catch(() => {});
+  };
+
+  // Periodic progress saving every 5 seconds
+  useEffect(() => {
+    if (!show || !src) return;
+    const interval = setInterval(() => saveProgressRef.current(), 5000);
+    return () => clearInterval(interval);
+  }, [show, src]);
+
+  // Seek to initialTime when video loads
+  useEffect(() => {
+    initialTimeAppliedRef.current = false;
+  }, [src]);
+
   const videoSrc = useMemo(() => {
     const ext = src.split(".").pop()?.toLowerCase();
     if (ext === "mkv" || ext === "avi" || ext === "wmv") {
@@ -71,7 +121,26 @@ export default function VideoPlayer({ show, onHide, src, title, onNext }: VideoP
 
   useEffect(() => {
     if (!show) {
+      // Save progress before clearing video - use refs since props may already be stale
+      const video = videoRef.current;
+      if (video && currentSrcRef.current) {
+        const ct = video.currentTime;
+        const dur = video.duration;
+        if (isFinite(ct) && ct > 0) {
+          fetch("/api/playback/progress", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              video_src: currentSrcRef.current,
+              dir_path: currentDirRef.current || "",
+              current_time: ct,
+              duration: isFinite(dur) ? dur : 0,
+            }),
+          }).catch(() => {});
+        }
+      }
       resetState();
+      lastSavedTimeRef.current = 0;
       if (videoRef.current) {
         videoRef.current.pause();
         videoRef.current.src = "";
@@ -135,8 +204,15 @@ export default function VideoPlayer({ show, onHide, src, title, onNext }: VideoP
     if (!video) return;
     setDuration(video.duration);
     durationRef.current = video.duration;
-    setCurrentTime(0);
     setBuffered(0);
+    // Resume from saved position
+    if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
+      initialTimeAppliedRef.current = true;
+      video.currentTime = Math.min(initialTime, video.duration - 1);
+      setCurrentTime(video.currentTime);
+    } else {
+      setCurrentTime(0);
+    }
   };
 
   // --- Progress bar: drag support ---

@@ -39,8 +39,10 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerTitle, setPlayerTitle] = useState("");
   const [playerDir, setPlayerDir] = useState("");
+  const [playerInitialTime, setPlayerInitialTime] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [infoCache, setInfoCache] = useState<Record<string, { description: string; videos: string[] }>>({});
+  const [progressCache, setProgressCache] = useState<Record<string, { video_src: string; current_time: number; duration: number }>>({});
   const fetchedDirs = useRef(new Set<string>());
 
   const handleHover = (item: MediaItem) => {
@@ -55,15 +57,35 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
         }));
       })
       .catch(() => {});
+    fetchProgressForDir(item.pathToDir);
   };
 
   const handlePlay = (item: MediaItem) => {
     const cached = infoCache[item.pathToDir];
-    if (cached?.videos?.length) {
+    if (!cached?.videos?.length) return;
+
+    // Check if there's a saved progress for this title
+    const prog = progressCache[item.pathToDir];
+    if (prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10)) {
+      setPlayerSrc(prog.video_src);
+      setPlayerInitialTime(prog.current_time);
+    } else {
       setPlayerSrc(cached.videos[0]);
-      setPlayerTitle(item.title);
-      setPlayerDir(item.pathToDir);
+      setPlayerInitialTime(0);
     }
+    setPlayerTitle(item.title);
+    setPlayerDir(item.pathToDir);
+  };
+
+  const fetchProgressForDir = (dirPath: string) => {
+    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`)
+      .then((res) => res.json())
+      .then((entries: any[]) => {
+        if (entries.length > 0) {
+          setProgressCache((prev) => ({ ...prev, [dirPath]: entries[0] }));
+        }
+      })
+      .catch(() => {});
   };
 
   return (
@@ -148,7 +170,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
                         }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21" /></svg>
-                        Play
+                        {progressCache[element.pathToDir]?.current_time > 0 ? "Resume" : "Play"}
                       </button>
                     </div>
                   )}
@@ -160,17 +182,21 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
 
       <VideoPlayer
         show={!!playerSrc}
-        onHide={() => setPlayerSrc(null)}
+        onHide={() => { setPlayerSrc(null); if (playerDir) fetchProgressForDir(playerDir); }}
         src={playerSrc || ""}
         title={playerTitle}
+        dirPath={playerDir}
+        initialTime={playerInitialTime}
         onNext={() => {
           const cached = infoCache[playerDir];
           if (!cached?.videos || !playerSrc) return;
           const currentIndex = cached.videos.indexOf(playerSrc);
           if (currentIndex >= 0 && currentIndex < cached.videos.length - 1) {
+            setPlayerInitialTime(0);
             setPlayerSrc(cached.videos[currentIndex + 1]);
           } else {
             setPlayerSrc(null);
+            if (playerDir) fetchProgressForDir(playerDir);
           }
         }}
       />
