@@ -1,4 +1,3 @@
-import { Image } from "react-bootstrap";
 import { useState, useEffect, useRef } from "react";
 import { Card } from "./Card";
 
@@ -35,45 +34,21 @@ function TitleCard({ title, onClick }: { title: TitleInfo; onClick: () => void }
   return (
     <div
       role="button"
-      className="text-decoration-none flex-shrink-0 position-relative rounded overflow-hidden"
-      style={{
-        minWidth: "180px",
-        maxWidth: "180px",
-        backgroundColor: "#1e3a5f",
-        transform: hovered ? "scale(1.15)" : "scale(1)",
-        transition: "transform 0.2s ease",
-        zIndex: hovered ? 1 : 0,
-        cursor: "pointer",
-      }}
+      className="oss-card"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onClick}
     >
-      <Image
+      <img
         src={title.imagePath}
         alt={title.name}
-        style={{ width: "100%", height: "260px", objectFit: "cover" }}
+        className="oss-card-img"
       />
-      {hovered && (
-        <div
-          className="position-absolute top-0 start-0 end-0 bottom-0 d-flex align-items-center justify-content-center p-2"
-          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-        >
-          <p className="mb-0 small text-white text-center" style={{
-            overflow: "hidden",
-            display: "-webkit-box",
-            WebkitLineClamp: 6,
-            WebkitBoxOrient: "vertical",
-          }}>
-            {description ?? "Loading..."}
-          </p>
-        </div>
-      )}
-      <div
-        className="position-absolute bottom-0 start-0 end-0 p-2"
-        style={{ background: "linear-gradient(transparent, rgba(0,0,0,0.8))", zIndex: 1 }}
-      >
-        <p className="mb-0 small fw-medium text-white">{title.name}</p>
+      <div className="oss-card-overlay">
+        <p>{hovered ? (description ?? "Loading...") : ""}</p>
+      </div>
+      <div className="oss-card-title-bar">
+        <span>{title.name}</span>
       </div>
     </div>
   );
@@ -90,23 +65,20 @@ export function SelectorMenu({ rows }: SelectorMenuProps) {
 
   return (
     <>
-      <section className="w-100 py-3 px-3">
-        {rows.map((row) => (
-          <div key={row.genre} className="mb-4 rounded p-3" style={{ backgroundColor: "#e0e0e0" }}>
-            <h2 className="fs-4 fw-semibold text-dark mb-3 px-2 py-1 rounded d-inline-block" style={{ backgroundColor: "#d0d0d0" }}>{row.genre}</h2>
-
-            <div className="d-flex overflow-auto gap-3 pb-2">
-              {row.titles.map((title) => (
-                <TitleCard
-                  key={title.pathToDir}
-                  title={title}
-                  onClick={() => handleTitleClick(title.pathToDir)}
-                />
-              ))}
-            </div>
+      {rows.map((row) => (
+        <section key={row.genre} className="oss-section">
+          <h2 className="oss-section-title">{row.genre}</h2>
+          <div className="oss-row">
+            {row.titles.map((title) => (
+              <TitleCard
+                key={title.pathToDir}
+                title={title}
+                onClick={() => handleTitleClick(title.pathToDir)}
+              />
+            ))}
           </div>
-        ))}
-      </section>
+        </section>
+      ))}
       <Card
         show={modalOpen}
         onHide={() => setModalOpen(false)}

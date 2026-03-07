@@ -1,5 +1,3 @@
-import { Image } from "react-bootstrap";
-
 type EpisodeProps = {
   filename: string;
   thumbnail: string | null;
@@ -30,24 +28,19 @@ export function Episode({ filename, thumbnail, onClick }: EpisodeProps) {
       : parsed.title;
 
   return (
-    <div
-      role="button"
-      onClick={onClick}
-      className="d-flex align-items-center gap-3 p-2 rounded"
-      style={{ cursor: "pointer", transition: "background 0.15s" }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.05)")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-    >
-      <Image
+    <div className="oss-episode" role="button" onClick={onClick}>
+      <img
         src={thumbnail || "/images/placeholders.dev-1280x720.webp"}
-        rounded
-        style={{ width: "100px", height: "56px", objectFit: "cover", flexShrink: 0 }}
+        alt={label}
+        className="oss-episode-thumb"
       />
-      <div className="flex-grow-1 overflow-hidden">
-        <p className="mb-0 fw-medium text-truncate">{label}</p>
-        <small className="text-muted">{parsed.type === "episode" ? `Season ${parsed.season}` : "Movie"}</small>
+      <div className="oss-episode-info">
+        <p className="oss-episode-title">{label}</p>
+        <p className="oss-episode-sub">
+          {parsed.type === "episode" ? `Season ${parsed.season}` : "Movie"}
+        </p>
       </div>
-      <span style={{ fontSize: "1.4rem", color: "#2563eb", flexShrink: 0 }}>&#9654;</span>
+      <span className="oss-episode-play">&#9654;</span>
     </div>
   );
 }

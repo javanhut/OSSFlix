@@ -3,9 +3,9 @@ import NavBar from "./Navbar";
 
 export default function Layout() {
   return (
-    <>
+    <div className="oss-page">
       <NavBar />
       <Outlet />
-    </>
+    </div>
   );
 }

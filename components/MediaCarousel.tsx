@@ -1,6 +1,6 @@
-import { Carousel, CarouselItem, Image, Spinner } from "react-bootstrap";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import VideoPlayer from "./VideoPlayer";
+import Card from "./Card";
 
 type MediaItem = {
   imagePath: string;
@@ -13,43 +13,42 @@ type MediaCarouselProps = {
   mediaList: MediaItem[];
 };
 
-function CarouselSlide({ item }: { item: MediaItem }) {
-  const [hovered, setHovered] = useState(false);
-  const [description, setDescription] = useState<string | null>(null);
-  const [videos, setVideos] = useState<string[] | null>(null);
-  const fetchedRef = useRef(false);
-
-  useEffect(() => {
-    if (hovered && !fetchedRef.current) {
-      fetchedRef.current = true;
-      fetch(`/api/media/info?dir=${encodeURIComponent(item.pathToDir)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setDescription(data.description);
-          setVideos(data.videos || []);
-        })
-        .catch(() => {});
-    }
-  }, [hovered, item.pathToDir]);
-
-  return { hovered, setHovered, description, videos };
-}
-
 export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
+  const [activeIndex, setActiveIndex] = useState(0);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerTitle, setPlayerTitle] = useState("");
   const [playerDir, setPlayerDir] = useState("");
   const [playerInitialTime, setPlayerInitialTime] = useState(0);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [infoCache, setInfoCache] = useState<Record<string, { description: string; videos: string[] }>>({});
   const [progressCache, setProgressCache] = useState<Record<string, { video_src: string; current_time: number; duration: number }>>({});
+  const [cardDir, setCardDir] = useState("");
   const fetchedDirs = useRef(new Set<string>());
+  const timerRef = useRef<ReturnType<typeof setInterval>>();
 
-  const handleHover = (item: MediaItem) => {
-    if (fetchedDirs.current.has(item.pathToDir)) return;
+  const advance = useCallback(() => {
+    setActiveIndex((i) => (i + 1) % mediaList.length);
+  }, [mediaList.length]);
+
+  // Auto-rotate every 8s
+  useEffect(() => {
+    if (mediaList.length <= 1) return;
+    timerRef.current = setInterval(advance, 8000);
+    return () => clearInterval(timerRef.current);
+  }, [advance, mediaList.length]);
+
+  const goTo = (idx: number) => {
+    setActiveIndex(idx);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(advance, 8000);
+  };
+
+  // Prefetch info for current slide
+  useEffect(() => {
+    const item = mediaList[activeIndex];
+    if (!item || fetchedDirs.current.has(item.pathToDir)) return;
     fetchedDirs.current.add(item.pathToDir);
     fetch(`/api/media/info?dir=${encodeURIComponent(item.pathToDir)}`)
-      .then((res) => res.json())
+      .then((r) => r.json())
       .then((data) => {
         setInfoCache((prev) => ({
           ...prev,
@@ -58,13 +57,22 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
       })
       .catch(() => {});
     fetchProgressForDir(item.pathToDir);
+  }, [activeIndex, mediaList]);
+
+  const fetchProgressForDir = (dirPath: string) => {
+    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`)
+      .then((r) => r.json())
+      .then((entries: any[]) => {
+        if (entries.length > 0) {
+          setProgressCache((prev) => ({ ...prev, [dirPath]: entries[0] }));
+        }
+      })
+      .catch(() => {});
   };
 
   const handlePlay = (item: MediaItem) => {
     const cached = infoCache[item.pathToDir];
     if (!cached?.videos?.length) return;
-
-    // Check if there's a saved progress for this title
     const prog = progressCache[item.pathToDir];
     if (prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10)) {
       setPlayerSrc(prog.video_src);
@@ -77,108 +85,54 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     setPlayerDir(item.pathToDir);
   };
 
-  const fetchProgressForDir = (dirPath: string) => {
-    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`)
-      .then((res) => res.json())
-      .then((entries: any[]) => {
-        if (entries.length > 0) {
-          setProgressCache((prev) => ({ ...prev, [dirPath]: entries[0] }));
-        }
-      })
-      .catch(() => {});
-  };
+  const currentItem = mediaList[activeIndex];
+  const currentInfo = currentItem ? infoCache[currentItem.pathToDir] : null;
+  const hasProgress = currentItem && progressCache[currentItem.pathToDir]?.current_time > 0;
 
   return (
     <>
-      <Carousel>
-        {mediaList.map((element, idx) => {
-          const cached = infoCache[element.pathToDir];
-          const isHovered = hoveredIndex === idx;
-
-          return (
-            <CarouselItem
-              key={element.imagePath}
-              onMouseEnter={() => { setHoveredIndex(idx); handleHover(element); }}
-              onMouseLeave={() => setHoveredIndex(null)}
-              style={{ position: "relative" }}
-            >
-              <Image
-                src={element.imagePath}
-                alt={element.title}
-                style={{ width: "100%", height: "500px", objectFit: "cover" }}
-              />
-              {/* Dark overlay */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: isHovered ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)",
-                  transition: "background 0.3s",
-                  padding: "40px",
-                  zIndex: 1,
-                  pointerEvents: isHovered ? "auto" : "none",
-                }}
+      <div className="oss-hero">
+        {mediaList.map((item, idx) => (
+          <div key={item.pathToDir} className={`oss-hero-slide${idx === activeIndex ? " active" : ""}`}>
+            <img src={item.imagePath} alt={item.title} />
+          </div>
+        ))}
+        <div className="oss-hero-vignette" />
+        {currentItem && (
+          <div className="oss-hero-content">
+            <h1 className="oss-hero-title">{currentItem.title}</h1>
+            <p className="oss-hero-desc">
+              {currentInfo?.description || ""}
+            </p>
+            <div className="oss-hero-actions">
+              <button
+                className="oss-btn oss-btn-primary"
+                onClick={() => handlePlay(currentItem)}
+                disabled={!currentInfo?.videos?.length}
+                style={{ opacity: currentInfo?.videos?.length ? 1 : 0.5 }}
               >
-                  {/* Title - bottom left */}
-                  <h2 style={{
-                    color: "#fff", fontWeight: 700, fontSize: "2rem",
-                    textShadow: "0 2px 8px rgba(0,0,0,0.6)",
-                    position: "absolute", bottom: "40px", left: "40px",
-                  }}>
-                    {element.title}
-                  </h2>
-                  {/* Description + Play - centered */}
-                  {isHovered && (
-                    <div style={{
-                      position: "absolute",
-                      top: "50%", left: "50%",
-                      transform: "translate(-50%, -50%)",
-                      display: "flex", flexDirection: "column", alignItems: "center",
-                      textAlign: "center",
-                    }}>
-                      <p style={{
-                        color: "rgba(255,255,255,0.9)",
-                        fontSize: "1rem",
-                        maxWidth: "600px",
-                        marginBottom: "16px",
-                        overflow: "hidden",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: "vertical",
-                      }}>
-                        {cached?.description ?? "Loading..."}
-                      </p>
-                      <button
-                        onClick={() => handlePlay(element)}
-                        disabled={!cached?.videos?.length}
-                        style={{
-                          background: "#2563eb",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: "6px",
-                          padding: "10px 24px",
-                          fontSize: "1rem",
-                          fontWeight: 600,
-                          cursor: cached?.videos?.length ? "pointer" : "default",
-                          opacity: cached?.videos?.length ? 1 : 0.5,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "8px",
-                        }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21" /></svg>
-                        {progressCache[element.pathToDir]?.current_time > 0 ? "Resume" : "Play"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-            </CarouselItem>
-          );
-        })}
-      </Carousel>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21" /></svg>
+                {hasProgress ? "Resume" : "Play"}
+              </button>
+              <button className="oss-btn oss-btn-secondary" onClick={() => setCardDir(currentItem.pathToDir)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                More Info
+              </button>
+            </div>
+          </div>
+        )}
+        {mediaList.length > 1 && (
+          <div className="oss-hero-indicators">
+            {mediaList.map((_, idx) => (
+              <button
+                key={idx}
+                className={`oss-hero-dot${idx === activeIndex ? " active" : ""}`}
+                onClick={() => goTo(idx)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <VideoPlayer
         show={!!playerSrc}
@@ -199,6 +153,12 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
             if (playerDir) fetchProgressForDir(playerDir);
           }
         }}
+      />
+
+      <Card
+        show={!!cardDir}
+        onHide={() => setCardDir("")}
+        dirPath={cardDir}
       />
     </>
   );

@@ -34,12 +34,9 @@ export default function Genre() {
     fetch("/api/media/categories")
       .then((res) => res.json())
       .then((categories: MenuRow[]) => {
-        // Find the row matching this genre
         const genreRow = categories.find((r) => r.genre === decodedGenre);
         if (genreRow) {
           setRows([genreRow]);
-
-          // Build carousel items from titles with images
           const seen = new Set<string>();
           const items: MediaItem[] = [];
           for (const t of genreRow.titles) {
@@ -52,6 +49,7 @@ export default function Genre() {
                 pathToDir: t.pathToDir,
               });
             }
+            if (items.length >= 6) break;
           }
           setMediaList(items);
         } else {
@@ -65,18 +63,26 @@ export default function Genre() {
 
   const decodedGenre = genre ? decodeURIComponent(genre) : "";
 
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
+        <div className="spinner-border" role="status" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {!loading && mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
-      {!loading && rows.length > 0 && (
+    <>
+      {mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
+      {rows.length > 0 && (
         <>
-          <h1 className="px-3 pt-3">{decodedGenre}</h1>
+          <h1 className="oss-page-title">{decodedGenre}</h1>
           <SelectorMenu rows={rows} />
         </>
       )}
-      {!loading && rows.length === 0 && (
-        <p className="px-3 pt-3 text-muted">No titles found for "{decodedGenre}".</p>
+      {rows.length === 0 && (
+        <p className="oss-empty">No titles found for "{decodedGenre}".</p>
       )}
-    </div>
+    </>
   );
 }

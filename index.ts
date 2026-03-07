@@ -3,7 +3,7 @@ import { resolve, join, dirname } from "node:path";
 import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath } from "./scripts/autoresolver";
+import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath, searchTitles } from "./scripts/autoresolver";
 import { getOrCreateDefaultProfile, updateProfile } from "./scripts/profile";
 import db from "./scripts/db";
 
@@ -75,6 +75,17 @@ Bun.serve({
       GET() {
         const rows = getCategoriesFromDb();
         return Response.json(rows);
+      },
+    },
+    "/api/media/search": {
+      GET(req) {
+        const url = new URL(req.url);
+        const q = url.searchParams.get("q")?.trim();
+        if (!q || q.length < 1) {
+          return Response.json([]);
+        }
+        const results = searchTitles(q);
+        return Response.json(results);
       },
     },
     "/api/media/info": {

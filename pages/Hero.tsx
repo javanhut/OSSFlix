@@ -34,10 +34,11 @@ export default function Home() {
         const categories: MenuRow[] = await res.json();
         setRows(categories.filter((r) => !EXCLUDED_CATEGORIES.has(r.genre)));
 
-        const allTitles = categories.flatMap((r) => r.titles);
+        const newlyAdded = categories.find((r) => r.genre === "Newly Added");
+        const titles = newlyAdded ? newlyAdded.titles : categories.flatMap((r) => r.titles);
         const seen = new Set<string>();
         const items: MediaItem[] = [];
-        for (const t of allTitles) {
+        for (const t of titles) {
           if (t.imagePath && !seen.has(t.pathToDir)) {
             seen.add(t.pathToDir);
             items.push({
@@ -47,6 +48,7 @@ export default function Home() {
               pathToDir: t.pathToDir,
             });
           }
+          if (items.length >= 6) break;
         }
         setMediaList(items);
       } catch (err) {
@@ -58,10 +60,20 @@ export default function Home() {
     loadData();
   }, []);
 
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
+        <div className="spinner-border" role="status" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {!loading && mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
-      {!loading && rows.length > 0 && <SelectorMenu rows={rows} />}
-    </div>
+    <>
+      {mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
+      <div style={{ paddingTop: "2rem" }}>
+        {rows.length > 0 && <SelectorMenu rows={rows} />}
+      </div>
+    </>
   );
 }

@@ -179,6 +179,16 @@ export function getTitleFromDb(dirPath: string) {
   };
 }
 
+export function searchTitles(query: string) {
+  return db.prepare(`
+    SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
+    FROM titles t
+    WHERE t.name LIKE ?
+    ORDER BY t.name
+    LIMIT 20
+  `).all(`%${query}%`) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+}
+
 export function resolveSourcePath(servePath: string): string | null {
   const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(
     servePath.replace(/\/[^/]+$/, "")

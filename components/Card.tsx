@@ -1,4 +1,4 @@
-import { Button, Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Image, Spinner } from 'react-bootstrap';
+import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from 'react-bootstrap';
 import { useEffect, useState } from "react";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
@@ -68,18 +68,21 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   };
 
   const handleResume = () => {
-    // Find the most recently watched video for this title
     const entries = Object.values(progressMap).filter(
       (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 10)
     );
     if (entries.length > 0) {
-      const latest = entries[0]; // already sorted by updated_at DESC from API
+      const latest = entries[0];
       setPlayerInitialTime(latest.current_time);
       setPlayerSrc(latest.video_src);
     } else {
       handlePlay();
     }
   };
+
+  const hasResumable = Object.values(progressMap).some(
+    (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 10)
+  );
 
   return (
     <>
@@ -96,26 +99,57 @@ export function Card({ show, onHide, dirPath }: CardProps) {
             </ModalHeader>
             <ModalBody>
               {information.bannerImage && (
-                <Image
-                  src={information.bannerImage}
-                  alt={information.name}
-                  style={{ width: "100%", height: "300px", objectFit: "cover", borderRadius: "8px" }}
-                  className="mb-3"
-                />
+                <div style={{ position: "relative", marginBottom: "1rem", borderRadius: "var(--oss-radius)", overflow: "hidden" }}>
+                  <img
+                    src={information.bannerImage}
+                    alt={information.name}
+                    style={{ width: "100%", height: "300px", objectFit: "cover", display: "block" }}
+                  />
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    background: "linear-gradient(transparent 50%, var(--oss-bg-card))",
+                  }} />
+                </div>
               )}
-              <p><strong>Type:</strong> {information.type.replace(/\b\w+/g, w => w.length <= 2 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))}</p>
-              <p><strong>Description:</strong> {information.description}</p>
-              {information.genre?.length > 0 && (
-                <p><strong>Genre:</strong> {information.genre.join(", ")}</p>
-              )}
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+                <span style={{
+                  background: "var(--oss-accent)", color: "#fff",
+                  padding: "3px 10px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 600,
+                  textTransform: "uppercase",
+                }}>
+                  {information.type}
+                </span>
+                {information.genre?.map((g) => (
+                  <span key={g} style={{
+                    background: "rgba(255,255,255,0.08)", color: "var(--oss-text-muted)",
+                    padding: "3px 10px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 500,
+                  }}>
+                    {g}
+                  </span>
+                ))}
+              </div>
+
+              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1rem" }}>
+                {information.description}
+              </p>
+
               {information.cast && information.cast.filter(c => c).length > 0 && (
-                <p><strong>Cast:</strong> {information.cast.filter(c => c).join(", ")}</p>
+                <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                  <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Cast: </span>
+                  {information.cast.filter(c => c).join(", ")}
+                </p>
               )}
               {information.season != null && (
-                <p><strong>Season:</strong> {information.season} &mdash; <strong>Episodes:</strong> {information.episodes}</p>
+                <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                  <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {information.season}</span>
+                  {" · "}
+                  {information.episodes} episode{information.episodes !== 1 ? "s" : ""}
+                </p>
               )}
+
               {information.videos?.length > 0 && (
-                <div className="mt-2">
+                <div style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}>
                   {information.videos.map((v) => {
                     const prog = progressMap[v];
                     const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
@@ -127,8 +161,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                           onClick={() => handlePlay(v)}
                         />
                         {pct > 0 && (
-                          <div style={{ height: "3px", background: "rgba(0,0,0,0.1)", borderRadius: "2px", margin: "0 8px 4px" }}>
-                            <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: "#2563eb", borderRadius: "2px" }} />
+                          <div className="oss-progress-track">
+                            <div className="oss-progress-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                         )}
                       </div>
@@ -138,17 +172,17 @@ export function Card({ show, onHide, dirPath }: CardProps) {
               )}
             </ModalBody>
             <ModalFooter>
-              <Button variant="secondary" onClick={onHide}>Close</Button>
+              <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>
               {information.videos?.length > 0 && (
                 <>
-                  {Object.values(progressMap).some(e => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 10)) && (
-                    <Button variant="success" onClick={handleResume}>
+                  {hasResumable && (
+                    <button className="oss-btn oss-btn-success oss-btn-sm" onClick={handleResume}>
                       &#9654; Resume
-                    </Button>
+                    </button>
                   )}
-                  <Button variant="primary" onClick={() => handlePlay()}>
+                  <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={() => handlePlay()}>
                     &#9654; Play
-                  </Button>
+                  </button>
                 </>
               )}
             </ModalFooter>

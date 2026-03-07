@@ -27,11 +27,19 @@ export default function Movies() {
       .finally(() => setLoading(false));
   }, []);
 
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
+        <div className="spinner-border" role="status" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <h1 className="px-3 pt-3">Movies</h1>
-      {!loading && rows.length > 0 && <SelectorMenu rows={rows} />}
-      {!loading && rows.length === 0 && <p className="px-3 text-muted">No movies found.</p>}
-    </div>
+    <>
+      <h1 className="oss-page-title">Movies</h1>
+      {rows.length > 0 && <SelectorMenu rows={rows} />}
+      {rows.length === 0 && <p className="oss-empty">No movies found.</p>}
+    </>
   );
 }
