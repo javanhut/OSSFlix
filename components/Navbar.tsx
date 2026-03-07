@@ -1,6 +1,7 @@
-import { Navbar, NavbarToggle, NavbarBrand, Container, NavbarCollapse, Form, FormControl, Nav, Button } from "react-bootstrap";
+import { Navbar, NavbarToggle, NavDropdown, NavbarBrand, Container, NavbarCollapse, Form, FormControl, Nav, Button, NavLink } from "react-bootstrap";
 import { Link } from "react-router-dom";
-
+import Profile from "./ProfileSettings";
+import { movieGenres } from "../constants/Genres";
 export function NavBar() {
   return (
     <Navbar expand="lg" className="bg-body-tertiary">
@@ -8,14 +9,25 @@ export function NavBar() {
         <NavbarBrand as={Link} to="/">OSSFlix</NavbarBrand>
         <NavbarToggle />
         <NavbarCollapse>
-          <Nav>
-            <Nav.Link as={Link} to="/movies">Movies</Nav.Link>
-            <Nav.Link as={Link} to="/tvshows">TV Shows</Nav.Link>
+          <Nav className="me-auto">
+            <NavLink as={Link} to="/movies">Movies</NavLink>
+            <NavLink as={Link} to="/tvshows">TV Shows</NavLink>
+            <NavDropdown title="Genres">
+            {
+              movieGenres.map((genre) =>  (
+                <NavDropdown.Item key={genre}>{genre}</NavDropdown.Item>
+              )
+                             )
+            }
+            </NavDropdown>
           </Nav>
-          <Form className="d-flex">
-            <FormControl type="search" placeholder="Search..." className="me-2" aria-label="Search" />
-            <Button variant="outline-success">Search</Button>
-          </Form>
+          <div className="d-flex align-items-center gap-3">
+            <Form className="d-flex">
+              <FormControl type="search" placeholder="Search..." className="me-2" aria-label="Search" />
+              <Button variant="outline-success">Search</Button>
+            </Form>
+            <Profile />
+          </div>
         </NavbarCollapse>
       </Container>
     </Navbar>

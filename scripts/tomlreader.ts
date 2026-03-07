@@ -20,7 +20,7 @@ export async function readTomlFile(filePath: string) {
   let fileInformation: any;
   if (!(await file.exists())) {
     console.error(`File not found: ${filePath}`);
-    process.exit(1);
+    return null;
   }
   const fileContents = await file.text();
   const parsed = toml.parse(fileContents);

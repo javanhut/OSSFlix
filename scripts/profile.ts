@@ -1,65 +1,66 @@
-import { existsSync } from "fs";
+import db from "./db";
 
-class Profile {
-  private _profileName?: string;
-  private _profileEmail?: string;
-  private _profileImage?: string;
-  private _moviesDirectory?: string;
-  private _tvshowsDirectory?: string;
-  private _profileId: string;
-  constructor(profileName?: string) {
-    if (profileName) {
-      this.profileName = profileName;
+export interface ProfileData {
+  id: number;
+  name: string;
+  email: string | null;
+  image_path: string | null;
+  movies_directory: string | null;
+  tvshows_directory: string | null;
+}
+
+export function getProfile(id: number): ProfileData | null {
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles WHERE id = ?").get(id) as ProfileData | null;
+}
+
+export function getOrCreateDefaultProfile(): ProfileData {
+  let profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles ORDER BY id LIMIT 1").get() as ProfileData | null;
+  if (!profile) {
+    db.run("INSERT INTO profiles (name) VALUES (?)", ["User"]);
+    profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles ORDER BY id LIMIT 1").get() as ProfileData;
+  }
+  return profile;
+}
+
+export function updateProfile(id: number, updates: {
+  name?: string;
+  email?: string;
+  image_path?: string;
+  movies_directory?: string;
+  tvshows_directory?: string;
+}): ProfileData | null {
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.name !== undefined) {
+    if (updates.name.length < 1 || updates.name.length > 25) {
+      throw new Error("Name must be between 1 and 25 characters");
     }
+    fields.push("name = ?");
+    values.push(updates.name);
+  }
+  if (updates.email !== undefined) {
+    fields.push("email = ?");
+    values.push(updates.email || null);
+  }
+  if (updates.image_path !== undefined) {
+    fields.push("image_path = ?");
+    values.push(updates.image_path || null);
+  }
+  if (updates.movies_directory !== undefined) {
+    fields.push("movies_directory = ?");
+    values.push(updates.movies_directory || null);
+  }
+  if (updates.tvshows_directory !== undefined) {
+    fields.push("tvshows_directory = ?");
+    values.push(updates.tvshows_directory || null);
   }
 
-  private createProfileId() {}
-  private checkEmail(){}
-  public createProfile() {}
+  if (fields.length === 0) return getProfile(id);
 
-  public get profileName(): string | undefined {
-    return this._profileName;
-  }
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
 
-  public set profileName(name: string) {
-    if (name.length < 1 || name.length >= 25) {
-      throw new Error(
-        "Cannot set name. Must be at least 1 character and less than 25 characters."
-      );
-    }
-    this._profileName = name;
-  }
-
-  public get profileImage(): string | undefined {
-    return this._profileImage;
-  }
-
-  public get moviesDirectory(): string | undefined {
-    return this._moviesDirectory;
-  }
-
-  public get tvshowsDirectory(): string | undefined {
-    return this._tvshowsDirectory;
-  }
-
-  public setProfileImage(path: string) {
-    if (!existsSync(path)) {
-      throw new Error(`Image path does not exist: ${path}`);
-    }
-    this._profileImage = path;
-  }
-
-  public setMoviesDirectory(path: string) {
-    if (!existsSync(path)) {
-      throw new Error(`Movies directory does not exist: ${path}`);
-    }
-    this._moviesDirectory = path;
-  }
-
-  public setTvShowsDirectory(path: string) {
-    if (!existsSync(path)) {
-      throw new Error(`TV shows directory does not exist: ${path}`);
-    }
-    this._tvshowsDirectory = path;
-  }
+  db.run(`UPDATE profiles SET ${fields.join(", ")} WHERE id = ?`, values);
+  return getProfile(id);
 }

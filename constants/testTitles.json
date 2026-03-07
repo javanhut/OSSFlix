@@ -1,0 +1,147 @@
+[
+  {
+    "genre": "Newly Added",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      },
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  },
+  {
+    "genre": "Movies",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "TV Shows",
+    "titles": [
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  },
+  {
+    "genre": "Classical Musical",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Fairy Tale",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Supernatural Fantasy",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Comedy",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Family",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Fantasy",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Musical",
+    "titles": [
+      {
+        "name": "Mary Poppins",
+        "imagePath": "/media/Movies/MaryPoppins/Mary-Poppins-banner.jpg",
+        "pathToDir": "/media/Movies/MaryPoppins"
+      }
+    ]
+  },
+  {
+    "genre": "Horror",
+    "titles": [
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  },
+  {
+    "genre": "Thriller",
+    "titles": [
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  },
+  {
+    "genre": "Zombie Apocalypse",
+    "titles": [
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  },
+  {
+    "genre": "Neo-Western",
+    "titles": [
+      {
+        "name": "The walking dead",
+        "imagePath": "/media/TV Shows/TheWalkingDead/the-walking-dead-banner-i19341.jpg",
+        "pathToDir": "/media/TV Shows/TheWalkingDead"
+      }
+    ]
+  }
+]

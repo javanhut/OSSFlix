@@ -1,0 +1,83 @@
+import { Database } from "bun:sqlite";
+import { resolve } from "node:path";
+
+const DB_PATH = resolve("./data/ossflix.db");
+
+const db = new Database(DB_PATH, { create: true });
+
+db.run("PRAGMA journal_mode = WAL");
+db.run("PRAGMA foreign_keys = ON");
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS titles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    type TEXT NOT NULL,
+    image_path TEXT,
+    dir_path TEXT NOT NULL UNIQUE,
+    source_path TEXT NOT NULL,
+    cast_list TEXT,
+    season INTEGER,
+    episodes INTEGER,
+    videos TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`);
+
+// Migration: add source_path if missing from older DB
+try {
+  db.run("ALTER TABLE titles ADD COLUMN source_path TEXT NOT NULL DEFAULT ''");
+} catch {
+  // column already exists
+}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS genres (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS title_genres (
+    title_id INTEGER NOT NULL,
+    genre_id INTEGER NOT NULL,
+    PRIMARY KEY (title_id, genre_id),
+    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE,
+    FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS category_titles (
+    category_id INTEGER NOT NULL,
+    title_id INTEGER NOT NULL,
+    PRIMARY KEY (category_id, title_id),
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT,
+    image_path TEXT,
+    movies_directory TEXT,
+    tvshows_directory TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`);
+
+export default db;

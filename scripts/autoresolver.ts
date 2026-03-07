@@ -1,0 +1,194 @@
+import { resolve } from "node:path";
+import { scanDirectory, type ScannedMedia } from "./mediascanner";
+import { getOrCreateDefaultProfile } from "./profile";
+import db from "./db";
+
+const DEFAULT_MOVIES_DIR = resolve("./TestDir/Movies");
+const DEFAULT_TVSHOWS_DIR = resolve("./TestDir/TV Shows");
+
+type TitleInfo = {
+  name: string;
+  imagePath: string;
+  pathToDir: string;
+};
+
+type MenuRow = {
+  genre: string;
+  titles: TitleInfo[];
+};
+
+function getMediaDirectories(): { moviesDir: string; tvshowsDir: string } {
+  const profile = getOrCreateDefaultProfile();
+  return {
+    moviesDir: profile.movies_directory || DEFAULT_MOVIES_DIR,
+    tvshowsDir: profile.tvshows_directory || DEFAULT_TVSHOWS_DIR,
+  };
+}
+
+export async function resolveToDb(): Promise<void> {
+  const { moviesDir, tvshowsDir } = getMediaDirectories();
+
+  const [movies, tvShows] = await Promise.all([
+    scanDirectory(moviesDir, "/media/movies"),
+    scanDirectory(tvshowsDir, "/media/tvshows"),
+  ]);
+
+  const allMedia = [...movies, ...tvShows];
+
+  const tx = db.transaction(() => {
+    db.run("DELETE FROM category_titles");
+    db.run("DELETE FROM title_genres");
+    db.run("DELETE FROM categories");
+    db.run("DELETE FROM genres");
+    db.run("DELETE FROM titles");
+
+    const insertTitle = db.prepare(`
+      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertGenre = db.prepare("INSERT OR IGNORE INTO genres (name) VALUES (?)");
+    const getGenreId = db.prepare("SELECT id FROM genres WHERE name = ?");
+    const insertTitleGenre = db.prepare("INSERT OR IGNORE INTO title_genres (title_id, genre_id) VALUES (?, ?)");
+    const insertCategory = db.prepare("INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)");
+    const getCategoryId = db.prepare("SELECT id FROM categories WHERE name = ?");
+    const insertCategoryTitle = db.prepare("INSERT OR IGNORE INTO category_titles (category_id, title_id) VALUES (?, ?)");
+
+    const titleIds: Map<string, number> = new Map();
+
+    for (const media of allMedia) {
+      const result = insertTitle.run(
+        media.name,
+        media.description,
+        media.type,
+        media.bannerImage,
+        media.dirPath,
+        media.sourcePath,
+        media.cast?.filter(c => c).join(", ") || null,
+        media.season ?? null,
+        media.episodes ?? null,
+        media.videos.length > 0 ? JSON.stringify(media.videos) : null,
+      );
+      const titleId = Number(result.lastInsertRowid);
+      titleIds.set(media.dirPath, titleId);
+
+      for (const genre of media.genre) {
+        insertGenre.run(genre);
+        const genreRow = getGenreId.get(genre) as { id: number };
+        insertTitleGenre.run(titleId, genreRow.id);
+      }
+    }
+
+    let sortOrder = 0;
+
+    if (allMedia.length > 0) {
+      insertCategory.run("Newly Added", sortOrder++);
+      const catRow = getCategoryId.get("Newly Added") as { id: number };
+      for (const [, titleId] of titleIds) {
+        insertCategoryTitle.run(catRow.id, titleId);
+      }
+    }
+
+    if (movies.length > 0) {
+      insertCategory.run("Movies", sortOrder++);
+      const catRow = getCategoryId.get("Movies") as { id: number };
+      for (const m of movies) {
+        insertCategoryTitle.run(catRow.id, titleIds.get(m.dirPath)!);
+      }
+    }
+
+    if (tvShows.length > 0) {
+      insertCategory.run("TV Shows", sortOrder++);
+      const catRow = getCategoryId.get("TV Shows") as { id: number };
+      for (const m of tvShows) {
+        insertCategoryTitle.run(catRow.id, titleIds.get(m.dirPath)!);
+      }
+    }
+
+    const genreMap = new Map<string, string[]>();
+    for (const media of allMedia) {
+      for (const genre of media.genre) {
+        if (!genreMap.has(genre)) genreMap.set(genre, []);
+        genreMap.get(genre)!.push(media.dirPath);
+      }
+    }
+
+    for (const [genre, dirPaths] of genreMap) {
+      insertCategory.run(genre, sortOrder++);
+      const catRow = getCategoryId.get(genre) as { id: number };
+      for (const dirPath of dirPaths) {
+        insertCategoryTitle.run(catRow.id, titleIds.get(dirPath)!);
+      }
+    }
+  });
+
+  tx();
+  console.log(`Resolved ${allMedia.length} titles into database (movies: ${moviesDir}, tvshows: ${tvshowsDir})`);
+}
+
+export function getCategoriesFromDb(): MenuRow[] {
+  const categories = db.prepare("SELECT id, name FROM categories ORDER BY sort_order").all() as { id: number; name: string }[];
+  const rows: MenuRow[] = [];
+
+  for (const cat of categories) {
+    const titles = db.prepare(`
+      SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+      FROM titles t
+      JOIN category_titles ct ON ct.title_id = t.id
+      WHERE ct.category_id = ?
+    `).all(cat.id) as TitleInfo[];
+
+    rows.push({ genre: cat.name, titles });
+  }
+
+  return rows;
+}
+
+export function getTitleFromDb(dirPath: string) {
+  const title = db.prepare(`
+    SELECT
+      t.id, t.name, t.description, t.type, t.image_path AS bannerImage,
+      t.dir_path AS dirPath, t.source_path AS sourcePath, t.cast_list AS castList,
+      t.season, t.episodes, t.videos
+    FROM titles t
+    WHERE t.dir_path = ?
+  `).get(dirPath) as {
+    id: number;
+    name: string;
+    description: string;
+    type: string;
+    bannerImage: string | null;
+    dirPath: string;
+    sourcePath: string;
+    castList: string | null;
+    season: number | null;
+    episodes: number | null;
+    videos: string | null;
+  } | null;
+
+  if (!title) return null;
+
+  const genres = db.prepare(`
+    SELECT g.name FROM genres g
+    JOIN title_genres tg ON tg.genre_id = g.id
+    WHERE tg.title_id = ?
+  `).all(title.id) as { name: string }[];
+
+  return {
+    ...title,
+    genres: genres.map(g => g.name),
+  };
+}
+
+export function resolveSourcePath(servePath: string): string | null {
+  const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(
+    servePath.replace(/\/[^/]+$/, "")
+  ) as { source_path: string } | null;
+  if (!title) return null;
+  const filename = servePath.split("/").pop()!;
+  return `${title.source_path}/${filename}`;
+}
+
+// Run directly: bun scripts/autoresolver.ts
+if (import.meta.main) {
+  await resolveToDb();
+}
