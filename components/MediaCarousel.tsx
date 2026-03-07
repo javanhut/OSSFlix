@@ -38,6 +38,7 @@ function CarouselSlide({ item }: { item: MediaItem }) {
 export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerTitle, setPlayerTitle] = useState("");
+  const [playerDir, setPlayerDir] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [infoCache, setInfoCache] = useState<Record<string, { description: string; videos: string[] }>>({});
   const fetchedDirs = useRef(new Set<string>());
@@ -61,6 +62,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     if (cached?.videos?.length) {
       setPlayerSrc(cached.videos[0]);
       setPlayerTitle(item.title);
+      setPlayerDir(item.pathToDir);
     }
   };
 
@@ -161,6 +163,16 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
         onHide={() => setPlayerSrc(null)}
         src={playerSrc || ""}
         title={playerTitle}
+        onNext={() => {
+          const cached = infoCache[playerDir];
+          if (!cached?.videos || !playerSrc) return;
+          const currentIndex = cached.videos.indexOf(playerSrc);
+          if (currentIndex >= 0 && currentIndex < cached.videos.length - 1) {
+            setPlayerSrc(cached.videos[currentIndex + 1]);
+          } else {
+            setPlayerSrc(null);
+          }
+        }}
       />
     </>
   );

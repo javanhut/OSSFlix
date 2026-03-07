@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import Home from "./pages/Hero";
 import Movies from "./pages/Movies";
 import TVShows from "./pages/TVShows";
+import Genre from "./pages/Genre";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/movies" element={<Movies />} />
           <Route path="/tvshows" element={<TVShows />} />
+          <Route path="/genre/:genre" element={<Genre />} />
         </Route>
       </Routes>
     </BrowserRouter>

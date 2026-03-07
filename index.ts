@@ -19,6 +19,7 @@ Bun.serve({
     "/": index,
     "/tvshows": index,
     "/movies": index,
+    "/genre/*": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);

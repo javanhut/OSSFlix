@@ -109,6 +109,15 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         onHide={() => setPlayerSrc(null)}
         src={playerSrc || ""}
         title={information?.name || ""}
+        onNext={() => {
+          if (!information?.videos || !playerSrc) return;
+          const currentIndex = information.videos.indexOf(playerSrc);
+          if (currentIndex >= 0 && currentIndex < information.videos.length - 1) {
+            setPlayerSrc(information.videos[currentIndex + 1]);
+          } else {
+            setPlayerSrc(null);
+          }
+        }}
       />
     </>
   );

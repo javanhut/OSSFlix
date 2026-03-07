@@ -6,6 +6,7 @@ type VideoPlayerProps = {
   onHide: () => void;
   src: string;
   title: string;
+  onNext?: () => void;
 };
 
 function formatTime(seconds: number): string {
@@ -19,7 +20,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, onNext }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
@@ -42,6 +43,7 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
   const wasPlayingRef = useRef(false);
   const durationRef = useRef(0);
   const seekLockRef = useRef(false);
+  const transitioningRef = useRef(false);
 
   // Hover tooltip state
   const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -74,6 +76,17 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
         videoRef.current.pause();
         videoRef.current.src = "";
       }
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } else {
+      // Auto-fullscreen when player opens
+      requestAnimationFrame(() => {
+        const container = videoRef.current?.parentElement;
+        if (container && !document.fullscreenElement) {
+          container.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+        }
+      });
     }
   }, [show, resetState]);
 
@@ -122,6 +135,8 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
     if (!video) return;
     setDuration(video.duration);
     durationRef.current = video.duration;
+    setCurrentTime(0);
+    setBuffered(0);
   };
 
   // --- Progress bar: drag support ---
@@ -347,7 +362,7 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
       style={{ overflow: "hidden" }}
     >
       <div
-        style={{ width: "100%", height: "100%", position: "relative", background: "#000", overflow: "hidden" }}
+        style={{ width: "100%", height: "100%", position: "relative", background: "#000", overflow: "hidden", cursor: showControls ? "default" : "none" }}
         onMouseMove={showControlsTemporarily}
         onClick={(e) => {
           if ((e.target as HTMLElement).tagName === "VIDEO") togglePlay();
@@ -359,12 +374,22 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
         <video
           ref={videoRef}
           src={videoSrc}
+          autoPlay
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onEnded={() => { setPlaying(false); setShowControls(true); }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            if (onNext) {
+              transitioningRef.current = true;
+              setShowControls(false);
+              onNext();
+            } else {
+              setPlaying(false);
+              setShowControls(true);
+            }
+          }}
+          onPlay={() => { transitioningRef.current = false; setPlaying(true); }}
+          onPause={() => { if (!transitioningRef.current) setPlaying(false); }}
         />
 
         {/* Drag time overlay - large centered display */}
@@ -387,7 +412,7 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
           </div>
         )}
 
-        {/* Top bar - title (always visible) */}
+        {/* Top bar - title */}
         <div
           style={{
             position: "absolute",
@@ -398,6 +423,8 @@ export default function VideoPlayer({ show, onHide, src, title }: VideoPlayerPro
             background: "linear-gradient(rgba(0,0,0,0.7), transparent)",
             display: "flex",
             justifyContent: "flex-start",
+            opacity: showControls ? 1 : 0,
+            transition: "opacity 0.3s",
           }}
         >
           <span style={{ color: "#fff", fontSize: "1.2rem", fontWeight: 600 }}>{title}</span>

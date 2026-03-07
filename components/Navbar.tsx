@@ -15,7 +15,7 @@ export function NavBar() {
             <NavDropdown title="Genres">
             {
               movieGenres.map((genre) =>  (
-                <NavDropdown.Item key={genre}>{genre}</NavDropdown.Item>
+                <NavDropdown.Item key={genre} as={Link} to={`/genre/${encodeURIComponent(genre)}`}>{genre}</NavDropdown.Item>
               )
                              )
             }
