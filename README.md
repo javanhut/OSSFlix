@@ -28,11 +28,15 @@ bun --hot index.ts
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Docker
+## Docker / Podman
 
 ### Build
 
 ```bash
+# Docker
+docker build -t reelscape:1.0.0 .
+
+# Podman
 podman build -t localhost/reelscape:1.0.0 .
 ```
 
@@ -41,6 +45,14 @@ podman build -t localhost/reelscape:1.0.0 .
 Mount your media directory into the container at `/media`. The container exposes port 3000.
 
 ```bash
+# Docker
+docker run -d \
+  -p 3001:3000 \
+  -v /path/to/your/media:/media \
+  --name reelscape \
+  reelscape:1.0.0
+
+# Podman
 podman run -d \
   -p 3001:3000 \
   -v /path/to/your/media:/media \
@@ -53,6 +65,11 @@ Then open [http://localhost:3001](http://localhost:3001) and go to **Settings** 
 To stop and remove the container:
 
 ```bash
+# Docker
+docker stop reelscape
+docker rm reelscape
+
+# Podman
 podman stop reelscape
 podman rm reelscape
 ```
@@ -65,17 +82,17 @@ Reelscape scans two directories — one for **Movies** and one for **TV Shows**.
 
 ```
 Movies/
-  MaryPoppins/
-    marypoppins.toml         # metadata (required)
-    Mary-Poppins-banner.jpg  # banner image (optional, first image used)
-    MaryPoppins.mp4          # video file(s)
+  YourMovie/
+    metadata.toml         # metadata (required)
+    banner.jpg            # banner image (optional, first image used)
+    movie.mp4             # video file(s)
 
 TV Shows/
-  TheWalkingDead/
-    walkingdead.toml
-    the-walking-dead-banner.jpg
-    where am i_s1_ep1.mp4
-    something aint right_s1_ep2.mp4
+  YourTVShow/
+    metadata.toml
+    banner.jpg
+    Episode Title_s1_ep1.mp4
+    Episode Title_s1_ep2.mp4
 ```
 
 ### TOML Metadata File
@@ -86,27 +103,24 @@ Every title folder **must** contain a `.toml` file. This is how Reelscape knows 
 
 ```toml
 [series]
-name = "Mary Poppins"
+name = "Your Movie Title"
 type = "Movie"
-description = """When Jane and Michael, the children of the wealthy Banks family,
-are faced with the prospect of a new nanny, they are pleasantly surprised by the
-arrival of the magical Mary Poppins."""
-genre = ["Comedy", "Family", "Fantasy", "Musical"]
-cast = ["Julie Andrews", "Dick Van Dyke", "David Tomlinson"]
+description = "A brief synopsis of the movie."
+genre = ["Action", "Drama"]
+cast = ["Actor One", "Actor Two"]
 ```
 
 #### TV Show Example
 
 ```toml
 [series]
-name = "Parallel World Pharmacy"
+name = "Your TV Show"
 type = "tv show"
 season = 1
 episodes = 12
-description = '''A young pharmacologist dies from overworking and is reincarnated
-in a parallel world resembling medieval Europe.'''
-genre = ["Action", "Animation", "Adventure", "Comedy", "Fantasy"]
-cast = [""]
+description = "A brief synopsis of the show."
+genre = ["Action", "Comedy", "Drama"]
+cast = ["Actor One", "Actor Two"]
 ```
 
 ### TOML Fields Reference
@@ -131,10 +145,9 @@ For TV shows, name video files with this pattern so episodes are recognized and 
 
 **Examples:**
 ```
-where am i_s1_ep1.mp4
-something aint right_s1_ep2.mp4
-A Reincarnated Pharmacologist_s1_ep1.mp4
-Master and Apprentice_s1_ep2.mp4
+Pilot_s1_ep1.mp4
+The Journey Begins_s1_ep2.mp4
+New Horizons_s2_ep1.mp4
 ```
 
 - `_s1_` = Season 1
@@ -209,27 +222,27 @@ Directory paths are stored in the SQLite database and persist across restarts.
 
 1. **Create a folder** in your Movies or TV Shows directory:
    ```
-   Movies/MyNewMovie/
+   Movies/YourMovie/
    ```
 
 2. **Create a `.toml` file** inside with metadata:
    ```toml
    [series]
-   name = "My New Movie"
+   name = "Your Movie"
    type = "Movie"
-   description = "A great movie about something."
+   description = "A brief description of the movie."
    genre = ["Action", "Drama"]
    cast = ["Actor One", "Actor Two"]
    ```
 
 3. **Add a banner image** (any supported image format):
    ```
-   Movies/MyNewMovie/poster.jpg
+   Movies/YourMovie/poster.jpg
    ```
 
 4. **Add video file(s)**:
    ```
-   Movies/MyNewMovie/My_New_Movie.mp4
+   Movies/YourMovie/movie.mp4
    ```
 
 5. **Rescan the library** — either:
