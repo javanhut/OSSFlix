@@ -72,7 +72,7 @@ export default function ProfileSelect() {
           background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
         }}>
-          OSSFlix
+          Reelscape
         </h1>
         <p style={{
           color: "rgba(255,255,255,0.35)", fontSize: "0.9rem",

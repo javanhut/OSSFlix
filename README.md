@@ -1,4 +1,4 @@
-# OSSFlix
+# Reelscape
 
 An open-source, self-hosted media browser and player built with **Bun**, **React**, **Bootstrap**, and **SQLite**.
 
@@ -30,7 +30,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Adding Media
 
-OSSFlix scans two directories — one for **Movies** and one for **TV Shows**. Each title lives in its own subfolder containing a `.toml` metadata file, a banner image, and video files.
+Reelscape scans two directories — one for **Movies** and one for **TV Shows**. Each title lives in its own subfolder containing a `.toml` metadata file, a banner image, and video files.
 
 ### Directory Structure
 
@@ -51,7 +51,7 @@ TV Shows/
 
 ### TOML Metadata File
 
-Every title folder **must** contain a `.toml` file. This is how OSSFlix knows what to display.
+Every title folder **must** contain a `.toml` file. This is how Reelscape knows what to display.
 
 #### Movie Example
 
@@ -132,7 +132,7 @@ Place one image file in the title folder. The first image found is used as the b
 
 ## Setting Media Directories
 
-By default, OSSFlix looks for media in `./TestDir/Movies` and `./TestDir/TV Shows`.
+By default, Reelscape looks for media in `./TestDir/Movies` and `./TestDir/TV Shows`.
 
 To change these:
 

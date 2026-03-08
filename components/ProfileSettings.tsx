@@ -1565,7 +1565,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                 }}>
                   O
                 </div>
-                <h3 style={{ margin: "0 0 4px", fontSize: "1.2rem", fontWeight: 700, color: "var(--oss-text)" }}>OSSFlix</h3>
+                <h3 style={{ margin: "0 0 4px", fontSize: "1.2rem", fontWeight: 700, color: "var(--oss-text)" }}>Reelscape</h3>
                 <p style={{ margin: "0 0 16px", fontSize: "0.85rem", color: "var(--oss-text-muted)" }}>
                   Open-source media browser and player
                 </p>

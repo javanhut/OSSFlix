@@ -59,7 +59,7 @@ export default function Login() {
           background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
         }}>
-          OSSFlix
+          Reelscape
         </h1>
       </div>
 
