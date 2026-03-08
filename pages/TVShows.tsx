@@ -13,18 +13,27 @@ type MenuRow = {
 };
 
 export default function TVShows() {
-  const [rows, setRows] = useState<MenuRow[]>([]);
+  const [allTvRow, setAllTvRow] = useState<MenuRow | null>(null);
+  const [genreRows, setGenreRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadData = useCallback(() => {
-    fetch("/api/media/categories")
-      .then((res) => res.json())
-      .then((categories: MenuRow[]) => {
-        const tvRow = categories.find((r) => r.genre === "TV Shows");
-        setRows(tvRow ? [tvRow] : []);
-      })
-      .catch((err) => console.error("Failed to load TV shows:", err))
-      .finally(() => setLoading(false));
+  const loadData = useCallback(async () => {
+    try {
+      const [catRes, genreRes] = await Promise.all([
+        fetch("/api/media/categories"),
+        fetch("/api/media/categories/type?type=tv show"),
+      ]);
+      const categories: MenuRow[] = await catRes.json();
+      const genres: MenuRow[] = await genreRes.json();
+
+      const tvRow = categories.find((r) => r.genre === "TV Shows") || null;
+      setAllTvRow(tvRow);
+      setGenreRows(genres);
+    } catch (err) {
+      console.error("Failed to load TV shows:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -42,6 +51,11 @@ export default function TVShows() {
       </div>
     );
   }
+
+  const rows = [
+    ...(allTvRow ? [allTvRow] : []),
+    ...genreRows,
+  ];
 
   return (
     <>

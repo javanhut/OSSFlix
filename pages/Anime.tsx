@@ -13,18 +13,40 @@ type MenuRow = {
 };
 
 export default function Anime() {
-  const [rows, setRows] = useState<MenuRow[]>([]);
+  const [allAnimeRow, setAllAnimeRow] = useState<MenuRow | null>(null);
+  const [genreRows, setGenreRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadData = useCallback(() => {
-    fetch("/api/media/categories")
-      .then((res) => res.json())
-      .then((categories: MenuRow[]) => {
-        const animeRow = categories.find((r) => r.genre === "Anime" || r.genre === "Animation");
-        setRows(animeRow ? [animeRow] : []);
-      })
-      .catch((err) => console.error("Failed to load anime:", err))
-      .finally(() => setLoading(false));
+  const loadData = useCallback(async () => {
+    try {
+      const [catRes, genreRes] = await Promise.all([
+        fetch("/api/media/categories"),
+        fetch("/api/media/categories/genre-tag?tags=Anime,Animation"),
+      ]);
+      const categories: MenuRow[] = await catRes.json();
+      const genres: MenuRow[] = await genreRes.json();
+
+      // Build an "All Anime" row from titles tagged Anime or Animation
+      const animeRow = categories.find((r) => r.genre === "Anime");
+      const animationRow = categories.find((r) => r.genre === "Animation");
+      const seen = new Set<string>();
+      const allTitles: TitleInfo[] = [];
+      for (const row of [animeRow, animationRow]) {
+        if (!row) continue;
+        for (const t of row.titles) {
+          if (!seen.has(t.pathToDir)) {
+            seen.add(t.pathToDir);
+            allTitles.push(t);
+          }
+        }
+      }
+      setAllAnimeRow(allTitles.length > 0 ? { genre: "All Anime", titles: allTitles } : null);
+      setGenreRows(genres);
+    } catch (err) {
+      console.error("Failed to load anime:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -42,6 +64,11 @@ export default function Anime() {
       </div>
     );
   }
+
+  const rows = [
+    ...(allAnimeRow ? [allAnimeRow] : []),
+    ...genreRows,
+  ];
 
   return (
     <>

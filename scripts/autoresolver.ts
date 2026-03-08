@@ -151,6 +151,84 @@ export function getCategoriesFromDb(): MenuRow[] {
   return rows;
 }
 
+export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
+  const types = Array.isArray(typeFilter) ? typeFilter : [typeFilter];
+  const lowerTypes = types.map(t => t.toLowerCase());
+  const placeholders = lowerTypes.map(() => "?").join(", ");
+
+  const genres = db.prepare(`
+    SELECT DISTINCT g.name
+    FROM genres g
+    JOIN title_genres tg ON tg.genre_id = g.id
+    JOIN titles t ON t.id = tg.title_id
+    WHERE LOWER(t.type) IN (${placeholders})
+    ORDER BY g.name
+  `).all(...lowerTypes) as { name: string }[];
+
+  const rows: MenuRow[] = [];
+  for (const g of genres) {
+    const titles = db.prepare(`
+      SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+      FROM titles t
+      JOIN title_genres tg ON tg.title_id = t.id
+      JOIN genres gen ON gen.id = tg.genre_id
+      WHERE gen.name = ? AND LOWER(t.type) IN (${placeholders})
+    `).all(g.name, ...lowerTypes) as TitleInfo[];
+
+    if (titles.length > 0) {
+      rows.push({ genre: g.name, titles });
+    }
+  }
+
+  return rows;
+}
+
+export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
+  const lowerTags = genreTags.map(t => t.toLowerCase());
+  const tagPlaceholders = lowerTags.map(() => "?").join(", ");
+
+  // Get title IDs that have any of the specified genre tags
+  const titleIds = db.prepare(`
+    SELECT DISTINCT t.id
+    FROM titles t
+    JOIN title_genres tg ON tg.title_id = t.id
+    JOIN genres g ON g.id = tg.genre_id
+    WHERE LOWER(g.name) IN (${tagPlaceholders})
+  `).all(...lowerTags) as { id: number }[];
+
+  if (titleIds.length === 0) return [];
+
+  const idSet = new Set(titleIds.map(r => r.id));
+  const idPlaceholders = titleIds.map(() => "?").join(", ");
+  const idValues = titleIds.map(r => r.id);
+
+  // Get all genres for those titles (excluding the filter tags themselves to avoid redundancy)
+  const genres = db.prepare(`
+    SELECT DISTINCT g.name
+    FROM genres g
+    JOIN title_genres tg ON tg.genre_id = g.id
+    WHERE tg.title_id IN (${idPlaceholders}) AND LOWER(g.name) NOT IN (${tagPlaceholders})
+    ORDER BY g.name
+  `).all(...idValues, ...lowerTags) as { name: string }[];
+
+  const rows: MenuRow[] = [];
+  for (const g of genres) {
+    const titles = db.prepare(`
+      SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+      FROM titles t
+      JOIN title_genres tg ON tg.title_id = t.id
+      JOIN genres gen ON gen.id = tg.genre_id
+      WHERE gen.name = ? AND t.id IN (${idPlaceholders})
+    `).all(g.name, ...idValues) as TitleInfo[];
+
+    if (titles.length > 0) {
+      rows.push({ genre: g.name, titles });
+    }
+  }
+
+  return rows;
+}
+
 export function getTitleFromDb(dirPath: string) {
   const title = db.prepare(`
     SELECT

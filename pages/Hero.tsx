@@ -20,7 +20,12 @@ type MenuRow = {
   titles: TitleInfo[];
 };
 
-const EXCLUDED_CATEGORIES = new Set(["Movies", "TV Shows"]);
+// Basic genres to show on the Home page — broad categories only
+const BASIC_GENRES = new Set([
+  "Newly Added", "Action", "Adventure", "Comedy", "Drama",
+  "Fantasy", "Horror", "Romance", "Thriller", "Family",
+  "Science Fiction", "Mystery", "Documentary",
+]);
 
 export default function Home() {
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
@@ -31,7 +36,9 @@ export default function Home() {
     try {
       const res = await fetch("/api/media/categories");
       const categories: MenuRow[] = await res.json();
-      setRows(categories.filter((r) => !EXCLUDED_CATEGORIES.has(r.genre)));
+
+      // Filter to only basic genres for the home page
+      setRows(categories.filter((r) => BASIC_GENRES.has(r.genre)));
 
       const newlyAdded = categories.find((r) => r.genre === "Newly Added");
       const titles = newlyAdded ? newlyAdded.titles : categories.flatMap((r) => r.titles);

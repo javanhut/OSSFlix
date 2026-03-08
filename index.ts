@@ -3,7 +3,7 @@ import { resolve, join, dirname } from "node:path";
 import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath, searchTitles, listAllTitles } from "./scripts/autoresolver";
+import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, listAllTitles } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
 import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs } from "./scripts/profile";
 import db from "./scripts/db";
@@ -87,6 +87,30 @@ Bun.serve({
     "/api/media/categories": {
       GET() {
         const rows = getCategoriesFromDb();
+        return Response.json(rows);
+      },
+    },
+    "/api/media/categories/type": {
+      GET(req) {
+        const url = new URL(req.url);
+        const type = url.searchParams.get("type");
+        if (!type) {
+          return Response.json({ error: "Missing type parameter" }, { status: 400 });
+        }
+        const types = type.split(",").map(t => t.trim());
+        const rows = getCategoriesByType(types);
+        return Response.json(rows);
+      },
+    },
+    "/api/media/categories/genre-tag": {
+      GET(req) {
+        const url = new URL(req.url);
+        const tags = url.searchParams.get("tags");
+        if (!tags) {
+          return Response.json({ error: "Missing tags parameter" }, { status: 400 });
+        }
+        const tagList = tags.split(",").map(t => t.trim());
+        const rows = getCategoriesByGenreTag(tagList);
         return Response.json(rows);
       },
     },
