@@ -90,7 +90,7 @@ export function NavBar() {
     <>
       <nav className={`oss-navbar${scrolled ? " scrolled" : ""}`}>
         <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
-          <Link to="/" className="oss-navbar-brand">OSSFlix</Link>
+          <Link to="/home" className="oss-navbar-brand">OSSFlix</Link>
           <ul className="oss-nav-links">
             <li><Link to="/movies" className="oss-nav-link">Movies</Link></li>
             <li><Link to="/tvshows" className="oss-nav-link">TV Shows</Link></li>

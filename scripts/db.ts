@@ -95,6 +95,24 @@ db.run(`
 `);
 
 db.run(`
+  CREATE TABLE IF NOT EXISTS global_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    movies_directory TEXT,
+    tvshows_directory TEXT
+  )
+`);
+
+// Ensure a single global settings row exists
+db.run(`INSERT OR IGNORE INTO global_settings (id) VALUES (1)`);
+
+// Migration: add use_global_dirs to profiles
+try {
+  db.run("ALTER TABLE profiles ADD COLUMN use_global_dirs INTEGER NOT NULL DEFAULT 1");
+} catch {
+  // column already exists
+}
+
+db.run(`
   CREATE TABLE IF NOT EXISTS episode_timings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_src TEXT NOT NULL UNIQUE,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import VideoPlayer from "./VideoPlayer";
 import Card from "./Card";
+import { useProfile } from "../context/ProfileContext";
 
 type MediaItem = {
   imagePath: string;
@@ -14,6 +15,8 @@ type MediaCarouselProps = {
 };
 
 export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
+  const { profile } = useProfile();
+  const pHeaders = profile?.id ? { "x-profile-id": String(profile.id) } : {};
   const [activeIndex, setActiveIndex] = useState(0);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerTitle, setPlayerTitle] = useState("");
@@ -71,7 +74,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
   }, [activeIndex, mediaList]);
 
   const fetchProgressForDir = (dirPath: string) => {
-    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`)
+    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
       .then((r) => r.json())
       .then((entries: any[]) => {
         if (entries.length > 0) {
@@ -164,6 +167,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
             if (playerDir) fetchProgressForDir(playerDir);
           }
         }}
+        profileId={profile?.id}
       />
 
       <Card

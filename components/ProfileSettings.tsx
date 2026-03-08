@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
+import { useProfile } from "../context/ProfileContext";
 
 interface ProfileData {
   id: number;
@@ -1309,9 +1311,11 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   show: boolean; onHide: () => void;
   profile: ProfileData; onProfileUpdate: (p: ProfileData) => void;
 }) {
+  const { profile: ctxProfile } = useProfile();
   const [activeTab, setActiveTab] = useState<"directories" | "addmedia" | "migrator" | "about">("directories");
-  const [moviesDir, setMoviesDir] = useState(profile.movies_directory ?? "");
-  const [tvshowsDir, setTvshowsDir] = useState(profile.tvshows_directory ?? "");
+  const [moviesDir, setMoviesDir] = useState("");
+  const [tvshowsDir, setTvshowsDir] = useState("");
+  const [useGlobal, setUseGlobal] = useState(true);
   const [browseTarget, setBrowseTarget] = useState<"movies" | "tvshows" | null>(null);
   const [saving, setSaving] = useState(false);
   const [moviesFocused, setMoviesFocused] = useState(false);
@@ -1319,22 +1323,64 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
 
   useEffect(() => {
     if (show) {
-      setMoviesDir(profile.movies_directory ?? "");
-      setTvshowsDir(profile.tvshows_directory ?? "");
+      const isGlobal = (profile as any).use_global_dirs !== 0;
+      setUseGlobal(isGlobal);
+      if (isGlobal) {
+        // Load global settings
+        fetch("/api/global-settings")
+          .then((r) => r.json())
+          .then((data) => {
+            setMoviesDir(data.movies_directory ?? "");
+            setTvshowsDir(data.tvshows_directory ?? "");
+          })
+          .catch(() => {});
+      } else {
+        setMoviesDir(profile.movies_directory ?? "");
+        setTvshowsDir(profile.tvshows_directory ?? "");
+      }
     }
   }, [show, profile]);
 
+  const pHeaders: Record<string, string> = ctxProfile?.id
+    ? { "Content-Type": "application/json", "x-profile-id": String(ctxProfile.id) }
+    : { "Content-Type": "application/json" };
+
   const handleSave = () => {
     setSaving(true);
-    fetch("/api/profile", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ movies_directory: moviesDir || null, tvshows_directory: tvshowsDir || null }),
-    })
-      .then((r) => r.json())
-      .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
-      .catch((err) => console.error("Failed to save settings:", err))
-      .finally(() => setSaving(false));
+    if (useGlobal) {
+      // Save to global settings
+      Promise.all([
+        fetch("/api/global-settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ movies_directory: moviesDir || null, tvshows_directory: tvshowsDir || null }),
+        }),
+        fetch("/api/profile", {
+          method: "PUT",
+          headers: pHeaders,
+          body: JSON.stringify({ use_global_dirs: 1 }),
+        }),
+      ])
+        .then(([, profileRes]) => profileRes.json())
+        .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
+        .catch((err) => console.error("Failed to save settings:", err))
+        .finally(() => setSaving(false));
+    } else {
+      // Save to profile-specific directories
+      fetch("/api/profile", {
+        method: "PUT",
+        headers: pHeaders,
+        body: JSON.stringify({
+          movies_directory: moviesDir || null,
+          tvshows_directory: tvshowsDir || null,
+          use_global_dirs: 0,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
+        .catch((err) => console.error("Failed to save settings:", err))
+        .finally(() => setSaving(false));
+    }
   };
 
   const handleBrowseSelect = (path: string) => {
@@ -1383,6 +1429,52 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
           <div style={css.body}>
             {activeTab === "directories" && (
               <>
+                {/* Global vs per-profile toggle */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px", marginBottom: "20px",
+                  background: "var(--oss-bg-elevated)", borderRadius: "10px",
+                  border: "1px solid var(--oss-border)",
+                }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "var(--oss-text)" }}>
+                      Shared Media Directories
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.72rem", color: "var(--oss-text-muted)" }}>
+                      {useGlobal ? "All profiles share these directories" : "Using directories specific to this profile"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !useGlobal;
+                      setUseGlobal(next);
+                      if (next) {
+                        fetch("/api/global-settings").then((r) => r.json()).then((data) => {
+                          setMoviesDir(data.movies_directory ?? "");
+                          setTvshowsDir(data.tvshows_directory ?? "");
+                        }).catch(() => {});
+                      } else {
+                        setMoviesDir(profile.movies_directory ?? "");
+                        setTvshowsDir(profile.tvshows_directory ?? "");
+                      }
+                    }}
+                    style={{
+                      width: "44px", height: "24px", borderRadius: "12px",
+                      border: "none", cursor: "pointer",
+                      background: useGlobal ? "#6366f1" : "rgba(255,255,255,0.15)",
+                      position: "relative", transition: "background 0.2s ease",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{
+                      width: "18px", height: "18px", borderRadius: "50%",
+                      background: "#fff", position: "absolute", top: "3px",
+                      left: useGlobal ? "23px" : "3px",
+                      transition: "left 0.2s ease",
+                    }} />
+                  </button>
+                </div>
+
                 {/* Movies directory */}
                 <div style={{ marginBottom: "24px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
@@ -1549,18 +1641,26 @@ function BrowseItem({ onClick, children, style: extraStyle }: {
 
 // ── Profile Dropdown ──
 export function Profile() {
-  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const { profile: ctxProfile, setProfile: setCtxProfile, signOut, switchProfile } = useProfile();
+  const navigate = useNavigate();
+  const [profile, setProfileLocal] = useState<ProfileData | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const setProfile = (p: ProfileData | null) => {
+    setProfileLocal(p);
+    if (p) setCtxProfile(p as any);
+  };
+
   useEffect(() => {
-    fetch("/api/profile")
+    if (!ctxProfile?.id) return;
+    fetch("/api/profile", { headers: { "x-profile-id": String(ctxProfile.id) } })
       .then((r) => r.json())
-      .then((data) => setProfile(data))
+      .then((data) => setProfileLocal(data))
       .catch((err) => console.error("Failed to load profile:", err));
-  }, []);
+  }, [ctxProfile?.id]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1649,7 +1749,10 @@ export function Profile() {
               <IconSettings /> Settings
             </DropdownItem>
             <div style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
-            <DropdownItem style={{ color: "#ef4444" }}>
+            <DropdownItem onClick={() => { setDropdownOpen(false); switchProfile(); navigate("/profiles"); }}>
+              <IconUser /> Switch Profile
+            </DropdownItem>
+            <DropdownItem onClick={() => { setDropdownOpen(false); signOut(); navigate("/"); }} style={{ color: "#ef4444" }}>
               <IconLogout /> Sign Out
             </DropdownItem>
           </div>

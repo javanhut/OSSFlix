@@ -19,6 +19,7 @@ type VideoPlayerProps = {
   onProgress?: (currentTime: number, duration: number) => void;
   timings?: EpisodeTiming;
   hasNext?: boolean;
+  profileId?: number;
 };
 
 function formatTime(seconds: number): string {
@@ -164,7 +165,7 @@ function LoadingSpinner() {
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -245,9 +246,11 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (!force && Math.abs(ct - lastSavedTimeRef.current) < 3) return;
     lastSavedTimeRef.current = ct;
     onProgress?.(ct, dur);
+    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+    if (profileId) hdrs["x-profile-id"] = String(profileId);
     fetch("/api/playback/progress", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: hdrs,
       body: JSON.stringify({
         video_src: videoSrcToSave,
         dir_path: currentDirRef.current || "",
@@ -308,9 +311,11 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         const ct = video.currentTime;
         const dur = video.duration;
         if (isFinite(ct) && ct > 0) {
+          const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+          if (profileId) hdrs["x-profile-id"] = String(profileId);
           fetch("/api/playback/progress", {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: hdrs,
             body: JSON.stringify({
               video_src: currentSrcRef.current,
               dir_path: currentDirRef.current || "",

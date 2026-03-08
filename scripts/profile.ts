@@ -7,17 +7,36 @@ export interface ProfileData {
   image_path: string | null;
   movies_directory: string | null;
   tvshows_directory: string | null;
+  use_global_dirs: number;
+}
+
+export interface GlobalSettings {
+  movies_directory: string | null;
+  tvshows_directory: string | null;
 }
 
 export function getProfile(id: number): ProfileData | null {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles WHERE id = ?").get(id) as ProfileData | null;
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE id = ?").get(id) as ProfileData | null;
+}
+
+export function getAllProfiles(): ProfileData[] {
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id").all() as ProfileData[];
+}
+
+export function createProfile(name: string): ProfileData {
+  const result = db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", [name]);
+  return getProfile(Number(result.lastInsertRowid))!;
+}
+
+export function deleteProfile(id: number): void {
+  db.run("DELETE FROM profiles WHERE id = ?", [id]);
 }
 
 export function getOrCreateDefaultProfile(): ProfileData {
-  let profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles ORDER BY id LIMIT 1").get() as ProfileData | null;
+  let profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1").get() as ProfileData | null;
   if (!profile) {
-    db.run("INSERT INTO profiles (name) VALUES (?)", ["User"]);
-    profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory FROM profiles ORDER BY id LIMIT 1").get() as ProfileData;
+    db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", ["User"]);
+    profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1").get() as ProfileData;
   }
   return profile;
 }
@@ -28,6 +47,7 @@ export function updateProfile(id: number, updates: {
   image_path?: string;
   movies_directory?: string;
   tvshows_directory?: string;
+  use_global_dirs?: number;
 }): ProfileData | null {
   const fields: string[] = [];
   const values: any[] = [];
@@ -55,6 +75,10 @@ export function updateProfile(id: number, updates: {
     fields.push("tvshows_directory = ?");
     values.push(updates.tvshows_directory || null);
   }
+  if (updates.use_global_dirs !== undefined) {
+    fields.push("use_global_dirs = ?");
+    values.push(updates.use_global_dirs);
+  }
 
   if (fields.length === 0) return getProfile(id);
 
@@ -63,4 +87,50 @@ export function updateProfile(id: number, updates: {
 
   db.run(`UPDATE profiles SET ${fields.join(", ")} WHERE id = ?`, values);
   return getProfile(id);
+}
+
+export function getGlobalSettings(): GlobalSettings {
+  return db.prepare("SELECT movies_directory, tvshows_directory FROM global_settings WHERE id = 1").get() as GlobalSettings;
+}
+
+export function updateGlobalSettings(updates: {
+  movies_directory?: string;
+  tvshows_directory?: string;
+}): GlobalSettings {
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.movies_directory !== undefined) {
+    fields.push("movies_directory = ?");
+    values.push(updates.movies_directory || null);
+  }
+  if (updates.tvshows_directory !== undefined) {
+    fields.push("tvshows_directory = ?");
+    values.push(updates.tvshows_directory || null);
+  }
+
+  if (fields.length > 0) {
+    db.run(`UPDATE global_settings SET ${fields.join(", ")} WHERE id = 1`, values);
+  }
+
+  return getGlobalSettings();
+}
+
+// Get the effective directories for a profile (global or per-profile)
+export function getEffectiveDirs(profileId: number): { movies_directory: string | null; tvshows_directory: string | null } {
+  const profile = getProfile(profileId);
+  if (!profile) return { movies_directory: null, tvshows_directory: null };
+
+  if (profile.use_global_dirs) {
+    const global = getGlobalSettings();
+    return {
+      movies_directory: global.movies_directory,
+      tvshows_directory: global.tvshows_directory,
+    };
+  }
+
+  return {
+    movies_directory: profile.movies_directory,
+    tvshows_directory: profile.tvshows_directory,
+  };
 }

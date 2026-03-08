@@ -2,6 +2,7 @@ import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from 
 import { useEffect, useState } from "react";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
+import { useProfile } from "../context/ProfileContext";
 
 interface MediaInfo {
   name: string;
@@ -216,6 +217,9 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
 }
 
 export function Card({ show, onHide, dirPath }: CardProps) {
+  const { profile } = useProfile();
+  const pid = profile?.id;
+  const pHeaders = pid ? { "x-profile-id": String(pid) } : {};
   const [information, setInformation] = useState<MediaInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
@@ -226,7 +230,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
   const fetchProgress = () => {
     if (!dirPath) return;
-    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`)
+    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
       .then((res) => res.json())
       .then((entries: ProgressEntry[]) => {
         const map: Record<string, ProgressEntry> = {};
@@ -529,6 +533,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
           }
         }}
         hasNext={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)}
+        profileId={pid}
       />
     </>
   );

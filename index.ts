@@ -5,8 +5,17 @@ import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath, searchTitles, listAllTitles } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
-import { getOrCreateDefaultProfile, updateProfile } from "./scripts/profile";
+import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs } from "./scripts/profile";
 import db from "./scripts/db";
+
+function getProfileFromReq(req: Request) {
+  const id = req.headers.get("x-profile-id");
+  if (id) {
+    const profile = getProfile(parseInt(id, 10));
+    if (profile) return profile;
+  }
+  return getOrCreateDefaultProfile();
+}
 
 const IMAGES_BASE = resolve("./images");
 const AVATARS_BASE = resolve("./data/avatars");
@@ -19,10 +28,12 @@ Bun.serve({
   port: 3000,
   routes: {
     "/": index,
+    "/home": index,
     "/tvshows": index,
     "/movies": index,
     "/anime": index,
     "/genre/*": index,
+    "/profiles": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -116,15 +127,70 @@ Bun.serve({
       },
     },
     "/api/profile": {
-      GET() {
-        const profile = getOrCreateDefaultProfile();
+      GET(req) {
+        const profile = getProfileFromReq(req);
         return Response.json(profile);
       },
       async PUT(req) {
         try {
-          const profile = getOrCreateDefaultProfile();
+          const profile = getProfileFromReq(req);
           const body = await req.json();
           const updated = updateProfile(profile.id, body);
+
+          // Re-scan if directories changed
+          if (body.movies_directory !== undefined || body.tvshows_directory !== undefined) {
+            await resolveToDb();
+          }
+
+          return Response.json(updated);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/profiles": {
+      GET() {
+        const profiles = getAllProfiles();
+        return Response.json(profiles);
+      },
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { name } = body;
+          if (!name || name.trim().length < 1 || name.trim().length > 25) {
+            return Response.json({ error: "Name must be between 1 and 25 characters" }, { status: 400 });
+          }
+          const profile = createProfile(name.trim());
+          return Response.json(profile);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/profiles/delete": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { id } = body;
+          if (!id) return Response.json({ error: "Missing id" }, { status: 400 });
+          const all = getAllProfiles();
+          if (all.length <= 1) return Response.json({ error: "Cannot delete the last profile" }, { status: 400 });
+          deleteProfile(id);
+          return Response.json({ ok: true });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/global-settings": {
+      GET() {
+        const settings = getGlobalSettings();
+        return Response.json(settings);
+      },
+      async PUT(req) {
+        try {
+          const body = await req.json();
+          const updated = updateGlobalSettings(body);
 
           // Re-scan if directories changed
           if (body.movies_directory !== undefined || body.tvshows_directory !== undefined) {
@@ -142,7 +208,7 @@ Bun.serve({
         const url = new URL(req.url);
         const src = url.searchParams.get("src");
         const dir = url.searchParams.get("dir");
-        const profile = getOrCreateDefaultProfile();
+        const profile = getProfileFromReq(req);
 
         if (src) {
           const row = db.query(
@@ -166,7 +232,7 @@ Bun.serve({
       },
       async PUT(req) {
         try {
-          const profile = getOrCreateDefaultProfile();
+          const profile = getProfileFromReq(req);
           const body = await req.json();
           const { video_src, dir_path, current_time, duration } = body;
           if (!video_src || current_time == null) {
@@ -295,11 +361,12 @@ Bun.serve({
             return Response.json({ error: "Missing title name or files" }, { status: 400 });
           }
 
-          // Determine destination directory from profile settings
-          const profile = getOrCreateDefaultProfile();
+          // Determine destination directory from profile settings (respects global vs per-profile)
+          const profile = getProfileFromReq(req);
+          const dirs = getEffectiveDirs(profile.id);
           const baseDir = mediaType === "Movie"
-            ? (profile.movies_directory || resolve("./TestDir/Movies"))
-            : (profile.tvshows_directory || resolve("./TestDir/TV Shows"));
+            ? (dirs.movies_directory || resolve("./TestDir/Movies"))
+            : (dirs.tvshows_directory || resolve("./TestDir/TV Shows"));
 
           const folderName = tomlData.name.replace(/\s+/g, "");
           const destDir = join(baseDir, folderName);
@@ -416,7 +483,7 @@ Bun.serve({
           const savePath = join(AVATARS_BASE, filename);
           await Bun.write(savePath, file);
 
-          const profile = getOrCreateDefaultProfile();
+          const profile = getProfileFromReq(req);
           const updated = updateProfile(profile.id, { image_path: `/avatars/${filename}` });
           return Response.json(updated);
         } catch (err: any) {
@@ -445,7 +512,7 @@ Bun.serve({
           const savePath = join(AVATARS_BASE, filename);
           await Bun.write(savePath, sourceFile);
 
-          const profile = getOrCreateDefaultProfile();
+          const profile = getProfileFromReq(req);
           const updated = updateProfile(profile.id, { image_path: `/avatars/${filename}` });
           return Response.json(updated);
         } catch (err: any) {

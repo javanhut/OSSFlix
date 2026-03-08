@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { scanDirectory, type ScannedMedia } from "./mediascanner";
-import { getOrCreateDefaultProfile } from "./profile";
+import { getOrCreateDefaultProfile, getGlobalSettings } from "./profile";
 import db from "./db";
 
 const DEFAULT_MOVIES_DIR = resolve("./TestDir/Movies");
@@ -18,6 +18,14 @@ type MenuRow = {
 };
 
 function getMediaDirectories(): { moviesDir: string; tvshowsDir: string } {
+  // Prefer global settings, fall back to default profile, then defaults
+  const global = getGlobalSettings();
+  if (global.movies_directory || global.tvshows_directory) {
+    return {
+      moviesDir: global.movies_directory || DEFAULT_MOVIES_DIR,
+      tvshowsDir: global.tvshows_directory || DEFAULT_TVSHOWS_DIR,
+    };
+  }
   const profile = getOrCreateDefaultProfile();
   return {
     moviesDir: profile.movies_directory || DEFAULT_MOVIES_DIR,
