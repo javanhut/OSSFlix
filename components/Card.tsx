@@ -4,6 +4,13 @@ import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
 
+type SubtitleTrack = {
+  label: string;
+  language: string;
+  src: string;
+  format: string;
+};
+
 interface MediaInfo {
   name: string;
   description: string;
@@ -14,6 +21,7 @@ interface MediaInfo {
   episodes?: number;
   bannerImage: string | null;
   videos: string[];
+  subtitles?: SubtitleTrack[];
   dirPath: string;
 }
 
@@ -227,6 +235,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   const [progressMap, setProgressMap] = useState<Record<string, ProgressEntry>>({});
   const [timingsMap, setTimingsMap] = useState<Record<string, EpisodeTiming>>({});
   const [showTimingsModal, setShowTimingsModal] = useState(false);
+  const [inWatchlist, setInWatchlist] = useState(false);
 
   const fetchProgress = () => {
     if (!dirPath) return;
@@ -268,6 +277,27 @@ export function Card({ show, onHide, dirPath }: CardProps) {
     }).catch(() => {});
   };
 
+  const fetchWatchlistStatus = () => {
+    if (!dirPath) return;
+    fetch(`/api/watchlist/check?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders as Record<string, string> })
+      .then((res) => res.json())
+      .then((data: { inList: boolean }) => setInWatchlist(data.inList))
+      .catch(() => {});
+  };
+
+  const toggleWatchlist = () => {
+    const method = inWatchlist ? "DELETE" : "POST";
+    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+    if (pid) hdrs["x-profile-id"] = String(pid);
+    fetch("/api/watchlist", {
+      method,
+      headers: hdrs,
+      body: JSON.stringify({ dir_path: dirPath }),
+    })
+      .then(() => setInWatchlist(!inWatchlist))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     if (show && dirPath) {
       setLoading(true);
@@ -278,6 +308,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         .finally(() => setLoading(false));
       fetchProgress();
       fetchTimings();
+      fetchWatchlistStatus();
     }
   }, [show, dirPath]);
 
@@ -321,7 +352,23 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         {!loading && information && (
           <>
             <ModalHeader closeButton>
-              <ModalTitle>{information.name}</ModalTitle>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
+                <ModalTitle>{information.name}</ModalTitle>
+                <button
+                  onClick={toggleWatchlist}
+                  title={inWatchlist ? "Remove from My List" : "Add to My List"}
+                  style={{
+                    background: inWatchlist ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.08)",
+                    border: inWatchlist ? "1px solid rgba(99,102,241,0.3)" : "1px solid rgba(255,255,255,0.12)",
+                    color: inWatchlist ? "#818cf8" : "var(--oss-text-muted)",
+                    padding: "4px 12px", borderRadius: "4px", fontSize: "0.75rem",
+                    fontWeight: 600, cursor: "pointer", transition: "all 0.2s ease",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {inWatchlist ? "✓ In My List" : "+ My List"}
+                </button>
+              </div>
             </ModalHeader>
             <ModalBody>
               {information.bannerImage && (
@@ -519,6 +566,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         dirPath={dirPath}
         initialTime={playerInitialTime}
         timings={playerSrc ? timingsMap[playerSrc] : undefined}
+        subtitles={information?.subtitles}
         onNext={() => {
           if (!information?.videos || !playerSrc) return;
           const currentIndex = information.videos.indexOf(playerSrc);

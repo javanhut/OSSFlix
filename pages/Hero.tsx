@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
+import { useProfile } from "../context/ProfileContext";
 
 type MediaItem = {
   imagePath: string;
@@ -28,14 +29,27 @@ const BASIC_GENRES = new Set([
 ]);
 
 export default function Home() {
+  const { profileHeaders } = useProfile();
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [continueRow, setContinueRow] = useState<MenuRow | null>(null);
+  const [watchlistRow, setWatchlistRow] = useState<MenuRow | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/media/categories");
-      const categories: MenuRow[] = await res.json();
+      const pHeaders = profileHeaders();
+      const [catRes, cwRes, wlRes] = await Promise.all([
+        fetch("/api/media/categories"),
+        fetch("/api/playback/continue-watching", { headers: pHeaders }),
+        fetch("/api/watchlist", { headers: pHeaders }),
+      ]);
+      const categories = (await catRes.json()) as MenuRow[];
+      const cw = (await cwRes.json()) as MenuRow;
+      const wl = (await wlRes.json()) as MenuRow;
+
+      setContinueRow(cw.titles.length > 0 ? cw : null);
+      setWatchlistRow(wl.titles.length > 0 ? wl : null);
 
       // Filter to only basic genres for the home page
       setRows(categories.filter((r) => BASIC_GENRES.has(r.genre)));
@@ -84,7 +98,13 @@ export default function Home() {
     <>
       {mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
       <div style={{ paddingTop: "2rem" }}>
-        {rows.length > 0 && <SelectorMenu rows={rows} />}
+        {(continueRow || watchlistRow || rows.length > 0) && (
+          <SelectorMenu rows={[
+            ...(continueRow ? [continueRow] : []),
+            ...(watchlistRow ? [watchlistRow] : []),
+            ...rows,
+          ]} />
+        )}
       </div>
     </>
   );

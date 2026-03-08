@@ -3,7 +3,7 @@ import { resolve, join, dirname } from "node:path";
 import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, listAllTitles } from "./scripts/autoresolver";
+import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
 import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs } from "./scripts/profile";
 import db from "./scripts/db";
@@ -34,6 +34,8 @@ Bun.serve({
     "/anime": index,
     "/genre/*": index,
     "/profiles": index,
+    "/history": index,
+    "/mylist": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -119,10 +121,11 @@ Bun.serve({
         const url = new URL(req.url);
         const q = url.searchParams.get("q")?.trim();
         if (!q || q.length < 1) {
-          return Response.json([]);
+          return Response.json({ titles: [], genres: [] });
         }
-        const results = searchTitles(q);
-        return Response.json(results);
+        const titles = searchTitles(q);
+        const genres = searchGenres(q);
+        return Response.json({ titles, genres });
       },
     },
     "/api/media/info": {
@@ -147,6 +150,7 @@ Bun.serve({
           season: title.season,
           episodes: title.episodes,
           videos: title.videos ? JSON.parse(title.videos) : [],
+          subtitles: title.subtitles ? JSON.parse(title.subtitles) : [],
         });
       },
     },
@@ -275,6 +279,109 @@ Bun.serve({
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
+      },
+    },
+    "/api/playback/continue-watching": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const titles = db.query(`
+          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+          FROM playback_progress pp
+          JOIN titles t ON t.dir_path = pp.dir_path
+          WHERE pp.profile_id = ?
+            AND pp.current_time > 0
+            AND (pp.duration = 0 OR pp.current_time < pp.duration - 10)
+          GROUP BY pp.dir_path
+          ORDER BY MAX(pp.updated_at) DESC
+          LIMIT 20
+        `).all(profile.id) as any[];
+        return Response.json({ genre: "Continue Watching", titles });
+      },
+    },
+    "/api/playback/history": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const rows = db.query(`
+          SELECT pp.video_src, pp.dir_path, pp.current_time, pp.duration, pp.updated_at,
+                 t.name, t.image_path AS imagePath, t.type
+          FROM playback_progress pp
+          LEFT JOIN titles t ON t.dir_path = pp.dir_path
+          WHERE pp.profile_id = ?
+          ORDER BY pp.updated_at DESC
+          LIMIT 100
+        `).all(profile.id) as any[];
+        return Response.json(rows);
+      },
+      async DELETE(req) {
+        const profile = getProfileFromReq(req);
+        const body = await req.json();
+        if (body.clear_all) {
+          db.run("DELETE FROM playback_progress WHERE profile_id = ?", [profile.id]);
+        } else if (body.video_src) {
+          db.run("DELETE FROM playback_progress WHERE profile_id = ? AND video_src = ?", [profile.id, body.video_src]);
+        } else {
+          return Response.json({ error: "Missing video_src or clear_all" }, { status: 400 });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+    "/api/watchlist": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const titles = db.query(`
+          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+          FROM watchlist w
+          JOIN titles t ON t.dir_path = w.dir_path
+          WHERE w.profile_id = ?
+          ORDER BY w.added_at DESC
+        `).all(profile.id) as any[];
+        return Response.json({ genre: "My List", titles });
+      },
+      async POST(req) {
+        const profile = getProfileFromReq(req);
+        const body = await req.json();
+        if (!body.dir_path) return Response.json({ error: "Missing dir_path" }, { status: 400 });
+        db.run("INSERT OR IGNORE INTO watchlist (profile_id, dir_path) VALUES (?, ?)", [profile.id, body.dir_path]);
+        return Response.json({ ok: true });
+      },
+      async DELETE(req) {
+        const profile = getProfileFromReq(req);
+        const body = await req.json();
+        if (!body.dir_path) return Response.json({ error: "Missing dir_path" }, { status: 400 });
+        db.run("DELETE FROM watchlist WHERE profile_id = ? AND dir_path = ?", [profile.id, body.dir_path]);
+        return Response.json({ ok: true });
+      },
+    },
+    "/api/watchlist/check": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) return Response.json({ error: "Missing dir" }, { status: 400 });
+        const row = db.query("SELECT id FROM watchlist WHERE profile_id = ? AND dir_path = ?").get(profile.id, dir);
+        return Response.json({ inList: !!row });
+      },
+    },
+    "/api/subtitles": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const srcParam = url.searchParams.get("src");
+        if (!srcParam) return Response.json({ error: "Missing src parameter" }, { status: 400 });
+        const sourcePath = resolveSourcePath(srcParam);
+        if (!sourcePath) return new Response("Not found", { status: 404 });
+        const file = Bun.file(sourcePath);
+        if (!(await file.exists())) return new Response("Not found", { status: 404 });
+        let content = await file.text();
+        const ext = srcParam.split(".").pop()?.toLowerCase();
+        // Convert SRT to WebVTT on-the-fly
+        if (ext === "srt") {
+          content = "WEBVTT\n\n" + content
+            .replace(/\r\n/g, "\n")
+            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+        }
+        return new Response(content, {
+          headers: { "Content-Type": "text/vtt; charset=utf-8" },
+        });
       },
     },
     "/api/episode/timings": {

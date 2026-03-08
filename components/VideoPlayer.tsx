@@ -8,6 +8,13 @@ type EpisodeTiming = {
   outro_end: number | null;
 };
 
+type SubtitleTrack = {
+  label: string;
+  language: string;
+  src: string;
+  format: string;
+};
+
 type VideoPlayerProps = {
   show: boolean;
   onHide: () => void;
@@ -20,6 +27,7 @@ type VideoPlayerProps = {
   timings?: EpisodeTiming;
   hasNext?: boolean;
   profileId?: number;
+  subtitles?: SubtitleTrack[];
 };
 
 function formatTime(seconds: number): string {
@@ -165,7 +173,7 @@ function LoadingSpinner() {
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId, subtitles }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -192,6 +200,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   // CC state
   const [ccEnabled, setCcEnabled] = useState(false);
   const [ccAvailable, setCcAvailable] = useState(false);
+  const [showCcMenu, setShowCcMenu] = useState(false);
+  const [activeTrackIndex, setActiveTrackIndex] = useState(-1);
 
   // Dragging state
   const [dragging, setDragging] = useState(false);
@@ -292,6 +302,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setDuration(0);
     setShowControls(true);
     setShowSettingsMenu(false);
+    setShowCcMenu(false);
     setDragging(false);
     setHoverTime(null);
     setIsLoading(true);
@@ -352,6 +363,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       controlsTimeoutRef.current = window.setTimeout(() => {
         setShowControls(false);
         setShowSettingsMenu(false);
+        setShowCcMenu(false);
         setShowVolumeSlider(false);
       }, 2500);
     }
@@ -423,15 +435,45 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   };
 
   const toggleCC = () => {
+    if (subtitles && subtitles.length > 1) {
+      setShowCcMenu((v) => !v);
+      setShowSettingsMenu(false);
+      return;
+    }
     const video = videoRef.current;
     if (!video) return;
     const tracks = video.textTracks;
     if (tracks.length === 0) return;
     const newState = !ccEnabled;
     setCcEnabled(newState);
+    setActiveTrackIndex(newState ? 0 : -1);
     for (let i = 0; i < tracks.length; i++) {
       tracks[i].mode = newState ? "showing" : "hidden";
     }
+  };
+
+  const selectCcTrack = (index: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const tracks = video.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = i === index ? "showing" : "hidden";
+    }
+    setActiveTrackIndex(index);
+    setCcEnabled(index >= 0);
+    setShowCcMenu(false);
+  };
+
+  const disableCC = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const tracks = video.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = "hidden";
+    }
+    setActiveTrackIndex(-1);
+    setCcEnabled(false);
+    setShowCcMenu(false);
   };
 
   const handleTimeUpdate = () => {
@@ -494,11 +536,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setIsLoading(false);
     // Reapply playback rate after source change
     video.playbackRate = playbackRate;
-    // Check for text tracks (CC)
-    setCcAvailable(video.textTracks.length > 0);
+    // Check for text tracks (CC) - from <track> elements or subtitles prop
+    const hasTracks = video.textTracks.length > 0 || (subtitles && subtitles.length > 0);
+    setCcAvailable(!!hasTracks);
     if (ccEnabled && video.textTracks.length > 0) {
       for (let i = 0; i < video.textTracks.length; i++) {
-        video.textTracks[i].mode = "showing";
+        video.textTracks[i].mode = i === activeTrackIndex ? "showing" : "hidden";
       }
     }
     if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
@@ -800,6 +843,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           ref={videoRef}
           src={videoSrc}
           autoPlay
+          crossOrigin="anonymous"
           style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
@@ -819,7 +863,18 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           }}
           onPlay={() => { transitioningRef.current = false; setPlaying(true); }}
           onPause={() => { if (!transitioningRef.current) setPlaying(false); }}
-        />
+        >
+          {subtitles?.map((sub, i) => (
+            <track
+              key={sub.src}
+              kind="subtitles"
+              label={sub.label}
+              srcLang={sub.language || "und"}
+              src={`/api/subtitles?src=${encodeURIComponent(sub.src)}`}
+              default={i === 0 && ccEnabled}
+            />
+          ))}
+        </video>
 
         {/* Click area overlay for play/pause */}
         <div data-click-area style={{ position: "absolute", inset: 0, zIndex: 1 }} />
@@ -1156,7 +1211,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
               {/* Settings (speed) */}
               <div style={{ position: "relative" }}>
-                <button className="vp-ctrl-btn" onClick={() => setShowSettingsMenu((v) => !v)}
+                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); }}
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}>
                   <IconSettings />
                   {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#6366f1" }}>{playbackRate}x</span>}
@@ -1185,11 +1240,30 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </button>
 
               {/* Closed Captions */}
-              <button className="vp-ctrl-btn" onClick={toggleCC}
-                style={{ opacity: ccAvailable ? 1 : 0.4 }}>
-                <IconCC active={ccEnabled} />
-                <span className="vp-tooltip">{ccEnabled ? "CC Off" : "CC On"}</span>
-              </button>
+              <div style={{ position: "relative" }}>
+                <button className="vp-ctrl-btn" onClick={toggleCC}
+                  style={{ opacity: ccAvailable ? 1 : 0.4 }}>
+                  <IconCC active={ccEnabled} />
+                  <span className="vp-tooltip">{ccEnabled ? "CC Off (c)" : "CC On (c)"}</span>
+                </button>
+                {showCcMenu && subtitles && subtitles.length > 0 && (
+                  <div className="vp-settings-panel" style={{ right: 0 }}>
+                    <div style={{ padding: "6px 16px 8px", color: "rgba(255,255,255,0.4)", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>
+                      Subtitles
+                    </div>
+                    <button className={`vp-speed-btn${activeTrackIndex === -1 ? " active" : ""}`} onClick={disableCC}>
+                      <span>Off</span>
+                      {activeTrackIndex === -1 && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
+                    </button>
+                    {subtitles.map((sub, i) => (
+                      <button key={sub.src} className={`vp-speed-btn${activeTrackIndex === i ? " active" : ""}`} onClick={() => selectCcTrack(i)}>
+                        <span>{sub.label}</span>
+                        {activeTrackIndex === i && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* PiP */}
               <button className="vp-ctrl-btn" onClick={togglePip}>

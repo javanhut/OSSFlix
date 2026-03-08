@@ -123,4 +123,22 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    dir_path TEXT NOT NULL,
+    added_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(profile_id, dir_path),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  )
+`);
+
+// Migration: add subtitles column to titles
+try {
+  db.run("ALTER TABLE titles ADD COLUMN subtitles TEXT");
+} catch {
+  // column already exists
+}
+
 export default db;

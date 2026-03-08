@@ -51,8 +51,8 @@ export async function resolveToDb(): Promise<void> {
     db.run("DELETE FROM titles");
 
     const insertTitle = db.prepare(`
-      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertGenre = db.prepare("INSERT OR IGNORE INTO genres (name) VALUES (?)");
     const getGenreId = db.prepare("SELECT id FROM genres WHERE name = ?");
@@ -75,6 +75,7 @@ export async function resolveToDb(): Promise<void> {
         media.season ?? null,
         media.episodes ?? null,
         media.videos.length > 0 ? JSON.stringify(media.videos) : null,
+        media.subtitles.length > 0 ? JSON.stringify(media.subtitles) : null,
       );
       const titleId = Number(result.lastInsertRowid);
       titleIds.set(media.dirPath, titleId);
@@ -234,7 +235,7 @@ export function getTitleFromDb(dirPath: string) {
     SELECT
       t.id, t.name, t.description, t.type, t.image_path AS bannerImage,
       t.dir_path AS dirPath, t.source_path AS sourcePath, t.cast_list AS castList,
-      t.season, t.episodes, t.videos
+      t.season, t.episodes, t.videos, t.subtitles
     FROM titles t
     WHERE t.dir_path = ?
   `).get(dirPath) as {
@@ -249,6 +250,7 @@ export function getTitleFromDb(dirPath: string) {
     season: number | null;
     episodes: number | null;
     videos: string | null;
+    subtitles: string | null;
   } | null;
 
   if (!title) return null;
@@ -282,6 +284,16 @@ export function searchTitles(query: string) {
     ORDER BY t.name
     LIMIT 20
   `).all(`%${query}%`) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+}
+
+export function searchGenres(query: string) {
+  return db.prepare(`
+    SELECT DISTINCT g.name
+    FROM genres g
+    WHERE g.name LIKE ?
+    ORDER BY g.name
+    LIMIT 5
+  `).all(`%${query}%`) as { name: string }[];
 }
 
 export function resolveSourcePath(servePath: string): string | null {

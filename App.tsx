@@ -8,6 +8,8 @@ import Genre from "./pages/Genre";
 import Anime from "./pages/Anime";
 import Login from "./pages/Login";
 import ProfileSelect from "./pages/ProfileSelect";
+import History from "./pages/History";
+import MyList from "./pages/MyList";
 
 function AppRoutes() {
   const { authenticated, profile } = useProfile();
@@ -40,6 +42,8 @@ function AppRoutes() {
         <Route path="/tvshows" element={<TVShows />} />
         <Route path="/anime" element={<Anime />} />
         <Route path="/genre/:genre" element={<Genre />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/mylist" element={<MyList />} />
       </Route>
       <Route path="/profiles" element={<ProfileSelect />} />
       <Route path="*" element={<Navigate to="/home" replace />} />

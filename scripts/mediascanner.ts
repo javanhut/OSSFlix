@@ -4,6 +4,14 @@ import { readTomlFile } from "./tomlreader";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm"]);
+const SUBTITLE_EXTS = new Set([".srt", ".vtt", ".ass", ".ssa"]);
+
+export interface SubtitleTrack {
+  label: string;
+  language: string;
+  src: string;
+  format: string;
+}
 
 export interface ScannedMedia {
   name: string;
@@ -15,8 +23,25 @@ export interface ScannedMedia {
   episodes?: number;
   bannerImage: string | null;
   videos: string[];
+  subtitles: SubtitleTrack[];
   dirPath: string;
   sourcePath: string;
+}
+
+const LANG_NAMES: Record<string, string> = {
+  en: "English", es: "Spanish", fr: "French", de: "German", it: "Italian",
+  pt: "Portuguese", ja: "Japanese", ko: "Korean", zh: "Chinese", ru: "Russian",
+  ar: "Arabic", hi: "Hindi", nl: "Dutch", sv: "Swedish", pl: "Polish",
+};
+
+function parseSubtitleFilename(filename: string, servePath: string): SubtitleTrack {
+  const ext = extname(filename).toLowerCase().slice(1); // "srt", "vtt", etc.
+  const base = filename.replace(/\.[^.]+$/, ""); // remove extension
+  // Try to extract language code from patterns like "video.en.srt" or "video_en.srt"
+  const langMatch = base.match(/[._]([a-z]{2,3})$/i);
+  const language = langMatch ? langMatch[1].toLowerCase() : "";
+  const label = language && LANG_NAMES[language] ? LANG_NAMES[language] : (language || "Unknown");
+  return { label, language, src: `${servePath}/${filename}`, format: ext };
 }
 
 async function scanMediaDir(dirPath: string, servePath: string): Promise<ScannedMedia | null> {
@@ -25,6 +50,7 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
   let tomlFile: string | null = null;
   let bannerImage: string | null = null;
   const videos: string[] = [];
+  const subtitles: SubtitleTrack[] = [];
 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
@@ -36,6 +62,8 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
       bannerImage = `${servePath}/${entry.name}`;
     } else if (VIDEO_EXTS.has(ext)) {
       videos.push(`${servePath}/${entry.name}`);
+    } else if (SUBTITLE_EXTS.has(ext)) {
+      subtitles.push(parseSubtitleFilename(entry.name, servePath));
     }
   }
 
@@ -48,6 +76,7 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     ...data,
     bannerImage,
     videos,
+    subtitles,
     dirPath: servePath,
     sourcePath: dirPath,
   };

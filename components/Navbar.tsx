@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Profile from "./ProfileSettings";
@@ -12,10 +12,16 @@ type SearchResult = {
   type: string;
 };
 
+type GenreResult = {
+  name: string;
+};
+
 export function NavBar() {
+  const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [genreResults, setGenreResults] = useState<GenreResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedDir, setSelectedDir] = useState("");
@@ -43,13 +49,15 @@ export function NavBar() {
   const doSearch = (q: string) => {
     if (q.trim().length < 1) {
       setResults([]);
+      setGenreResults([]);
       setShowResults(false);
       return;
     }
     fetch(`/api/media/search?q=${encodeURIComponent(q.trim())}`)
       .then((r) => r.json())
-      .then((data: SearchResult[]) => {
-        setResults(data);
+      .then((data: { titles: SearchResult[]; genres: GenreResult[] }) => {
+        setResults(data.titles);
+        setGenreResults(data.genres);
         setShowResults(true);
         setActiveIndex(-1);
       })
@@ -63,24 +71,39 @@ export function NavBar() {
     debounceRef.current = setTimeout(() => doSearch(val), 200);
   };
 
-  const handleSelect = (result: SearchResult) => {
+  const handleSelectTitle = (result: SearchResult) => {
     setQuery("");
     setResults([]);
+    setGenreResults([]);
     setShowResults(false);
     setSelectedDir(result.pathToDir);
   };
 
+  const handleSelectGenre = (genre: GenreResult) => {
+    setQuery("");
+    setResults([]);
+    setGenreResults([]);
+    setShowResults(false);
+    navigate(`/genre/${encodeURIComponent(genre.name)}`);
+  };
+
+  const totalResults = genreResults.length + results.length;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showResults || results.length === 0) return;
+    if (!showResults || totalResults === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => (i < results.length - 1 ? i + 1 : 0));
+      setActiveIndex((i) => (i < totalResults - 1 ? i + 1 : 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIndex((i) => (i > 0 ? i - 1 : results.length - 1));
+      setActiveIndex((i) => (i > 0 ? i - 1 : totalResults - 1));
     } else if (e.key === "Enter" && activeIndex >= 0) {
       e.preventDefault();
-      handleSelect(results[activeIndex]);
+      if (activeIndex < genreResults.length) {
+        handleSelectGenre(genreResults[activeIndex]);
+      } else {
+        handleSelectTitle(results[activeIndex - genreResults.length]);
+      }
     } else if (e.key === "Escape") {
       setShowResults(false);
     }
@@ -95,6 +118,8 @@ export function NavBar() {
             <li><Link to="/movies" className="oss-nav-link">Movies</Link></li>
             <li><Link to="/tvshows" className="oss-nav-link">TV Shows</Link></li>
             <li><Link to="/anime" className="oss-nav-link">Anime</Link></li>
+            <li><Link to="/mylist" className="oss-nav-link">My List</Link></li>
+            <li><Link to="/history" className="oss-nav-link">History</Link></li>
             <li className="oss-genre-trigger">
               <span className="oss-nav-link">Genres</span>
               <div className="oss-genre-dropdown">
@@ -125,14 +150,34 @@ export function NavBar() {
               onFocus={() => { if (results.length > 0) setShowResults(true); }}
               onKeyDown={handleKeyDown}
             />
-            {showResults && results.length > 0 && (
+            {showResults && totalResults > 0 && (
               <div className="oss-search-results">
+                {genreResults.map((g, i) => (
+                  <button
+                    key={`genre-${g.name}`}
+                    className={`oss-search-result-item${i === activeIndex ? " active" : ""}`}
+                    onClick={() => handleSelectGenre(g)}
+                    onMouseEnter={() => setActiveIndex(i)}
+                  >
+                    <div className="oss-search-result-img oss-search-result-placeholder" style={{
+                      background: "rgba(99,102,241,0.15)",
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 7h16M4 12h16M4 17h10"/>
+                      </svg>
+                    </div>
+                    <div className="oss-search-result-info">
+                      <span className="oss-search-result-name">{g.name}</span>
+                      <span className="oss-search-result-type" style={{ color: "#818cf8" }}>Genre</span>
+                    </div>
+                  </button>
+                ))}
                 {results.map((r, i) => (
                   <button
                     key={r.pathToDir}
-                    className={`oss-search-result-item${i === activeIndex ? " active" : ""}`}
-                    onClick={() => handleSelect(r)}
-                    onMouseEnter={() => setActiveIndex(i)}
+                    className={`oss-search-result-item${(i + genreResults.length) === activeIndex ? " active" : ""}`}
+                    onClick={() => handleSelectTitle(r)}
+                    onMouseEnter={() => setActiveIndex(i + genreResults.length)}
                   >
                     {r.imagePath ? (
                       <img src={r.imagePath} alt="" className="oss-search-result-img" />
@@ -153,7 +198,7 @@ export function NavBar() {
                 ))}
               </div>
             )}
-            {showResults && query.trim().length >= 1 && results.length === 0 && (
+            {showResults && query.trim().length >= 1 && totalResults === 0 && (
               <div className="oss-search-results">
                 <div className="oss-search-empty">No results for "{query}"</div>
               </div>
