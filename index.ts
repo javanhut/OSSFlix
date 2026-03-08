@@ -3,7 +3,8 @@ import { resolve, join, dirname } from "node:path";
 import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath, searchTitles } from "./scripts/autoresolver";
+import { resolveToDb, getCategoriesFromDb, getTitleFromDb, resolveSourcePath, searchTitles, listAllTitles } from "./scripts/autoresolver";
+import { copyFile, mkdir } from "node:fs/promises";
 import { getOrCreateDefaultProfile, updateProfile } from "./scripts/profile";
 import db from "./scripts/db";
 
@@ -20,6 +21,7 @@ Bun.serve({
     "/": index,
     "/tvshows": index,
     "/movies": index,
+    "/anime": index,
     "/genre/*": index,
     "/api/stream": {
       async GET(req) {
@@ -185,6 +187,173 @@ Bun.serve({
         }
       },
     },
+    "/api/episode/timings": {
+      GET(req) {
+        const url = new URL(req.url);
+        const src = url.searchParams.get("src");
+        if (!src) {
+          return Response.json({ error: "Missing src parameter" }, { status: 400 });
+        }
+        const row = db.query(
+          "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src = ?"
+        ).get(src) as any;
+        return Response.json(row || { video_src: src, intro_start: null, intro_end: null, outro_start: null, outro_end: null });
+      },
+      async PUT(req) {
+        try {
+          const body = await req.json();
+          const { video_src, intro_start, intro_end, outro_start, outro_end } = body;
+          if (!video_src) {
+            return Response.json({ error: "Missing video_src" }, { status: 400 });
+          }
+          db.run(
+            `INSERT INTO episode_timings (video_src, intro_start, intro_end, outro_start, outro_end)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(video_src) DO UPDATE SET
+               intro_start = excluded.intro_start,
+               intro_end = excluded.intro_end,
+               outro_start = excluded.outro_start,
+               outro_end = excluded.outro_end`,
+            [video_src, intro_start ?? null, intro_end ?? null, outro_start ?? null, outro_end ?? null]
+          );
+          return Response.json({ ok: true });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/episode/timings/batch": {
+      GET(req) {
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) {
+          return Response.json({ error: "Missing dir parameter" }, { status: 400 });
+        }
+        const rows = db.query(
+          "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?"
+        ).all(`${dir}%`) as any[];
+        return Response.json(rows);
+      },
+    },
+    "/api/media/titles": {
+      GET() {
+        const titles = listAllTitles();
+        return Response.json(titles);
+      },
+    },
+    "/api/migrator/add": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { sourcePath, files: fileList, updateEpisodeCount } = body;
+
+          if (!sourcePath || !fileList?.length) {
+            return Response.json({ error: "Missing source path or files" }, { status: 400 });
+          }
+
+          // Copy files into the existing title directory
+          for (const file of fileList) {
+            if (!file.sourcePath) continue;
+            const destPath = join(sourcePath, file.newName);
+            await copyFile(file.sourcePath, destPath);
+          }
+
+          // Update episode count in TOML to match actual video files
+          if (updateEpisodeCount) {
+            const dirEntries = await readdir(sourcePath);
+            const tomlFile = dirEntries.find((f) => f.endsWith(".toml"));
+            if (tomlFile) {
+              const tomlPath = join(sourcePath, tomlFile);
+              let content = await Bun.file(tomlPath).text();
+              const VIDEO_EXTS_SET = new Set([".mp4", ".mkv", ".webm"]);
+              const videoCount = dirEntries.filter((f) => VIDEO_EXTS_SET.has(extname(f).toLowerCase())).length;
+              if (content.match(/episodes\s*=\s*\d+/)) {
+                content = content.replace(/episodes\s*=\s*\d+/, `episodes = ${videoCount}`);
+              }
+              await Bun.write(tomlPath, content);
+            }
+          }
+
+          // Re-scan
+          await resolveToDb();
+
+          return Response.json({
+            message: `Added ${fileList.length} file(s) to ${sourcePath}`,
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    "/api/migrator/create": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { mediaType, toml: tomlData, files: fileList } = body;
+
+          if (!tomlData?.name || !fileList?.length) {
+            return Response.json({ error: "Missing title name or files" }, { status: 400 });
+          }
+
+          // Determine destination directory from profile settings
+          const profile = getOrCreateDefaultProfile();
+          const baseDir = mediaType === "Movie"
+            ? (profile.movies_directory || resolve("./TestDir/Movies"))
+            : (profile.tvshows_directory || resolve("./TestDir/TV Shows"));
+
+          const folderName = tomlData.name.replace(/\s+/g, "");
+          const destDir = join(baseDir, folderName);
+
+          // Create the directory
+          await mkdir(destDir, { recursive: true });
+
+          // Build TOML content
+          let tomlContent = "[series]\n";
+          tomlContent += `name = "${tomlData.name}"\n`;
+          tomlContent += `type = "${tomlData.type}"\n`;
+          tomlContent += `description = """${tomlData.description}"""\n`;
+          tomlContent += `genre = [${tomlData.genre.map((g: string) => `"${g}"`).join(", ")}]\n`;
+          tomlContent += `cast = [${(tomlData.cast || []).map((c: string) => `"${c}"`).join(", ")}]\n`;
+
+          if (mediaType === "tv show") {
+            tomlContent += `season = ${tomlData.season || 1}\n`;
+            tomlContent += `episodes = ${fileList.length}\n`;
+          }
+
+          // Add episode names as a map if provided
+          if (mediaType === "tv show" && tomlData.episodeNames?.length > 0) {
+            const namedEps = tomlData.episodeNames.filter((e: any) => e.name?.trim());
+            if (namedEps.length > 0) {
+              tomlContent += "\n[series.episode_names]\n";
+              for (const ep of namedEps) {
+                tomlContent += `${ep.number} = "${ep.name}"\n`;
+              }
+            }
+          }
+
+          // Write TOML file
+          const tomlFilename = tomlData.name.toLowerCase().replace(/[^a-z0-9]+/g, "") + ".toml";
+          await Bun.write(join(destDir, tomlFilename), tomlContent);
+
+          // Copy and rename files
+          for (const file of fileList) {
+            if (!file.sourcePath) continue;
+            const destPath = join(destDir, file.newName);
+            await copyFile(file.sourcePath, destPath);
+          }
+
+          // Re-scan media library
+          await resolveToDb();
+
+          return Response.json({
+            message: `Successfully created "${tomlData.name}" with ${fileList.length} file(s) in ${destDir}`,
+            path: destDir,
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
     "/api/browse": {
       async GET(req) {
         const url = new URL(req.url);
@@ -205,6 +374,14 @@ Bun.serve({
           if (mode === "images") {
             files = entries
               .filter((e) => e.isFile() && IMAGE_EXTS.has(extname(e.name).toLowerCase()))
+              .map((e) => ({
+                name: e.name,
+                path: join(resolved, e.name),
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name));
+          } else if (mode === "all") {
+            files = entries
+              .filter((e) => e.isFile() && !e.name.startsWith("."))
               .map((e) => ({
                 name: e.name,
                 path: join(resolved, e.name),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
 
 type TitleInfo = {
@@ -16,7 +16,7 @@ export default function Movies() {
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     fetch("/api/media/categories")
       .then((res) => res.json())
       .then((categories: MenuRow[]) => {
@@ -26,6 +26,14 @@ export default function Movies() {
       .catch((err) => console.error("Failed to load movies:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener("ossflix-media-updated", handler);
+    return () => window.removeEventListener("ossflix-media-updated", handler);
+  }, [loadData]);
 
   if (loading) {
     return (

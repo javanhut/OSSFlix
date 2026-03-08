@@ -1,5 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
+type EpisodeTiming = {
+  video_src: string;
+  intro_start: number | null;
+  intro_end: number | null;
+  outro_start: number | null;
+  outro_end: number | null;
+};
+
 type VideoPlayerProps = {
   show: boolean;
   onHide: () => void;
@@ -9,6 +17,8 @@ type VideoPlayerProps = {
   initialTime?: number;
   onNext?: () => void;
   onProgress?: (currentTime: number, duration: number) => void;
+  timings?: EpisodeTiming;
+  hasNext?: boolean;
 };
 
 function formatTime(seconds: number): string {
@@ -89,6 +99,19 @@ const IconBack = () => (
     <polyline points="15,18 9,12 15,6"/>
   </svg>
 );
+const IconRestart = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="1,4 1,10 7,10"/>
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+  </svg>
+);
+const IconCC = ({ active }: { active: boolean }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#6366f1" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+    <path d="M10 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
+    <path d="M19 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
+  </svg>
+);
 const IconSettings = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3"/>
@@ -141,7 +164,7 @@ function LoadingSpinner() {
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -165,6 +188,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   // Skip feedback
   const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number } | null>(null);
 
+  // CC state
+  const [ccEnabled, setCcEnabled] = useState(false);
+  const [ccAvailable, setCcAvailable] = useState(false);
+
   // Dragging state
   const [dragging, setDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
@@ -174,6 +201,21 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const durationRef = useRef(0);
   const seekLockRef = useRef(false);
   const transitioningRef = useRef(false);
+
+  // Skip intro/outro state
+  const [showSkipIntro, setShowSkipIntro] = useState(false);
+  const [showSkipOutro, setShowSkipOutro] = useState(false);
+
+  // Countdown to next episode
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timingsRef = useRef(timings);
+  const hasNextRef = useRef(hasNext);
+  const onNextRef = useRef(onNext);
+
+  useEffect(() => { timingsRef.current = timings; }, [timings]);
+  useEffect(() => { hasNextRef.current = hasNext; }, [hasNext]);
+  useEffect(() => { onNextRef.current = onNext; }, [onNext]);
 
   // Hover tooltip state
   const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -223,6 +265,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   useEffect(() => {
     initialTimeAppliedRef.current = false;
+    // Clear countdown when src changes
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+    setShowSkipIntro(false);
+    setShowSkipOutro(false);
   }, [src]);
 
   const videoSrc = useMemo(() => {
@@ -244,6 +294,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setIsLoading(true);
     setShowVolumeSlider(false);
     setSkipFeedback(null);
+    setShowSkipIntro(false);
+    setShowSkipOutro(false);
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    setCountdown(null);
   }, []);
 
   // ── Show / hide lifecycle ──
@@ -312,12 +366,117 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     showControlsTemporarily();
   };
 
+  const restartFromBeginning = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    setCurrentTime(0);
+    video.play();
+    setPlaying(true);
+    showControlsTemporarily();
+  };
+
+  const skipIntro = () => {
+    const video = videoRef.current;
+    const t = timingsRef.current;
+    if (!video || !t?.intro_end) return;
+    video.currentTime = t.intro_end;
+    setCurrentTime(t.intro_end);
+    showControlsTemporarily();
+  };
+
+  const skipOutro = () => {
+    const next = onNextRef.current;
+    if (next) {
+      cancelCountdown();
+      next();
+    }
+  };
+
+  const startCountdown = () => {
+    if (countdownRef.current) return; // already running
+    setCountdown(10);
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          cancelCountdown();
+          const next = onNextRef.current;
+          if (next) { transitioningRef.current = true; next(); }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelCountdown = () => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+  };
+
+  const toggleCC = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const tracks = video.textTracks;
+    if (tracks.length === 0) return;
+    const newState = !ccEnabled;
+    setCcEnabled(newState);
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = newState ? "showing" : "hidden";
+    }
+  };
+
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video || dragging || seekLockRef.current) return;
-    setCurrentTime(video.currentTime);
+    const ct = video.currentTime;
+    const dur = video.duration;
+    setCurrentTime(ct);
     if (video.buffered.length > 0) {
       setBuffered(video.buffered.end(video.buffered.length - 1));
+    }
+
+    const t = timingsRef.current;
+    const next = hasNextRef.current;
+    const hasOutroTiming = t?.outro_start != null && t?.outro_end != null;
+    const hasIntroTiming = t?.intro_start != null && t?.intro_end != null;
+
+    // Skip intro button
+    if (hasIntroTiming) {
+      setShowSkipIntro(ct >= t!.intro_start! && ct < t!.intro_end!);
+    } else {
+      setShowSkipIntro(false);
+    }
+
+    // Determine countdown trigger point
+    let countdownTrigger = -1;
+    if (hasOutroTiming) {
+      // Start countdown 10s before outro starts
+      countdownTrigger = t!.outro_start! - 10;
+      if (countdownTrigger < 0) countdownTrigger = t!.outro_start!;
+
+      // Show skip outro button when in outro region
+      setShowSkipOutro(ct >= t!.outro_start! && ct < t!.outro_end!);
+    } else {
+      setShowSkipOutro(false);
+      // No outro set: trigger 10s before video ends
+      if (dur > 10) {
+        countdownTrigger = dur - 10;
+      }
+    }
+
+    // Start/cancel countdown
+    if (next && countdownTrigger > 0) {
+      const pastTrigger = ct >= countdownTrigger;
+      if (pastTrigger && !countdownRef.current) {
+        startCountdown();
+      }
+      if (!pastTrigger && countdownRef.current) {
+        cancelCountdown();
+      }
     }
   };
 
@@ -330,6 +489,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setIsLoading(false);
     // Reapply playback rate after source change
     video.playbackRate = playbackRate;
+    // Check for text tracks (CC)
+    setCcAvailable(video.textTracks.length > 0);
+    if (ccEnabled && video.textTracks.length > 0) {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        video.textTracks[i].mode = "showing";
+      }
+    }
     if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
       initialTimeAppliedRef.current = true;
       video.currentTime = Math.min(initialTime, video.duration - 1);
@@ -511,8 +677,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const handleKey = (e: KeyboardEvent) => {
       const video = videoRef.current;
       if (!video) return;
+      // Prevent spacebar from activating focused buttons - always use it for play/pause
+      if (e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePlay();
+        return;
+      }
       switch (e.key) {
-        case " ": case "k": e.preventDefault(); togglePlay(); break;
+        case "k": e.preventDefault(); togglePlay(); break;
         case "ArrowLeft": case "j": e.preventDefault(); skip(-10); break;
         case "ArrowRight": case "l": e.preventDefault(); skip(10); break;
         case "ArrowUp":
@@ -532,6 +705,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         case "p": togglePip(); break;
         case "Escape": e.preventDefault(); onHide(); break;
         case "n": if (onNext) { e.preventDefault(); onNext(); } break;
+        case "r": e.preventDefault(); restartFromBeginning(); break;
+        case "c": e.preventDefault(); toggleCC(); break;
         case ",": if (video.paused) { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); } break;
         case ".": if (video.paused) { video.currentTime = Math.min(video.duration, video.currentTime + 1/30); setCurrentTime(video.currentTime); } break;
         case "<": case "[": {
@@ -584,7 +759,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         @keyframes vpFadeOut { from { opacity: 1 } to { opacity: 0 } }
         @keyframes vpSpin { to { transform: rotate(360deg) } }
         @keyframes vpPulse { 0%,100% { transform: translate(-50%,-50%) scale(1); opacity: 0.9 } 50% { transform: translate(-50%,-50%) scale(1.15); opacity: 1 } }
-        .vp-ctrl-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; position: relative; }
+        .vp-ctrl-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; position: relative; outline: none; }
         .vp-ctrl-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.1); }
         .vp-ctrl-btn:active { transform: scale(0.95); }
         .vp-volume-track { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); outline: none; cursor: pointer; }
@@ -626,8 +801,16 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           onWaiting={() => setIsLoading(true)}
           onCanPlay={() => setIsLoading(false)}
           onEnded={() => {
-            if (onNext) { transitioningRef.current = true; setShowControls(false); onNext(); }
-            else { setPlaying(false); setShowControls(true); }
+            setPlaying(false);
+            setShowControls(true);
+            // If countdown is already running, let it finish
+            if (countdownRef.current) return;
+            // If there's no next episode, just stop
+            const next = onNextRef.current;
+            if (!next || !hasNextRef.current) return;
+            // Otherwise advance immediately
+            transitioningRef.current = true;
+            next();
           }}
           onPlay={() => { transitioningRef.current = false; setPlaying(true); }}
           onPause={() => { if (!transitioningRef.current) setPlaying(false); }}
@@ -654,6 +837,94 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             animation: "vpFadeOut 1.2s ease 0.5s forwards",
           }}>
             {speedIndicator.speed === 1 ? "Normal Speed" : `${speedIndicator.speed}x Speed`}
+          </div>
+        )}
+
+        {/* Skip Intro button */}
+        {showSkipIntro && (
+          <button onClick={skipIntro} style={{
+            position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
+            background: "rgba(255,255,255,0.92)", color: "#000",
+            border: "none", borderRadius: "4px",
+            padding: "10px 24px", fontSize: "0.95rem", fontWeight: 700,
+            cursor: "pointer", letterSpacing: "0.5px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+            transition: "all 0.2s ease",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.transform = "scale(1.05)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.92)"; e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            Skip Intro
+          </button>
+        )}
+
+        {/* Skip Outro / Next Episode button */}
+        {showSkipOutro && hasNext && countdown === null && (
+          <button onClick={skipOutro} style={{
+            position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
+            background: "rgba(255,255,255,0.92)", color: "#000",
+            border: "none", borderRadius: "4px",
+            padding: "10px 24px", fontSize: "0.95rem", fontWeight: 700,
+            cursor: "pointer", letterSpacing: "0.5px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+            transition: "all 0.2s ease",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.transform = "scale(1.05)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.92)"; e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            Next Episode
+          </button>
+        )}
+
+        {/* Countdown to next episode */}
+        {countdown !== null && (
+          <div style={{
+            position: "absolute", bottom: "80px", right: "40px", zIndex: 20,
+            background: "rgba(20,20,28,0.92)", backdropFilter: "blur(16px)",
+            border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
+            padding: "16px 24px", display: "flex", flexDirection: "column",
+            alignItems: "center", gap: "10px", minWidth: "200px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            animation: "vpSlideUp 0.3s ease",
+          }}>
+            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", fontWeight: 500 }}>
+              Next episode in
+            </div>
+            <div style={{
+              color: "#fff", fontSize: "2.5rem", fontWeight: 800,
+              fontVariantNumeric: "tabular-nums", lineHeight: 1,
+            }}>
+              {countdown}
+            </div>
+            <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+              <button onClick={cancelCountdown} style={{
+                flex: 1, padding: "8px", borderRadius: "6px",
+                border: "1px solid rgba(255,255,255,0.15)", background: "transparent",
+                color: "rgba(255,255,255,0.7)", fontSize: "0.82rem", fontWeight: 600,
+                cursor: "pointer",
+              }}>
+                Cancel
+              </button>
+              <button onClick={() => { cancelCountdown(); if (onNext) onNext(); }} style={{
+                flex: 1, padding: "8px", borderRadius: "6px",
+                border: "none", background: "#6366f1",
+                color: "#fff", fontSize: "0.82rem", fontWeight: 600,
+                cursor: "pointer",
+              }}>
+                Play Now
+              </button>
+            </div>
+            {/* Progress ring */}
+            <svg width="40" height="40" viewBox="0 0 40 40" style={{ position: "absolute", top: "-4px", right: "-4px", opacity: 0.6 }}>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+              <circle cx="20" cy="20" r="16" fill="none" stroke="#6366f1" strokeWidth="3"
+                strokeDasharray={`${(2 * Math.PI * 16)}`}
+                strokeDashoffset={`${(2 * Math.PI * 16) * (1 - (countdown / 10))}`}
+                strokeLinecap="round"
+                transform="rotate(-90 20 20)"
+                style={{ transition: "stroke-dashoffset 1s linear" }}
+              />
+            </svg>
           </div>
         )}
 
@@ -901,6 +1172,19 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                   </div>
                 )}
               </div>
+
+              {/* Restart */}
+              <button className="vp-ctrl-btn" onClick={restartFromBeginning}>
+                <IconRestart />
+                <span className="vp-tooltip">Restart</span>
+              </button>
+
+              {/* Closed Captions */}
+              <button className="vp-ctrl-btn" onClick={toggleCC}
+                style={{ opacity: ccAvailable ? 1 : 0.4 }}>
+                <IconCC active={ccEnabled} />
+                <span className="vp-tooltip">{ccEnabled ? "CC Off" : "CC On"}</span>
+              </button>
 
               {/* PiP */}
               <button className="vp-ctrl-btn" onClick={togglePip}>

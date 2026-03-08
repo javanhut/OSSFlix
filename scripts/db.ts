@@ -94,4 +94,15 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS episode_timings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_src TEXT NOT NULL UNIQUE,
+    intro_start REAL,
+    intro_end REAL,
+    outro_start REAL,
+    outro_end REAL
+  )
+`);
+
 export default db;

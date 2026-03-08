@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
@@ -27,7 +27,7 @@ export default function Genre() {
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     if (!genre) return;
     const decodedGenre = decodeURIComponent(genre);
 
@@ -60,6 +60,14 @@ export default function Genre() {
       .catch((err) => console.error("Failed to load genre:", err))
       .finally(() => setLoading(false));
   }, [genre]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener("ossflix-media-updated", handler);
+    return () => window.removeEventListener("ossflix-media-updated", handler);
+  }, [loadData]);
 
   const decodedGenre = genre ? decodeURIComponent(genre) : "";
 

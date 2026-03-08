@@ -12,7 +12,7 @@ type MenuRow = {
   titles: TitleInfo[];
 };
 
-export default function TVShows() {
+export default function Anime() {
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,10 +20,10 @@ export default function TVShows() {
     fetch("/api/media/categories")
       .then((res) => res.json())
       .then((categories: MenuRow[]) => {
-        const tvRow = categories.find((r) => r.genre === "TV Shows");
-        setRows(tvRow ? [tvRow] : []);
+        const animeRow = categories.find((r) => r.genre === "Anime" || r.genre === "Animation");
+        setRows(animeRow ? [animeRow] : []);
       })
-      .catch((err) => console.error("Failed to load TV shows:", err))
+      .catch((err) => console.error("Failed to load anime:", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -45,9 +45,9 @@ export default function TVShows() {
 
   return (
     <>
-      <h1 className="oss-page-title">TV Shows</h1>
+      <h1 className="oss-page-title">Anime</h1>
       {rows.length > 0 && <SelectorMenu rows={rows} />}
-      {rows.length === 0 && <p className="oss-empty">No TV shows found.</p>}
+      {rows.length === 0 && <p className="oss-empty">No anime found.</p>}
     </>
   );
 }

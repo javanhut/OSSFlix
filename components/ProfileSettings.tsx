@@ -423,12 +423,893 @@ function ProfileModal({ show, onHide, profile, onProfileUpdate }: {
   );
 }
 
+// ── Migrator Icons ──
+const IconPlus = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+const IconArrowUp = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18,15 12,9 6,15" /></svg>
+);
+const IconArrowDown = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6,9 12,15 18,9" /></svg>
+);
+
+const GENRE_OPTIONS = [
+  "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary",
+  "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Musical",
+  "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western",
+  "Anime", "Superhero", "Neo-Western", "Zombie Apocalypse",
+];
+
+type MigratorBrowseResult = {
+  current: string;
+  parent: string | null;
+  directories: { name: string; path: string }[];
+  files: { name: string; path: string }[];
+};
+
+type DroppedFile = {
+  name: string;
+  sourcePath: string;
+  newName: string;
+};
+
+type EpisodeEntry = { number: number; name: string };
+
+// ── Migrator Source Browser ──
+function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: string; path: string }[]) => void }) {
+  const [browseData, setBrowseData] = useState<MigratorBrowseResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const browseTo = (path: string) => {
+    setLoading(true);
+    fetch(`/api/browse?path=${encodeURIComponent(path)}&mode=all`)
+      .then((r) => r.json())
+      .then((data) => { if (!data.error) setBrowseData(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { browseTo("/"); }, []);
+
+  const toggleFile = (path: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  };
+
+  const handleAdd = () => {
+    if (!browseData) return;
+    const files = browseData.files.filter((f) => selected.has(f.path));
+    onFilesSelected(files);
+    setSelected(new Set());
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--oss-border)", borderRadius: "10px", padding: "12px", marginBottom: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+        <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--oss-text)" }}>Browse Files</span>
+        {selected.size > 0 && (
+          <button style={{ ...css.btn, ...css.btnPrimary, padding: "4px 12px", fontSize: "0.78rem" }} onClick={handleAdd}>
+            Add {selected.size} file{selected.size > 1 ? "s" : ""}
+          </button>
+        )}
+      </div>
+      {browseData && (
+        <div style={{
+          padding: "4px 10px", borderRadius: "6px", marginBottom: "8px",
+          background: "var(--oss-bg-elevated)", fontSize: "0.75rem",
+          color: "var(--oss-text-muted)", fontFamily: "monospace",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {browseData.current}
+        </div>
+      )}
+      {loading && (
+        <div style={{ textAlign: "center", padding: "1rem" }}>
+          <div style={{
+            width: "20px", height: "20px", margin: "0 auto",
+            border: "2px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+            borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
+          }} />
+        </div>
+      )}
+      {!loading && browseData && (
+        <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1px" }}>
+          {browseData.parent && (
+            <button onClick={() => browseTo(browseData.parent!)} style={{
+              ...dirItemStyle, color: "var(--oss-accent)", fontSize: "0.82rem", padding: "6px 10px",
+            }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--oss-bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <IconBack /> ..
+            </button>
+          )}
+          {browseData.directories.map((dir) => (
+            <button key={dir.path} onClick={() => browseTo(dir.path)} style={{
+              ...dirItemStyle, fontSize: "0.82rem", padding: "6px 10px",
+            }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--oss-bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              <IconFolder /> <span style={{ flex: 1, textAlign: "left" }}>{dir.name}</span>
+              <IconChevron />
+            </button>
+          ))}
+          {browseData.files.map((file) => (
+            <button key={file.path} onClick={() => toggleFile(file.path)} style={{
+              ...dirItemStyle, fontSize: "0.82rem", padding: "6px 10px",
+              background: selected.has(file.path) ? "rgba(99,102,241,0.12)" : "transparent",
+            }}
+              onMouseEnter={(e) => { if (!selected.has(file.path)) e.currentTarget.style.background = "var(--oss-bg-hover)"; }}
+              onMouseLeave={(e) => { if (!selected.has(file.path)) e.currentTarget.style.background = selected.has(file.path) ? "rgba(99,102,241,0.12)" : "transparent"; }}
+            >
+              <div style={{
+                width: "16px", height: "16px", borderRadius: "3px", flexShrink: 0,
+                border: selected.has(file.path) ? "none" : "1.5px solid var(--oss-border)",
+                background: selected.has(file.path) ? "var(--oss-accent)" : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {selected.has(file.path) && (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20,6 9,17 4,12" /></svg>
+                )}
+              </div>
+              <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Migrator Tab Content ──
+function MigratorTab() {
+  const [step, setStep] = useState(0);
+  const [mediaType, setMediaType] = useState<"Movie" | "tv show">("Movie");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [genres, setGenres] = useState<string[]>([]);
+  const [cast, setCast] = useState<string[]>([]);
+  const [season, setSeason] = useState(1);
+  const [episodeNames, setEpisodeNames] = useState<EpisodeEntry[]>([]);
+  const [files, setFiles] = useState<DroppedFile[]>([]);
+  const [genreInput, setGenreInput] = useState("");
+  const [castInput, setCastInput] = useState("");
+  const [namingMode, setNamingMode] = useState<"numbered" | "custom">("numbered");
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const inputStyle = (field: string) => ({
+    ...css.input,
+    ...(focusedField === field ? css.inputFocus : {}),
+  });
+
+  const addGenre = (g: string) => {
+    const trimmed = g.trim();
+    if (trimmed && !genres.includes(trimmed)) setGenres((prev) => [...prev, trimmed]);
+    setGenreInput("");
+  };
+
+  const addCast = () => {
+    const trimmed = castInput.trim();
+    if (trimmed && !cast.includes(trimmed)) setCast((prev) => [...prev, trimmed]);
+    setCastInput("");
+  };
+
+  const handleFilesFromBrowser = (newFiles: { name: string; path: string }[]) => {
+    const existing = new Set(files.map((f) => f.sourcePath));
+    const additions: DroppedFile[] = newFiles
+      .filter((f) => !existing.has(f.path))
+      .map((f, i) => {
+        const ext = f.name.substring(f.name.lastIndexOf("."));
+        const num = files.length + i + 1;
+        return { name: f.name, sourcePath: f.path, newName: namingMode === "numbered" ? `${num}${ext}` : f.name };
+      });
+    setFiles((prev) => [...prev, ...additions]);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (namingMode === "numbered") {
+        return next.map((f, i) => {
+          const ext = f.name.substring(f.name.lastIndexOf("."));
+          return { ...f, newName: `${i + 1}${ext}` };
+        });
+      }
+      return next;
+    });
+    setEpisodeNames((prev) => prev.filter((e) => e.number !== idx + 1));
+  };
+
+  const moveFile = (idx: number, dir: -1 | 1) => {
+    setFiles((prev) => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      if (namingMode === "numbered") {
+        return next.map((f, i) => {
+          const ext = f.name.substring(f.name.lastIndexOf("."));
+          return { ...f, newName: `${i + 1}${ext}` };
+        });
+      }
+      return next;
+    });
+  };
+
+  const renameFile = (idx: number, newName: string) => {
+    setFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, newName } : f)));
+  };
+
+  const updateEpisodeName = (epNum: number, epName: string) => {
+    setEpisodeNames((prev) => {
+      const existing = prev.find((e) => e.number === epNum);
+      if (existing) return prev.map((e) => e.number === epNum ? { ...e, name: epName } : e);
+      return [...prev, { number: epNum, name: epName }];
+    });
+  };
+
+  const applyNumberedNaming = () => {
+    setNamingMode("numbered");
+    setFiles((prev) => prev.map((f, i) => {
+      const ext = f.name.substring(f.name.lastIndexOf("."));
+      return { ...f, newName: `${i + 1}${ext}` };
+    }));
+  };
+
+  const applyCustomNaming = () => {
+    setNamingMode("custom");
+    setFiles((prev) => prev.map((f) => ({ ...f, newName: f.name })));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch("/api/migrator/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mediaType,
+          toml: {
+            name, type: mediaType, description, genre: genres, cast,
+            season: mediaType === "tv show" ? season : undefined,
+            episodes: mediaType === "tv show" ? files.length : undefined,
+            episodeNames: mediaType === "tv show" ? episodeNames.filter((e) => e.name.trim()) : undefined,
+          },
+          files: files.map((f) => ({ sourcePath: f.sourcePath, newName: f.newName })),
+        }),
+      });
+      const data = await res.json();
+      setSaveResult(data.error ? { ok: false, message: data.error } : { ok: true, message: data.message || "Done!" });
+      if (!data.error) {
+        setStep(0); setName(""); setDescription(""); setGenres([]); setCast([]);
+        setSeason(1); setEpisodeNames([]); setFiles([]); setMediaType("Movie");
+        window.dispatchEvent(new CustomEvent("ossflix-media-updated"));
+      }
+    } catch (err: any) {
+      setSaveResult({ ok: false, message: err.message || "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const canNext0 = name.trim().length > 0;
+  const canNext1 = genres.length > 0 && description.trim().length > 0;
+  const canNext2 = files.length > 0;
+
+  const stepLabel = ["Title", "Details", "Files", "Review"];
+
+  // Step indicators
+  const StepDots = () => (
+    <div style={{ display: "flex", gap: "0", marginBottom: "16px" }}>
+      {stepLabel.map((label, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", flex: i < stepLabel.length - 1 ? 1 : undefined }}>
+          <div style={{
+            width: "26px", height: "26px", borderRadius: "50%", display: "flex",
+            alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700,
+            background: i <= step ? "var(--oss-accent)" : "var(--oss-bg-elevated)",
+            color: i <= step ? "#fff" : "var(--oss-text-muted)",
+            border: i <= step ? "none" : "1px solid var(--oss-border)",
+            flexShrink: 0,
+          }}>
+            {i < step ? "\u2713" : i + 1}
+          </div>
+          <span style={{ fontSize: "0.72rem", marginLeft: "4px", color: i <= step ? "var(--oss-text)" : "var(--oss-text-muted)" }}>{label}</span>
+          {i < stepLabel.length - 1 && (
+            <div style={{ flex: 1, height: "2px", marginLeft: "8px", background: i < step ? "var(--oss-accent)" : "var(--oss-border)" }} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const navButtons = (back: number | null, next: (() => void) | null, canNext?: boolean) => (
+    <div style={{ display: "flex", justifyContent: back !== null ? "space-between" : "flex-end", marginTop: "12px" }}>
+      {back !== null && (
+        <button style={{ ...css.btn, ...css.btnSecondary, padding: "6px 14px", fontSize: "0.8rem" }} onClick={() => setStep(back)}>
+          <IconBack /> Back
+        </button>
+      )}
+      {next && (
+        <button style={{ ...css.btn, ...css.btnPrimary, padding: "6px 14px", fontSize: "0.8rem", opacity: canNext === false ? 0.5 : 1 }} disabled={canNext === false} onClick={next}>
+          Next <IconChevron />
+        </button>
+      )}
+    </div>
+  );
+
+  const tagStyle: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center", gap: "4px",
+    padding: "3px 8px", borderRadius: "5px", fontSize: "0.75rem", fontWeight: 500,
+  };
+
+  return (
+    <div>
+      <StepDots />
+
+      {saveResult && (
+        <div style={{
+          padding: "10px 14px", borderRadius: "8px", marginBottom: "12px",
+          background: saveResult.ok ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
+          color: saveResult.ok ? "#22c55e" : "#ef4444",
+          fontSize: "0.82rem", fontWeight: 500,
+        }}>
+          {saveResult.message}
+        </div>
+      )}
+
+      {/* Step 0: Title Info */}
+      {step === 0 && (
+        <>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
+            {(["Movie", "tv show"] as const).map((t) => (
+              <button key={t} style={{
+                ...css.btn, ...(mediaType === t ? css.btnPrimary : css.btnSecondary),
+                flex: 1, justifyContent: "center", padding: "8px 14px", fontSize: "0.82rem",
+              }} onClick={() => setMediaType(t)}>
+                {t === "Movie" ? <IconFilm /> : <IconTv />}
+                {t === "tv show" ? "TV Show" : "Movie"}
+              </button>
+            ))}
+          </div>
+          <div style={{ marginBottom: "14px" }}>
+            <label style={css.label}>Title</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+              onFocus={() => setFocusedField("name")} onBlur={() => setFocusedField(null)}
+              placeholder="Enter title name" style={inputStyle("name")} />
+          </div>
+          {mediaType === "tv show" && (
+            <div style={{ marginBottom: "14px" }}>
+              <label style={css.label}>Season</label>
+              <input type="number" min={1} value={season} onChange={(e) => setSeason(parseInt(e.target.value) || 1)}
+                onFocus={() => setFocusedField("season")} onBlur={() => setFocusedField(null)}
+                style={{ ...inputStyle("season"), width: "100px" }} />
+            </div>
+          )}
+          {navButtons(null, () => setStep(1), canNext0)}
+        </>
+      )}
+
+      {/* Step 1: Details */}
+      {step === 1 && (
+        <>
+          <div style={{ marginBottom: "14px" }}>
+            <label style={css.label}>Description</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              onFocus={() => setFocusedField("desc")} onBlur={() => setFocusedField(null)}
+              placeholder="Enter a description..."
+              style={{ ...css.input, ...(focusedField === "desc" ? css.inputFocus : {}), minHeight: "70px", resize: "vertical" as const, fontFamily: "inherit" }} />
+          </div>
+          <div style={{ marginBottom: "14px" }}>
+            <label style={css.label}>Genres</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+              {genres.map((g) => (
+                <span key={g} style={{ ...tagStyle, background: "rgba(99,102,241,0.15)", color: "#6366f1" }}>
+                  {g}
+                  <button onClick={() => setGenres((p) => p.filter((x) => x !== g))}
+                    style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", padding: "0 1px", fontSize: "0.9rem", lineHeight: 1 }}>&times;</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <input type="text" value={genreInput} onChange={(e) => setGenreInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addGenre(genreInput); } }}
+                onFocus={() => setFocusedField("genre")} onBlur={() => setFocusedField(null)}
+                placeholder="Type genre..." style={{ ...inputStyle("genre"), flex: 1 }} list="migrator-genres" />
+              <button style={{ ...css.btn, ...css.btnSecondary, ...css.btnSmall }} onClick={() => addGenre(genreInput)}>Add</button>
+            </div>
+            <datalist id="migrator-genres">
+              {GENRE_OPTIONS.filter((g) => !genres.includes(g)).map((g) => <option key={g} value={g} />)}
+            </datalist>
+          </div>
+          <div style={{ marginBottom: "14px" }}>
+            <label style={css.label}>Cast</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+              {cast.map((c) => (
+                <span key={c} style={{ ...tagStyle, background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>
+                  {c}
+                  <button onClick={() => setCast((p) => p.filter((x) => x !== c))}
+                    style={{ background: "none", border: "none", color: "#22c55e", cursor: "pointer", padding: "0 1px", fontSize: "0.9rem", lineHeight: 1 }}>&times;</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <input type="text" value={castInput} onChange={(e) => setCastInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCast(); } }}
+                onFocus={() => setFocusedField("cast")} onBlur={() => setFocusedField(null)}
+                placeholder="Actor name..." style={{ ...inputStyle("cast"), flex: 1 }} />
+              <button style={{ ...css.btn, ...css.btnSecondary, ...css.btnSmall }} onClick={addCast}>Add</button>
+            </div>
+          </div>
+          {navButtons(0, () => setStep(2), canNext1)}
+        </>
+      )}
+
+      {/* Step 2: Files */}
+      {step === 2 && (
+        <>
+          <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
+            <button style={{ ...css.btn, ...css.btnSmall, ...(namingMode === "numbered" ? css.btnPrimary : css.btnSecondary) }} onClick={applyNumberedNaming}>
+              Numbered (1.mp4, 2.mp4)
+            </button>
+            <button style={{ ...css.btn, ...css.btnSmall, ...(namingMode === "custom" ? css.btnPrimary : css.btnSecondary) }} onClick={applyCustomNaming}>
+              Keep Original
+            </button>
+          </div>
+
+          <SourceBrowser onFilesSelected={handleFilesFromBrowser} />
+
+          {files.length > 0 && (
+            <div>
+              <label style={{ ...css.label, marginBottom: "8px" }}>{files.length} file{files.length > 1 ? "s" : ""}</label>
+              {files.map((file, idx) => (
+                <div key={idx} style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  background: "var(--oss-bg-elevated)", marginBottom: "4px",
+                }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", flexShrink: 0 }}>
+                    <button onClick={() => moveFile(idx, -1)} disabled={idx === 0}
+                      style={{ background: "none", border: "none", color: idx === 0 ? "var(--oss-border)" : "var(--oss-text-muted)", cursor: idx === 0 ? "default" : "pointer", padding: "1px" }}>
+                      <IconArrowUp />
+                    </button>
+                    <button onClick={() => moveFile(idx, 1)} disabled={idx === files.length - 1}
+                      style={{ background: "none", border: "none", color: idx === files.length - 1 ? "var(--oss-border)" : "var(--oss-text-muted)", cursor: idx === files.length - 1 ? "default" : "pointer", padding: "1px" }}>
+                      <IconArrowDown />
+                    </button>
+                  </div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", fontWeight: 700, minWidth: "20px" }}>{idx + 1}.</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+                    {editingIndex === idx ? (
+                      <input type="text" value={file.newName} onChange={(e) => renameFile(idx, e.target.value)}
+                        onBlur={() => setEditingIndex(null)} onKeyDown={(e) => { if (e.key === "Enter") setEditingIndex(null); }}
+                        autoFocus style={{ ...css.input, padding: "3px 6px", fontSize: "0.78rem", marginTop: "2px" }} />
+                    ) : (
+                      <div style={{ fontSize: "0.82rem", fontWeight: 500, cursor: "pointer", color: "var(--oss-accent)" }} onClick={() => setEditingIndex(idx)}>
+                        &rarr; {file.newName}
+                      </div>
+                    )}
+                    {mediaType === "tv show" && (
+                      <input type="text" placeholder={`Ep ${idx + 1} name (optional)`}
+                        value={episodeNames.find((e) => e.number === idx + 1)?.name || ""}
+                        onChange={(e) => updateEpisodeName(idx + 1, e.target.value)}
+                        style={{ ...css.input, padding: "3px 6px", fontSize: "0.75rem", marginTop: "2px" }} />
+                    )}
+                  </div>
+                  <button onClick={() => removeFile(idx)}
+                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: "2px", flexShrink: 0 }}>
+                    <IconX />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {navButtons(1, () => setStep(3), canNext2)}
+        </>
+      )}
+
+      {/* Step 3: Review */}
+      {step === 3 && (
+        <>
+          <div style={{
+            background: "var(--oss-bg-elevated)", borderRadius: "10px",
+            padding: "14px", marginBottom: "14px", fontSize: "0.82rem",
+          }}>
+            <p style={{ margin: "0 0 6px", fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>
+              Destination: <strong style={{ color: "var(--oss-text)" }}>{mediaType === "Movie" ? "Movies" : "TV Shows"} / {name.replace(/\s+/g, "")}</strong>
+            </p>
+            {[
+              ["Title", name],
+              ["Type", mediaType === "tv show" ? "TV Show" : "Movie"],
+              ...(mediaType === "tv show" ? [["Season", String(season)], ["Episodes", String(files.length)]] : []),
+              ["Genres", genres.join(", ")],
+              ["Cast", cast.length > 0 ? cast.join(", ") : "None"],
+              ["Files", String(files.length)],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                <span style={{ color: "var(--oss-text-muted)" }}>{k}</span>
+                <span style={{ fontWeight: 500 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginBottom: "14px" }}>
+            {files.map((f, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", padding: "6px 10px",
+                background: "var(--oss-bg-elevated)", borderRadius: "6px", marginBottom: "3px", fontSize: "0.78rem",
+              }}>
+                <span style={{ color: "var(--oss-text-muted)" }}>{f.name}</span>
+                <span style={{ color: "var(--oss-accent)" }}>&rarr; {f.newName}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px" }}>
+            <button style={{ ...css.btn, ...css.btnSecondary, padding: "6px 14px", fontSize: "0.8rem" }} onClick={() => setStep(2)}>
+              <IconBack /> Back
+            </button>
+            <button style={{ ...css.btn, ...css.btnPrimary, padding: "6px 14px", fontSize: "0.8rem", opacity: saving ? 0.6 : 1 }}
+              disabled={saving} onClick={handleSave}>
+              {saving ? "Importing..." : (
+                <><IconCheck /> Import Media</>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Add Media Tab ──
+type ExistingTitle = {
+  name: string;
+  type: string;
+  imagePath: string | null;
+  dirPath: string;
+  sourcePath: string;
+  season: number | null;
+  episodes: number | null;
+};
+
+const IconAddFile = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+  </svg>
+);
+
+function AddMediaTab() {
+  const [titles, setTitles] = useState<ExistingTitle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<ExistingTitle | null>(null);
+  const [files, setFiles] = useState<DroppedFile[]>([]);
+  const [namingMode, setNamingMode] = useState<"numbered" | "custom">("numbered");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/media/titles")
+      .then((r) => r.json())
+      .then((data) => setTitles(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = search.trim()
+    ? titles.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+    : titles;
+
+  const handleSelect = (title: ExistingTitle) => {
+    setSelected(title);
+    setFiles([]);
+    setSaveResult(null);
+    // For TV shows, start numbering from existing episode count + 1
+    setNamingMode("numbered");
+  };
+
+  const startEpNumber = (selected?.episodes || 0) + 1;
+
+  const handleFilesFromBrowser = (newFiles: { name: string; path: string }[]) => {
+    const existing = new Set(files.map((f) => f.sourcePath));
+    const additions: DroppedFile[] = newFiles
+      .filter((f) => !existing.has(f.path))
+      .map((f, i) => {
+        const ext = f.name.substring(f.name.lastIndexOf("."));
+        const num = startEpNumber + files.length + i;
+        return { name: f.name, sourcePath: f.path, newName: namingMode === "numbered" ? `${num}${ext}` : f.name };
+      });
+    setFiles((prev) => [...prev, ...additions]);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (namingMode === "numbered") {
+        return next.map((f, i) => {
+          const ext = f.name.substring(f.name.lastIndexOf("."));
+          return { ...f, newName: `${startEpNumber + i}${ext}` };
+        });
+      }
+      return next;
+    });
+  };
+
+  const moveFile = (idx: number, dir: -1 | 1) => {
+    setFiles((prev) => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      if (namingMode === "numbered") {
+        return next.map((f, i) => {
+          const ext = f.name.substring(f.name.lastIndexOf("."));
+          return { ...f, newName: `${startEpNumber + i}${ext}` };
+        });
+      }
+      return next;
+    });
+  };
+
+  const renameFile = (idx: number, newName: string) => {
+    setFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, newName } : f)));
+  };
+
+  const applyNumbered = () => {
+    setNamingMode("numbered");
+    setFiles((prev) => prev.map((f, i) => {
+      const ext = f.name.substring(f.name.lastIndexOf("."));
+      return { ...f, newName: `${startEpNumber + i}${ext}` };
+    }));
+  };
+
+  const applyCustom = () => {
+    setNamingMode("custom");
+    setFiles((prev) => prev.map((f) => ({ ...f, newName: f.name })));
+  };
+
+  const handleSave = async () => {
+    if (!selected || files.length === 0) return;
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch("/api/migrator/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourcePath: selected.sourcePath,
+          files: files.map((f) => ({ sourcePath: f.sourcePath, newName: f.newName })),
+          updateEpisodeCount: selected.type.toLowerCase() === "tv show",
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setSaveResult({ ok: false, message: data.error });
+      } else {
+        setSaveResult({ ok: true, message: data.message || "Files added!" });
+        setFiles([]);
+        fetch("/api/media/titles").then((r) => r.json()).then(setTitles).catch(() => {});
+        window.dispatchEvent(new CustomEvent("ossflix-media-updated"));
+      }
+    } catch (err: any) {
+      setSaveResult({ ok: false, message: err.message || "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "2rem" }}>
+        <div style={{
+          width: "24px", height: "24px", margin: "0 auto",
+          border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+          borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
+        }} />
+      </div>
+    );
+  }
+
+  // Title selection view
+  if (!selected) {
+    return (
+      <div>
+        <p style={{ fontSize: "0.82rem", color: "var(--oss-text-muted)", marginBottom: "12px" }}>
+          Select a title to add files to.
+        </p>
+        <input
+          type="text" value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={() => setFocusedField("search")}
+          onBlur={() => setFocusedField(null)}
+          placeholder="Search titles..."
+          style={{ ...css.input, marginBottom: "12px", ...(focusedField === "search" ? css.inputFocus : {}) }}
+        />
+        <div style={{ maxHeight: "320px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+          {filtered.length === 0 && (
+            <p style={{ color: "var(--oss-text-muted)", fontSize: "0.82rem", textAlign: "center", padding: "1.5rem" }}>
+              {titles.length === 0 ? "No titles in your library yet. Use the Migrator to add one." : "No matching titles."}
+            </p>
+          )}
+          {filtered.map((t) => (
+            <button
+              key={t.dirPath}
+              onClick={() => handleSelect(t)}
+              style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                padding: "10px 12px", border: "none", borderRadius: "8px",
+                background: "transparent", color: "var(--oss-text)",
+                cursor: "pointer", textAlign: "left", width: "100%",
+                transition: "background 0.15s ease",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--oss-bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              {t.imagePath ? (
+                <img src={t.imagePath} alt="" style={{ width: "48px", height: "32px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }} />
+              ) : (
+                <div style={{
+                  width: "48px", height: "32px", borderRadius: "4px", flexShrink: 0,
+                  background: "var(--oss-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {t.type.toLowerCase() === "movie" ? <IconFilm /> : <IconTv />}
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "0.85rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                <div style={{ fontSize: "0.72rem", color: "var(--oss-text-muted)" }}>
+                  {t.type === "tv show" ? `TV Show \u00B7 Season ${t.season} \u00B7 ${t.episodes} episodes` : "Movie"}
+                </div>
+              </div>
+              <IconChevron />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // File add view for selected title
+  return (
+    <div>
+      {/* Selected title header */}
+      <button
+        onClick={() => { setSelected(null); setFiles([]); setSaveResult(null); }}
+        style={{
+          display: "flex", alignItems: "center", gap: "6px",
+          background: "none", border: "none", color: "var(--oss-accent)",
+          cursor: "pointer", padding: "0", marginBottom: "12px", fontSize: "0.82rem", fontWeight: 500,
+        }}
+      >
+        <IconBack /> Back to titles
+      </button>
+
+      <div style={{
+        display: "flex", alignItems: "center", gap: "10px",
+        padding: "12px 14px", borderRadius: "10px",
+        background: "var(--oss-bg-elevated)", marginBottom: "16px",
+      }}>
+        {selected.imagePath ? (
+          <img src={selected.imagePath} alt="" style={{ width: "56px", height: "36px", borderRadius: "4px", objectFit: "cover" }} />
+        ) : (
+          <div style={{
+            width: "56px", height: "36px", borderRadius: "4px",
+            background: "var(--oss-bg-card)", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {selected.type.toLowerCase() === "movie" ? <IconFilm /> : <IconTv />}
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>{selected.name}</div>
+          <div style={{ fontSize: "0.72rem", color: "var(--oss-text-muted)" }}>
+            {selected.type === "tv show" ? `Season ${selected.season} \u00B7 ${selected.episodes} episodes` : "Movie"}
+            {" \u00B7 "}
+            <span style={{ fontFamily: "monospace", fontSize: "0.7rem" }}>{selected.sourcePath}</span>
+          </div>
+        </div>
+      </div>
+
+      {saveResult && (
+        <div style={{
+          padding: "10px 14px", borderRadius: "8px", marginBottom: "12px",
+          background: saveResult.ok ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
+          color: saveResult.ok ? "#22c55e" : "#ef4444",
+          fontSize: "0.82rem", fontWeight: 500,
+        }}>
+          {saveResult.message}
+        </div>
+      )}
+
+      {/* Naming mode */}
+      <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
+        <button style={{ ...css.btn, ...css.btnSmall, ...(namingMode === "numbered" ? css.btnPrimary : css.btnSecondary) }} onClick={applyNumbered}>
+          Numbered (from {startEpNumber})
+        </button>
+        <button style={{ ...css.btn, ...css.btnSmall, ...(namingMode === "custom" ? css.btnPrimary : css.btnSecondary) }} onClick={applyCustom}>
+          Keep Original
+        </button>
+      </div>
+
+      {/* File browser */}
+      <SourceBrowser onFilesSelected={handleFilesFromBrowser} />
+
+      {/* File list */}
+      {files.length > 0 && (
+        <div style={{ marginBottom: "12px" }}>
+          <label style={{ ...css.label, marginBottom: "8px" }}>{files.length} file{files.length > 1 ? "s" : ""} to add</label>
+          {files.map((file, idx) => (
+            <div key={idx} style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "8px 10px", borderRadius: "8px",
+              background: "var(--oss-bg-elevated)", marginBottom: "4px",
+            }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", flexShrink: 0 }}>
+                <button onClick={() => moveFile(idx, -1)} disabled={idx === 0}
+                  style={{ background: "none", border: "none", color: idx === 0 ? "var(--oss-border)" : "var(--oss-text-muted)", cursor: idx === 0 ? "default" : "pointer", padding: "1px" }}>
+                  <IconArrowUp />
+                </button>
+                <button onClick={() => moveFile(idx, 1)} disabled={idx === files.length - 1}
+                  style={{ background: "none", border: "none", color: idx === files.length - 1 ? "var(--oss-border)" : "var(--oss-text-muted)", cursor: idx === files.length - 1 ? "default" : "pointer", padding: "1px" }}>
+                  <IconArrowDown />
+                </button>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+                {editingIndex === idx ? (
+                  <input type="text" value={file.newName} onChange={(e) => renameFile(idx, e.target.value)}
+                    onBlur={() => setEditingIndex(null)} onKeyDown={(e) => { if (e.key === "Enter") setEditingIndex(null); }}
+                    autoFocus style={{ ...css.input, padding: "3px 6px", fontSize: "0.78rem", marginTop: "2px" }} />
+                ) : (
+                  <div style={{ fontSize: "0.82rem", fontWeight: 500, cursor: "pointer", color: "var(--oss-accent)" }} onClick={() => setEditingIndex(idx)}>
+                    &rarr; {file.newName}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => removeFile(idx)}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: "2px", flexShrink: 0 }}>
+                <IconX />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add button */}
+      {files.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button style={{ ...css.btn, ...css.btnPrimary, padding: "8px 16px", fontSize: "0.82rem", opacity: saving ? 0.6 : 1 }}
+            disabled={saving} onClick={handleSave}>
+            {saving ? "Adding..." : (
+              <><IconCheck /> Add {files.length} file{files.length > 1 ? "s" : ""}</>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Settings Modal ──
 function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   show: boolean; onHide: () => void;
   profile: ProfileData; onProfileUpdate: (p: ProfileData) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"directories" | "about">("directories");
+  const [activeTab, setActiveTab] = useState<"directories" | "addmedia" | "migrator" | "about">("directories");
   const [moviesDir, setMoviesDir] = useState(profile.movies_directory ?? "");
   const [tvshowsDir, setTvshowsDir] = useState(profile.tvshows_directory ?? "");
   const [browseTarget, setBrowseTarget] = useState<"movies" | "tvshows" | null>(null);
@@ -451,7 +1332,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
       body: JSON.stringify({ movies_directory: moviesDir || null, tvshows_directory: tvshowsDir || null }),
     })
       .then((r) => r.json())
-      .then((data) => { onProfileUpdate(data); onHide(); })
+      .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
       .catch((err) => console.error("Failed to save settings:", err))
       .finally(() => setSaving(false));
   };
@@ -474,7 +1355,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   return (
     <>
       <div style={css.overlay} onClick={(e) => { if (e.target === e.currentTarget) onHide(); }}>
-        <div style={{ ...css.panel, ...css.panelLg }}>
+        <div style={{ ...css.panel, ...css.panelLg, maxWidth: (activeTab === "migrator" || activeTab === "addmedia") ? "700px" : "640px", transition: "max-width 0.3s ease" }}>
           <div style={css.header}>
             <span style={css.headerTitle}>Settings</span>
             <button style={css.closeBtn} onClick={onHide}><IconX /></button>
@@ -487,6 +1368,12 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
           }}>
             <button style={tabStyle(activeTab === "directories")} onClick={() => setActiveTab("directories")}>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconFolder /> Media</span>
+            </button>
+            <button style={tabStyle(activeTab === "addmedia")} onClick={() => setActiveTab("addmedia")}>
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconAddFile /> Add Media</span>
+            </button>
+            <button style={tabStyle(activeTab === "migrator")} onClick={() => setActiveTab("migrator")}>
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconPlus /> Migrator</span>
             </button>
             <button style={tabStyle(activeTab === "about")} onClick={() => setActiveTab("about")}>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconInfo /> About</span>
@@ -571,6 +1458,10 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                 </div>
               </>
             )}
+
+            {activeTab === "addmedia" && <AddMediaTab />}
+
+            {activeTab === "migrator" && <MigratorTab />}
 
             {activeTab === "about" && (
               <div style={{ textAlign: "center", padding: "2rem 0" }}>

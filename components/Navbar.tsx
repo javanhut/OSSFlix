@@ -94,6 +94,7 @@ export function NavBar() {
           <ul className="oss-nav-links">
             <li><Link to="/movies" className="oss-nav-link">Movies</Link></li>
             <li><Link to="/tvshows" className="oss-nav-link">TV Shows</Link></li>
+            <li><Link to="/anime" className="oss-nav-link">Anime</Link></li>
             <li className="oss-genre-trigger">
               <span className="oss-nav-link">Genres</span>
               <div className="oss-genre-dropdown">

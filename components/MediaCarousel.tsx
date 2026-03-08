@@ -29,6 +29,17 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     setActiveIndex((i) => (i + 1) % mediaList.length);
   }, [mediaList.length]);
 
+  // Clear caches when media is updated
+  useEffect(() => {
+    const handler = () => {
+      fetchedDirs.current.clear();
+      setInfoCache({});
+      setProgressCache({});
+    };
+    window.addEventListener("ossflix-media-updated", handler);
+    return () => window.removeEventListener("ossflix-media-updated", handler);
+  }, []);
+
   // Auto-rotate every 8s
   useEffect(() => {
     if (mediaList.length <= 1) return;

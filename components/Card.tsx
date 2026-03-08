@@ -28,12 +28,201 @@ type ProgressEntry = {
   duration: number;
 };
 
+type EpisodeTiming = {
+  video_src: string;
+  intro_start: number | null;
+  intro_end: number | null;
+  outro_start: number | null;
+  outro_end: number | null;
+};
+
+function secsToMmSs(secs: number | null): string {
+  if (secs == null) return "";
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function mmSsToSecs(val: string): number | null {
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  // Support "m:ss" or just plain seconds
+  if (trimmed.includes(":")) {
+    const [minStr, secStr] = trimmed.split(":");
+    const m = parseInt(minStr, 10) || 0;
+    const s = parseInt(secStr, 10) || 0;
+    return m * 60 + s;
+  }
+  const n = parseFloat(trimmed);
+  return isNaN(n) ? null : n;
+}
+
+function parseEpisodeLabel(videoSrc: string): string {
+  const filename = videoSrc.split("/").pop() || videoSrc;
+  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
+  if (match) return `S${match[2]} E${match[3]} - ${match[1].replace(/_/g, " ")}`;
+  return filename.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+}
+
+type TimingRowData = {
+  video_src: string;
+  introStart: string;
+  introEnd: string;
+  outroStart: string;
+  outroEnd: string;
+};
+
+function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
+  show: boolean;
+  videos: string[];
+  timingsMap: Record<string, EpisodeTiming>;
+  onSaveAll: (timings: EpisodeTiming[]) => void;
+  onClose: () => void;
+}) {
+  const [rows, setRows] = useState<TimingRowData[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Re-init rows when modal opens
+  useEffect(() => {
+    if (show) {
+      setRows(videos.map((v) => {
+        const t = timingsMap[v];
+        return {
+          video_src: v,
+          introStart: secsToMmSs(t?.intro_start ?? null),
+          introEnd: secsToMmSs(t?.intro_end ?? null),
+          outroStart: secsToMmSs(t?.outro_start ?? null),
+          outroEnd: secsToMmSs(t?.outro_end ?? null),
+        };
+      }));
+      setSaved(false);
+      setSaving(false);
+    }
+  }, [show, videos, timingsMap]);
+
+  const updateRow = (idx: number, field: keyof TimingRowData, value: string) => {
+    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+    setSaved(false);
+  };
+
+  const handleSave = () => {
+    setSaving(true);
+    const timings: EpisodeTiming[] = rows.map((r) => ({
+      video_src: r.video_src,
+      intro_start: mmSsToSecs(r.introStart),
+      intro_end: mmSsToSecs(r.introEnd),
+      outro_start: mmSsToSecs(r.outroStart),
+      outro_end: mmSsToSecs(r.outroEnd),
+    }));
+    onSaveAll(timings);
+    setTimeout(() => { setSaving(false); setSaved(true); }, 400);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: "6px 8px", borderRadius: "6px", textAlign: "center",
+    border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)",
+    color: "#fff", fontSize: "0.85rem", outline: "none",
+  };
+
+  return (
+    <Modal show={show} onHide={onClose} size="lg" centered dialogClassName="oss-timings-modal">
+      <ModalHeader closeButton>
+        <ModalTitle style={{ fontSize: "1.1rem" }}>
+          Episode Timings
+          <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", marginLeft: "10px", fontWeight: 400 }}>
+            format: m:ss
+          </span>
+        </ModalTitle>
+      </ModalHeader>
+      <ModalBody>
+        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.8rem", marginBottom: "16px" }}>
+          Set intro and outro timestamps for skip buttons during playback. Use m:ss format (e.g. 1:30 for 1 minute 30 seconds).
+        </p>
+
+        {/* Column headers */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: "10px",
+          padding: "0 0 8px", fontSize: "0.72rem", fontWeight: 600,
+          color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.5px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}>
+          <div>Episode</div>
+          <div style={{ textAlign: "center" }}>Intro Start</div>
+          <div style={{ textAlign: "center" }}>Intro End</div>
+          <div style={{ textAlign: "center" }}>Outro Start</div>
+          <div style={{ textAlign: "center" }}>Outro End</div>
+        </div>
+
+        {/* Episode rows */}
+        <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+          {rows.map((r, idx) => (
+            <div key={r.video_src} style={{
+              display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: "10px",
+              alignItems: "center", padding: "10px 0",
+              borderBottom: idx < rows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+            }}>
+              <div style={{
+                fontSize: "0.82rem", color: "#fff", fontWeight: 500,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }} title={parseEpisodeLabel(r.video_src)}>
+                {parseEpisodeLabel(r.video_src)}
+              </div>
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="0:00"
+                value={r.introStart}
+                onChange={(e) => updateRow(idx, "introStart", e.target.value)}
+              />
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="0:00"
+                value={r.introEnd}
+                onChange={(e) => updateRow(idx, "introEnd", e.target.value)}
+              />
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="0:00"
+                value={r.outroStart}
+                onChange={(e) => updateRow(idx, "outroStart", e.target.value)}
+              />
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="0:00"
+                value={r.outroEnd}
+                onChange={(e) => updateRow(idx, "outroEnd", e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+      </ModalBody>
+      <ModalFooter>
+        {saved && (
+          <span style={{ color: "#22c55e", fontSize: "0.82rem", fontWeight: 600, marginRight: "auto" }}>
+            &#10003; Saved successfully
+          </span>
+        )}
+        <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onClose}>Cancel</button>
+        <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save All"}
+        </button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
 export function Card({ show, onHide, dirPath }: CardProps) {
   const [information, setInformation] = useState<MediaInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerInitialTime, setPlayerInitialTime] = useState(0);
   const [progressMap, setProgressMap] = useState<Record<string, ProgressEntry>>({});
+  const [timingsMap, setTimingsMap] = useState<Record<string, EpisodeTiming>>({});
+  const [showTimingsModal, setShowTimingsModal] = useState(false);
 
   const fetchProgress = () => {
     if (!dirPath) return;
@@ -47,6 +236,34 @@ export function Card({ show, onHide, dirPath }: CardProps) {
       .catch(() => {});
   };
 
+  const fetchTimings = () => {
+    if (!dirPath) return;
+    fetch(`/api/episode/timings/batch?dir=${encodeURIComponent(dirPath)}`)
+      .then((res) => res.json())
+      .then((rows: EpisodeTiming[]) => {
+        const map: Record<string, EpisodeTiming> = {};
+        for (const r of rows) map[r.video_src] = r;
+        setTimingsMap(map);
+      })
+      .catch(() => {});
+  };
+
+  const saveAllTimings = (timings: EpisodeTiming[]) => {
+    Promise.all(
+      timings.map((t) =>
+        fetch("/api/episode/timings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(t),
+        })
+      )
+    ).then(() => {
+      const map: Record<string, EpisodeTiming> = {};
+      for (const t of timings) map[t.video_src] = t;
+      setTimingsMap(map);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     if (show && dirPath) {
       setLoading(true);
@@ -56,14 +273,19 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         .then((data) => setInformation(data))
         .finally(() => setLoading(false));
       fetchProgress();
+      fetchTimings();
     }
   }, [show, dirPath]);
 
-  const handlePlay = (videoSrc?: string) => {
+  const handlePlay = (videoSrc?: string, fromBeginning = false) => {
     const src = videoSrc || information?.videos?.[0];
     if (!src) return;
-    const saved = progressMap[src];
-    setPlayerInitialTime(saved?.current_time || 0);
+    if (fromBeginning) {
+      setPlayerInitialTime(0);
+    } else {
+      const saved = progressMap[src];
+      setPlayerInitialTime(saved?.current_time || 0);
+    }
     setPlayerSrc(src);
   };
 
@@ -86,7 +308,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
   return (
     <>
-      <Modal show={show && !playerSrc} onHide={onHide} size="lg" centered>
+      <Modal show={show && !playerSrc && !showTimingsModal} onHide={onHide} size="lg" centered>
         {loading && (
           <ModalBody className="text-center py-5">
             <Spinner animation="border" />
@@ -144,7 +366,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                 <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
                   <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {information.season}</span>
                   {" · "}
-                  {information.episodes} episode{information.episodes !== 1 ? "s" : ""}
+                  {information.videos.length} episode{information.videos.length !== 1 ? "s" : ""}
                 </p>
               )}
 
@@ -153,16 +375,89 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   {information.videos.map((v) => {
                     const prog = progressMap[v];
                     const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
+                    const isInProgress = prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10);
+                    const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 10;
+
+                    const formatTime = (secs: number) => {
+                      const m = Math.floor(secs / 60);
+                      const s = Math.floor(secs % 60);
+                      return `${m}:${s.toString().padStart(2, "0")}`;
+                    };
+
                     return (
-                      <div key={v}>
-                        <Episode
-                          filename={v.split("/").pop()!}
-                          thumbnail={information.bannerImage}
-                          onClick={() => handlePlay(v)}
-                        />
+                      <div key={v} style={{
+                        borderRadius: "var(--oss-radius)", overflow: "hidden",
+                        marginBottom: "4px",
+                        border: isInProgress ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent",
+                        background: isInProgress ? "rgba(99,102,241,0.05)" : "transparent",
+                        transition: "all 0.2s ease",
+                      }}>
+                        <div style={{ position: "relative" }}>
+                          <Episode
+                            filename={v.split("/").pop()!}
+                            thumbnail={information.bannerImage}
+                            onClick={() => handlePlay(v)}
+                          />
+                          {/* Status badges & actions */}
+                          <div style={{
+                            position: "absolute", top: "50%", right: "40px",
+                            transform: "translateY(-50%)",
+                            display: "flex", alignItems: "center", gap: "6px",
+                          }}>
+                            {isInProgress && (
+                              <span style={{
+                                fontSize: "0.7rem", fontWeight: 600,
+                                color: "var(--oss-accent)",
+                                background: "rgba(99,102,241,0.15)",
+                                padding: "2px 8px", borderRadius: "4px",
+                              }}>
+                                {formatTime(prog!.current_time)} / {formatTime(prog!.duration)}
+                              </span>
+                            )}
+                            {isCompleted && (
+                              <span style={{
+                                fontSize: "0.7rem", fontWeight: 600,
+                                color: "#22c55e",
+                                background: "rgba(34,197,94,0.15)",
+                                padding: "2px 8px", borderRadius: "4px",
+                              }}>
+                                &#10003; Watched
+                              </span>
+                            )}
+                            {(isInProgress || isCompleted) && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handlePlay(v, true); }}
+                                style={{
+                                  fontSize: "0.7rem", fontWeight: 600,
+                                  color: "var(--oss-text-muted)",
+                                  background: "rgba(255,255,255,0.08)",
+                                  padding: "2px 8px", borderRadius: "4px",
+                                  border: "none", cursor: "pointer",
+                                  transition: "all 0.15s ease",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--oss-text-muted)"; e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+                                title="Play from beginning"
+                              >
+                                &#8634; Restart
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {/* Progress bar */}
                         {pct > 0 && (
-                          <div className="oss-progress-track">
-                            <div className="oss-progress-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
+                          <div style={{
+                            height: "4px", background: "rgba(255,255,255,0.08)",
+                            borderRadius: "0 0 4px 4px", overflow: "hidden",
+                            margin: "0 12px 8px",
+                          }}>
+                            <div style={{
+                              height: "100%",
+                              width: `${Math.min(pct, 100)}%`,
+                              background: isCompleted ? "#22c55e" : "var(--oss-accent)",
+                              borderRadius: "2px",
+                              transition: "width 0.3s ease",
+                            }} />
                           </div>
                         )}
                       </div>
@@ -173,6 +468,18 @@ export function Card({ show, onHide, dirPath }: CardProps) {
             </ModalBody>
             <ModalFooter>
               <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>
+              {information.videos?.length > 1 && (
+                <button
+                  className="oss-btn oss-btn-sm"
+                  onClick={() => setShowTimingsModal(true)}
+                  style={{
+                    background: "rgba(99,102,241,0.12)", color: "#818cf8",
+                    border: "1px solid rgba(99,102,241,0.25)",
+                  }}
+                >
+                  &#9881; Timings
+                </button>
+              )}
               {information.videos?.length > 0 && (
                 <>
                   {hasResumable && (
@@ -190,6 +497,16 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         )}
       </Modal>
 
+      {information?.videos && (
+        <TimingsModal
+          show={showTimingsModal}
+          videos={information.videos}
+          timingsMap={timingsMap}
+          onSaveAll={saveAllTimings}
+          onClose={() => setShowTimingsModal(false)}
+        />
+      )}
+
       <VideoPlayer
         show={!!playerSrc}
         onHide={() => { setPlayerSrc(null); fetchProgress(); }}
@@ -197,6 +514,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         title={information?.name || ""}
         dirPath={dirPath}
         initialTime={playerInitialTime}
+        timings={playerSrc ? timingsMap[playerSrc] : undefined}
         onNext={() => {
           if (!information?.videos || !playerSrc) return;
           const currentIndex = information.videos.indexOf(playerSrc);
@@ -210,6 +528,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
             fetchProgress();
           }
         }}
+        hasNext={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)}
       />
     </>
   );

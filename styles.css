@@ -512,6 +512,34 @@ html, body, #root {
 }
 .modal-title { color: var(--oss-text) !important; }
 .btn-close { filter: invert(1) !important; }
+body.modal-open {
+  overflow: hidden !important;
+}
+body.modal-open #root {
+  filter: blur(8px);
+  transition: filter 0.2s ease;
+}
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+.modal {
+  overflow: hidden !important;
+}
+.modal-dialog {
+  max-height: 90vh !important;
+  margin: auto !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.modal-content {
+  max-height: 90vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.modal-body {
+  overflow-y: auto !important;
+  flex: 1 !important;
+}
 
 /* Bootstrap form overrides */
 .form-control, .form-select {

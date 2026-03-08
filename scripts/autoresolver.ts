@@ -179,6 +179,15 @@ export function getTitleFromDb(dirPath: string) {
   };
 }
 
+export function listAllTitles() {
+  return db.prepare(`
+    SELECT t.name, t.type, t.image_path AS imagePath, t.dir_path AS dirPath,
+           t.source_path AS sourcePath, t.season, t.episodes
+    FROM titles t
+    ORDER BY t.name
+  `).all() as { name: string; type: string; imagePath: string | null; dirPath: string; sourcePath: string; season: number | null; episodes: number | null }[];
+}
+
 export function searchTitles(query: string) {
   return db.prepare(`
     SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type

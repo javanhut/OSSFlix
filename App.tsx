@@ -4,7 +4,7 @@ import Home from "./pages/Hero";
 import Movies from "./pages/Movies";
 import TVShows from "./pages/TVShows";
 import Genre from "./pages/Genre";
-
+import Anime from "./pages/Anime";
 export default function App() {
   return (
     <BrowserRouter>
@@ -13,6 +13,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/movies" element={<Movies />} />
           <Route path="/tvshows" element={<TVShows />} />
+          <Route path="/anime" element={<Anime />} />
           <Route path="/genre/:genre" element={<Genre />} />
         </Route>
       </Routes>
