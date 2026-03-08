@@ -28,6 +28,35 @@ bun --hot index.ts
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Docker
+
+### Build
+
+```bash
+podman build -t localhost/reelscape:1.0.0 .
+```
+
+### Run
+
+Mount your media directory into the container at `/media`. The container exposes port 3000.
+
+```bash
+podman run -d \
+  -p 3001:3000 \
+  -v /path/to/your/media:/media \
+  --name reelscape \
+  localhost/reelscape:1.0.0
+```
+
+Then open [http://localhost:3001](http://localhost:3001) and go to **Settings** to set your Movies directory to `/media/Movies` and TV Shows directory to `/media/TV Shows`.
+
+To stop and remove the container:
+
+```bash
+podman stop reelscape
+podman rm reelscape
+```
+
 ## Adding Media
 
 Reelscape scans two directories — one for **Movies** and one for **TV Shows**. Each title lives in its own subfolder containing a `.toml` metadata file, a banner image, and video files.
