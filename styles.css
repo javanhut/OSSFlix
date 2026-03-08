@@ -744,6 +744,7 @@ body.modal-open #root {
 
 /* ── Responsive ── */
 /* ── Global keyframes (used by profile/player) ── */
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes vpSpin { to { transform: rotate(360deg); } }
 @keyframes vpSlideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes vpFadeOut { from { opacity: 1; } to { opacity: 0; } }

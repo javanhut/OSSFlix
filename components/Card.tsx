@@ -224,6 +224,24 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
   );
 }
 
+function parseSeasonNumber(videoSrc: string): number | null {
+  const filename = videoSrc.split("/").pop() || videoSrc;
+  const match = filename.match(/_s(\d+)_ep\d+\.[^.]+$/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function groupVideosBySeason(videos: string[]): Map<number, string[]> {
+  const seasons = new Map<number, string[]>();
+  for (const v of videos) {
+    const season = parseSeasonNumber(v);
+    if (season != null) {
+      if (!seasons.has(season)) seasons.set(season, []);
+      seasons.get(season)!.push(v);
+    }
+  }
+  return new Map([...seasons.entries()].sort((a, b) => a[0] - b[0]));
+}
+
 export function Card({ show, onHide, dirPath }: CardProps) {
   const { profile } = useProfile();
   const pid = profile?.id;
@@ -236,6 +254,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   const [timingsMap, setTimingsMap] = useState<Record<string, EpisodeTiming>>({});
   const [showTimingsModal, setShowTimingsModal] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   const fetchProgress = () => {
     if (!dirPath) return;
@@ -302,9 +321,16 @@ export function Card({ show, onHide, dirPath }: CardProps) {
     if (show && dirPath) {
       setLoading(true);
       setInformation(null);
+      setSelectedSeason(null);
       fetch(`/api/media/info?dir=${encodeURIComponent(dirPath)}`)
         .then((res) => res.json())
-        .then((data) => setInformation(data))
+        .then((data: MediaInfo) => {
+          setInformation(data);
+          const seasons = groupVideosBySeason(data.videos || []);
+          if (seasons.size > 0) {
+            setSelectedSeason([...seasons.keys()][0]);
+          }
+        })
         .finally(() => setLoading(false));
       fetchProgress();
       fetchTimings();
@@ -413,17 +439,70 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   {information.cast.filter(c => c).join(", ")}
                 </p>
               )}
-              {information.season != null && (
-                <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
-                  <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {information.season}</span>
-                  {" · "}
-                  {information.videos.length} episode{information.videos.length !== 1 ? "s" : ""}
-                </p>
-              )}
+              {(() => {
+                const seasonMap = groupVideosBySeason(information.videos || []);
+                const seasonKeys = [...seasonMap.keys()];
+                const hasSeasons = seasonKeys.length > 0;
 
-              {information.videos?.length > 0 && (
+                if (hasSeasons && seasonKeys.length > 1) {
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "1rem" }}>
+                      <select
+                        value={selectedSeason ?? ""}
+                        onChange={(e) => setSelectedSeason(parseInt(e.target.value, 10))}
+                        style={{
+                          background: "var(--oss-bg-elevated)",
+                          color: "var(--oss-text)",
+                          border: "1px solid var(--oss-border)",
+                          padding: "6px 12px",
+                          borderRadius: "6px",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          outline: "none",
+                        }}
+                      >
+                        {seasonKeys.map((s) => (
+                          <option key={s} value={s}>Season {s}</option>
+                        ))}
+                      </select>
+                      <span style={{ color: "var(--oss-text-muted)", fontSize: "0.82rem" }}>
+                        {selectedSeason != null && seasonMap.get(selectedSeason)
+                          ? `${seasonMap.get(selectedSeason)!.length} episode${seasonMap.get(selectedSeason)!.length !== 1 ? "s" : ""}`
+                          : ""}
+                      </span>
+                    </div>
+                  );
+                } else if (hasSeasons) {
+                  return (
+                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                      <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {seasonKeys[0]}</span>
+                      {" · "}
+                      {seasonMap.get(seasonKeys[0])!.length} episode{seasonMap.get(seasonKeys[0])!.length !== 1 ? "s" : ""}
+                    </p>
+                  );
+                } else if (information.season != null) {
+                  return (
+                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                      <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {information.season}</span>
+                      {" · "}
+                      {information.videos.length} episode{information.videos.length !== 1 ? "s" : ""}
+                    </p>
+                  );
+                }
+                return null;
+              })()}
+
+              {information.videos?.length > 0 && (() => {
+                const seasonMap = groupVideosBySeason(information.videos);
+                const hasSeasons = seasonMap.size > 0;
+                const displayVideos = hasSeasons && selectedSeason != null
+                  ? (seasonMap.get(selectedSeason) || [])
+                  : information.videos;
+
+                return (
                 <div style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}>
-                  {information.videos.map((v) => {
+                  {displayVideos.map((v) => {
                     const prog = progressMap[v];
                     const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
                     const isInProgress = prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10);
@@ -515,7 +594,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
             </ModalBody>
             <ModalFooter>
               <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>

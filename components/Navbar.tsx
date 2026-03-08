@@ -25,6 +25,7 @@ export function NavBar() {
   const [showResults, setShowResults] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedDir, setSelectedDir] = useState("");
+  const [rescanning, setRescanning] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,6 +89,13 @@ export function NavBar() {
   };
 
   const totalResults = genreResults.length + results.length;
+
+  const handleRescan = () => {
+    setRescanning(true);
+    fetch("/api/media/resolve")
+      .then(() => window.location.reload())
+      .catch(() => setRescanning(false));
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showResults || totalResults === 0) return;
@@ -204,6 +212,36 @@ export function NavBar() {
               </div>
             )}
           </div>
+          <button
+            onClick={handleRescan}
+            disabled={rescanning}
+            title="Rescan media library"
+            style={{
+              background: rescanning ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: rescanning ? "#60a5fa" : "var(--oss-text-muted)",
+              padding: "6px 10px",
+              borderRadius: "6px",
+              cursor: rescanning ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "0.8rem",
+              fontWeight: 500,
+              transition: "all 0.2s ease",
+            }}
+          >
+            <svg
+              width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={rescanning ? { animation: "spin 1s linear infinite" } : {}}
+            >
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+            {rescanning ? "Scanning..." : "Rescan"}
+          </button>
           <Profile />
         </div>
       </nav>
