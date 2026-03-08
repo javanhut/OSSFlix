@@ -69,7 +69,7 @@ export default function ProfileSelect() {
         <h1 style={{
           fontSize: "3rem", fontWeight: 800, color: "#fff", margin: 0,
           letterSpacing: "-1px",
-          background: "linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #a5b4fc 100%)",
+          background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
         }}>
           OSSFlix
@@ -86,7 +86,7 @@ export default function ProfileSelect() {
         <div style={{
           width: "48px", height: "48px",
           border: "3px solid rgba(255,255,255,0.1)",
-          borderTopColor: "#6366f1", borderRadius: "50%",
+          borderTopColor: "#3b82f6", borderRadius: "50%",
           animation: "vpSpin 0.8s linear infinite",
         }} />
       ) : (
@@ -111,8 +111,8 @@ export default function ProfileSelect() {
                   width: "140px", position: "relative",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "#6366f1";
-                  e.currentTarget.style.background = "rgba(99,102,241,0.08)";
+                  e.currentTarget.style.borderColor = "#3b82f6";
+                  e.currentTarget.style.background = "rgba(59,130,246,0.08)";
                   e.currentTarget.style.transform = "scale(1.05)";
                   const del = e.currentTarget.querySelector("[data-delete]") as HTMLElement;
                   if (del) del.style.opacity = "1";
@@ -185,8 +185,8 @@ export default function ProfileSelect() {
                   width: "140px",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(99,102,241,0.4)";
-                  e.currentTarget.style.background = "rgba(99,102,241,0.05)";
+                  e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
+                  e.currentTarget.style.background = "rgba(59,130,246,0.05)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
@@ -253,7 +253,7 @@ export default function ProfileSelect() {
                   onClick={handleCreate}
                   style={{
                     padding: "8px 24px", borderRadius: "8px",
-                    border: "none", background: "#6366f1",
+                    border: "none", background: "#3b82f6",
                     color: "#fff", fontSize: "0.85rem", fontWeight: 600,
                     cursor: "pointer",
                   }}

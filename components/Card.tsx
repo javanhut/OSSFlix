@@ -358,9 +358,9 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   onClick={toggleWatchlist}
                   title={inWatchlist ? "Remove from My List" : "Add to My List"}
                   style={{
-                    background: inWatchlist ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.08)",
-                    border: inWatchlist ? "1px solid rgba(99,102,241,0.3)" : "1px solid rgba(255,255,255,0.12)",
-                    color: inWatchlist ? "#818cf8" : "var(--oss-text-muted)",
+                    background: inWatchlist ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.08)",
+                    border: inWatchlist ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.12)",
+                    color: inWatchlist ? "#60a5fa" : "var(--oss-text-muted)",
                     padding: "4px 12px", borderRadius: "4px", fontSize: "0.75rem",
                     fontWeight: 600, cursor: "pointer", transition: "all 0.2s ease",
                     whiteSpace: "nowrap",
@@ -439,8 +439,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                       <div key={v} style={{
                         borderRadius: "var(--oss-radius)", overflow: "hidden",
                         marginBottom: "4px",
-                        border: isInProgress ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent",
-                        background: isInProgress ? "rgba(99,102,241,0.05)" : "transparent",
+                        border: isInProgress ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
+                        background: isInProgress ? "rgba(59,130,246,0.05)" : "transparent",
                         transition: "all 0.2s ease",
                       }}>
                         <div style={{ position: "relative" }}>
@@ -459,7 +459,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                               <span style={{
                                 fontSize: "0.7rem", fontWeight: 600,
                                 color: "var(--oss-accent)",
-                                background: "rgba(99,102,241,0.15)",
+                                background: "rgba(59,130,246,0.15)",
                                 padding: "2px 8px", borderRadius: "4px",
                               }}>
                                 {formatTime(prog!.current_time)} / {formatTime(prog!.duration)}
@@ -524,8 +524,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   className="oss-btn oss-btn-sm"
                   onClick={() => setShowTimingsModal(true)}
                   style={{
-                    background: "rgba(99,102,241,0.12)", color: "#818cf8",
-                    border: "1px solid rgba(99,102,241,0.25)",
+                    background: "rgba(59,130,246,0.12)", color: "#60a5fa",
+                    border: "1px solid rgba(59,130,246,0.25)",
                   }}
                 >
                   &#9881; Timings

@@ -169,7 +169,7 @@ export default function History() {
                       <div style={{
                         height: "100%",
                         width: `${Math.min(pct, 100)}%`,
-                        background: isCompleted ? "#22c55e" : "var(--oss-accent, #6366f1)",
+                        background: isCompleted ? "#22c55e" : "var(--oss-accent, #3b82f6)",
                         borderRadius: "2px",
                       }} />
                     </div>

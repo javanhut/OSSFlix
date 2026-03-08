@@ -56,7 +56,7 @@ export default function Login() {
         <h1 style={{
           fontSize: "3.5rem", fontWeight: 800, color: "#fff", margin: 0,
           letterSpacing: "-1px",
-          background: "linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #a5b4fc 100%)",
+          background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
         }}>
           OSSFlix
@@ -80,10 +80,10 @@ export default function Login() {
               onClick={() => { setTab(t); setError(""); }}
               style={{
                 flex: 1, padding: "16px", border: "none",
-                background: tab === t ? "rgba(99,102,241,0.08)" : "transparent",
-                color: tab === t ? "#a5b4fc" : "rgba(255,255,255,0.4)",
+                background: tab === t ? "rgba(59,130,246,0.08)" : "transparent",
+                color: tab === t ? "#93c5fd" : "rgba(255,255,255,0.4)",
                 fontSize: "0.9rem", fontWeight: 600, cursor: "pointer",
-                borderBottom: tab === t ? "2px solid #6366f1" : "2px solid transparent",
+                borderBottom: tab === t ? "2px solid #3b82f6" : "2px solid transparent",
                 transition: "all 0.2s ease",
               }}
             >
@@ -98,7 +98,7 @@ export default function Login() {
               <div style={{
                 width: "36px", height: "36px",
                 border: "3px solid rgba(255,255,255,0.1)",
-                borderTopColor: "#6366f1", borderRadius: "50%",
+                borderTopColor: "#3b82f6", borderRadius: "50%",
                 animation: "loginSpin 0.8s linear infinite",
               }} />
             </div>
@@ -126,8 +126,8 @@ export default function Login() {
                         width: "100%", textAlign: "left",
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = "rgba(99,102,241,0.4)";
-                        e.currentTarget.style.background = "rgba(99,102,241,0.06)";
+                        e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
+                        e.currentTarget.style.background = "rgba(59,130,246,0.06)";
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
@@ -169,7 +169,7 @@ export default function Login() {
                   onClick={() => setTab("register")}
                   style={{
                     width: "100%", padding: "12px", borderRadius: "10px",
-                    border: "none", background: "#6366f1", color: "#fff",
+                    border: "none", background: "#3b82f6", color: "#fff",
                     fontSize: "0.9rem", fontWeight: 600, cursor: "pointer",
                   }}
                 >
@@ -207,7 +207,7 @@ export default function Login() {
                     transition: "border-color 0.2s ease",
                     boxSizing: "border-box",
                   }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"}
+                  onFocus={(e) => e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)"}
                   onBlur={(e) => e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"}
                 />
               </div>
@@ -218,7 +218,7 @@ export default function Login() {
                 onClick={handleRegister}
                 style={{
                   width: "100%", padding: "12px", borderRadius: "10px",
-                  border: "none", background: "#6366f1", color: "#fff",
+                  border: "none", background: "#3b82f6", color: "#fff",
                   fontSize: "0.9rem", fontWeight: 600, cursor: "pointer",
                   transition: "opacity 0.2s ease",
                 }}

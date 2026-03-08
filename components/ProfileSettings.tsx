@@ -67,7 +67,7 @@ const IconBack = () => (
   </svg>
 );
 const IconCheck = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20,6 9,17 4,12"/>
   </svg>
 );
@@ -189,7 +189,7 @@ function FileBrowser({ show, onHide, onSelect, initialPath, mode }: {
             <div style={{ textAlign: "center", padding: "2rem" }}>
               <div style={{
                 width: "32px", height: "32px", margin: "0 auto",
-                border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+                border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#3b82f6",
                 borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
               }} />
             </div>
@@ -321,7 +321,7 @@ function ProfileModal({ show, onHide, profile, onProfileUpdate }: {
                   }}>
                     <div style={{
                       width: "28px", height: "28px",
-                      border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+                      border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#3b82f6",
                       borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
                     }} />
                   </div>
@@ -516,7 +516,7 @@ function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: s
         <div style={{ textAlign: "center", padding: "1rem" }}>
           <div style={{
             width: "20px", height: "20px", margin: "0 auto",
-            border: "2px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+            border: "2px solid rgba(255,255,255,0.1)", borderTopColor: "#3b82f6",
             borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
           }} />
         </div>
@@ -547,10 +547,10 @@ function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: s
           {browseData.files.map((file) => (
             <button key={file.path} onClick={() => toggleFile(file.path)} style={{
               ...dirItemStyle, fontSize: "0.82rem", padding: "6px 10px",
-              background: selected.has(file.path) ? "rgba(99,102,241,0.12)" : "transparent",
+              background: selected.has(file.path) ? "rgba(59,130,246,0.12)" : "transparent",
             }}
               onMouseEnter={(e) => { if (!selected.has(file.path)) e.currentTarget.style.background = "var(--oss-bg-hover)"; }}
-              onMouseLeave={(e) => { if (!selected.has(file.path)) e.currentTarget.style.background = selected.has(file.path) ? "rgba(99,102,241,0.12)" : "transparent"; }}
+              onMouseLeave={(e) => { if (!selected.has(file.path)) e.currentTarget.style.background = selected.has(file.path) ? "rgba(59,130,246,0.12)" : "transparent"; }}
             >
               <div style={{
                 width: "16px", height: "16px", borderRadius: "3px", flexShrink: 0,
@@ -817,10 +817,10 @@ function MigratorTab() {
             <label style={css.label}>Genres</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {genres.map((g) => (
-                <span key={g} style={{ ...tagStyle, background: "rgba(99,102,241,0.15)", color: "#6366f1" }}>
+                <span key={g} style={{ ...tagStyle, background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
                   {g}
                   <button onClick={() => setGenres((p) => p.filter((x) => x !== g))}
-                    style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", padding: "0 1px", fontSize: "0.9rem", lineHeight: 1 }}>&times;</button>
+                    style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", padding: "0 1px", fontSize: "0.9rem", lineHeight: 1 }}>&times;</button>
                 </span>
               ))}
             </div>
@@ -1120,7 +1120,7 @@ function AddMediaTab() {
       <div style={{ textAlign: "center", padding: "2rem" }}>
         <div style={{
           width: "24px", height: "24px", margin: "0 auto",
-          border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#6366f1",
+          border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#3b82f6",
           borderRadius: "50%", animation: "vpSpin 0.8s linear infinite",
         }} />
       </div>
@@ -1461,7 +1461,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                     style={{
                       width: "44px", height: "24px", borderRadius: "12px",
                       border: "none", cursor: "pointer",
-                      background: useGlobal ? "#6366f1" : "rgba(255,255,255,0.15)",
+                      background: useGlobal ? "#3b82f6" : "rgba(255,255,255,0.15)",
                       position: "relative", transition: "background 0.2s ease",
                       flexShrink: 0,
                     }}
@@ -1480,9 +1480,9 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
                     <div style={{
                       width: "36px", height: "36px", borderRadius: "10px",
-                      background: "rgba(99,102,241,0.15)",
+                      background: "rgba(59,130,246,0.15)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#6366f1",
+                      color: "#3b82f6",
                     }}>
                       <IconFilm />
                     </div>
@@ -1559,7 +1559,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
               <div style={{ textAlign: "center", padding: "2rem 0" }}>
                 <div style={{
                   width: "64px", height: "64px", borderRadius: "16px",
-                  background: "linear-gradient(135deg, #6366f1, #818cf8)",
+                  background: "linear-gradient(135deg, #3b82f6, #60a5fa)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   margin: "0 auto 16px", fontSize: "1.6rem", fontWeight: 800, color: "#fff",
                 }}>
@@ -1679,7 +1679,7 @@ export function Profile() {
       <div style={{
         width: "32px", height: "32px", borderRadius: "50%",
         background: "var(--oss-bg-elevated)", animation: "vpSpin 1s linear infinite",
-        border: "2px solid var(--oss-border)", borderTopColor: "#6366f1",
+        border: "2px solid var(--oss-border)", borderTopColor: "#3b82f6",
       }} />
     );
   }

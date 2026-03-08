@@ -115,7 +115,7 @@ const IconRestart = () => (
   </svg>
 );
 const IconCC = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#6366f1" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#3b82f6" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
     <path d="M10 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
     <path d="M19 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
@@ -165,7 +165,7 @@ function LoadingSpinner() {
       <div style={{
         width: "48px", height: "48px",
         border: "3px solid rgba(255,255,255,0.15)",
-        borderTopColor: "#6366f1",
+        borderTopColor: "#3b82f6",
         borderRadius: "50%",
         animation: "vpSpin 0.8s linear infinite",
       }} />
@@ -817,7 +817,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         @keyframes vpSlideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
         .vp-speed-btn { width: 100%; padding: 8px 16px; border: none; background: transparent; color: rgba(255,255,255,0.7); font-size: 0.85rem; cursor: pointer; border-radius: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s ease; }
         .vp-speed-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-        .vp-speed-btn.active { color: #6366f1; font-weight: 600; }
+        .vp-speed-btn.active { color: #3b82f6; font-weight: 600; }
         .vp-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(20,20,28,0.9); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; pointer-events: none; margin-bottom: 6px; opacity: 0; transition: opacity 0.15s ease; font-variant-numeric: tabular-nums; }
         .vp-ctrl-btn:hover .vp-tooltip { opacity: 1; }
       `}</style>
@@ -967,7 +967,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </button>
               <button onClick={() => { cancelCountdown(); if (onNext) onNext(); }} style={{
                 flex: 1, padding: "8px", borderRadius: "6px",
-                border: "none", background: "#6366f1",
+                border: "none", background: "#3b82f6",
                 color: "#fff", fontSize: "0.82rem", fontWeight: 600,
                 cursor: "pointer",
               }}>
@@ -977,7 +977,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             {/* Progress ring */}
             <svg width="40" height="40" viewBox="0 0 40 40" style={{ position: "absolute", top: "-4px", right: "-4px", opacity: 0.6 }}>
               <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
-              <circle cx="20" cy="20" r="16" fill="none" stroke="#6366f1" strokeWidth="3"
+              <circle cx="20" cy="20" r="16" fill="none" stroke="#3b82f6" strokeWidth="3"
                 strokeDasharray={`${(2 * Math.PI * 16)}`}
                 strokeDashoffset={`${(2 * Math.PI * 16) * (1 - (countdown / 10))}`}
                 strokeLinecap="round"
@@ -1008,12 +1008,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             position: "absolute", top: "50%", left: "50%",
             transform: "translate(-50%, -50%)",
             width: "72px", height: "72px",
-            background: "rgba(99,102,241,0.85)",
+            background: "rgba(59,130,246,0.85)",
             borderRadius: "50%",
             display: "flex", alignItems: "center", justifyContent: "center",
             pointerEvents: "none", zIndex: 5,
             animation: "vpPulse 2s ease infinite",
-            boxShadow: "0 0 40px rgba(99,102,241,0.4)",
+            boxShadow: "0 0 40px rgba(59,130,246,0.4)",
           }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><polygon points="8,4 20,12 8,20"/></svg>
           </div>
@@ -1087,7 +1087,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               <div style={{
                 position: "absolute", bottom: "20px",
                 left: `${dragX}px`, transform: "translateX(-50%)",
-                background: "rgba(99,102,241,0.92)", backdropFilter: "blur(8px)",
+                background: "rgba(59,130,246,0.92)", backdropFilter: "blur(8px)",
                 color: "#fff", padding: "5px 12px", borderRadius: "6px",
                 fontSize: "0.82rem", fontWeight: 700, pointerEvents: "none",
                 whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
@@ -1109,9 +1109,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             <div style={{
               position: "absolute", top: 0, left: 0, height: "100%",
               width: `${progress}%`,
-              background: "linear-gradient(90deg, #6366f1, #818cf8)",
+              background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
               borderRadius: "4px",
-              boxShadow: "0 0 8px rgba(99,102,241,0.4)",
+              boxShadow: "0 0 8px rgba(59,130,246,0.4)",
             }} />
 
             {/* Scrubber handle */}
@@ -1124,7 +1124,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               borderRadius: "50%",
               background: "#fff",
               transition: "all 0.15s ease",
-              boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(99,102,241,0.3)",
+              boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(59,130,246,0.3)",
             }} />
           </div>
 
@@ -1179,7 +1179,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                     onChange={handleVolumeChange}
                     className="vp-volume-track"
                     style={{
-                      background: `linear-gradient(to right, #6366f1 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
+                      background: `linear-gradient(to right, #3b82f6 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
                     }}
                   />
                 </div>
@@ -1214,7 +1214,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                 <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); }}
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}>
                   <IconSettings />
-                  {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#6366f1" }}>{playbackRate}x</span>}
+                  {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#3b82f6" }}>{playbackRate}x</span>}
                   <span className="vp-tooltip">Settings</span>
                 </button>
 

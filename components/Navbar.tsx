@@ -160,15 +160,15 @@ export function NavBar() {
                     onMouseEnter={() => setActiveIndex(i)}
                   >
                     <div className="oss-search-result-img oss-search-result-placeholder" style={{
-                      background: "rgba(99,102,241,0.15)",
+                      background: "rgba(59,130,246,0.15)",
                     }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M4 7h16M4 12h16M4 17h10"/>
                       </svg>
                     </div>
                     <div className="oss-search-result-info">
                       <span className="oss-search-result-name">{g.name}</span>
-                      <span className="oss-search-result-type" style={{ color: "#818cf8" }}>Genre</span>
+                      <span className="oss-search-result-type" style={{ color: "#60a5fa" }}>Genre</span>
                     </div>
                   </button>
                 ))}
