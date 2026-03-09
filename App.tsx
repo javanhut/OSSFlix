@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import ProfileSelect from "./pages/ProfileSelect";
 import History from "./pages/History";
 import MyList from "./pages/MyList";
+import Explore from "./pages/Explore";
 
 function AppRoutes() {
   const { authenticated, profile } = useProfile();
@@ -42,6 +43,7 @@ function AppRoutes() {
         <Route path="/tvshows" element={<TVShows />} />
         <Route path="/anime" element={<Anime />} />
         <Route path="/genre/:genre" element={<Genre />} />
+        <Route path="/explore" element={<Explore />} />
         <Route path="/history" element={<History />} />
         <Route path="/mylist" element={<MyList />} />
       </Route>

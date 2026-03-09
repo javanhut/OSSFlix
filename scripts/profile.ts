@@ -13,6 +13,7 @@ export interface ProfileData {
 export interface GlobalSettings {
   movies_directory: string | null;
   tvshows_directory: string | null;
+  tmdb_api_key: string | null;
 }
 
 export function getProfile(id: number): ProfileData | null {
@@ -90,7 +91,7 @@ export function updateProfile(id: number, updates: {
 }
 
 export function getGlobalSettings(): GlobalSettings {
-  return db.prepare("SELECT movies_directory, tvshows_directory FROM global_settings WHERE id = 1").get() as GlobalSettings;
+  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key FROM global_settings WHERE id = 1").get() as GlobalSettings;
 }
 
 export function updateGlobalSettings(updates: {
@@ -107,6 +108,10 @@ export function updateGlobalSettings(updates: {
   if (updates.tvshows_directory !== undefined) {
     fields.push("tvshows_directory = ?");
     values.push(updates.tvshows_directory || null);
+  }
+  if ((updates as any).tmdb_api_key !== undefined) {
+    fields.push("tmdb_api_key = ?");
+    values.push((updates as any).tmdb_api_key || null);
   }
 
   if (fields.length > 0) {

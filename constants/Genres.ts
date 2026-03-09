@@ -41,3 +41,5 @@ export const movieGenres: MovieGenre[] = [
   "War",
   "Western"
 ];
+
+export const PREDEFINED_GENRES = new Set<string>(movieGenres);

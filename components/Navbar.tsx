@@ -164,6 +164,7 @@ export function NavBar() {
             <li><Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>Anime</Link></li>
             <li><Link to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>My List</Link></li>
             <li><Link to="/history" className="oss-nav-link" onClick={() => setNavOpen(false)}>History</Link></li>
+            <li><Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>Explore</Link></li>
             <li
               className={`oss-genre-trigger${genreOpen ? " oss-genre-open" : ""}`}
               onClick={(e) => {

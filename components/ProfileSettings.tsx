@@ -1327,21 +1327,28 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   const [saving, setSaving] = useState(false);
   const [moviesFocused, setMoviesFocused] = useState(false);
   const [tvFocused, setTvFocused] = useState(false);
+  const [tmdbKey, setTmdbKey] = useState("");
+  const [tmdbFocused, setTmdbFocused] = useState(false);
+  const [tmdbTesting, setTmdbTesting] = useState(false);
+  const [tmdbTestResult, setTmdbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (show) {
       const isGlobal = (profile as any).use_global_dirs !== 0;
       setUseGlobal(isGlobal);
-      if (isGlobal) {
-        // Load global settings
-        fetch("/api/global-settings")
-          .then((r) => r.json())
-          .then((data) => {
+      setTmdbTestResult(null);
+      // Always load global settings for TMDB key
+      fetch("/api/global-settings")
+        .then((r) => r.json())
+        .then((data) => {
+          setTmdbKey(data.tmdb_api_key ?? "");
+          if (isGlobal) {
             setMoviesDir(data.movies_directory ?? "");
             setTvshowsDir(data.tvshows_directory ?? "");
-          })
-          .catch(() => {});
-      } else {
+          }
+        })
+        .catch(() => {});
+      if (!isGlobal) {
         setMoviesDir(profile.movies_directory ?? "");
         setTvshowsDir(profile.tvshows_directory ?? "");
       }
@@ -1354,13 +1361,19 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
 
   const handleSave = () => {
     setSaving(true);
+    // Always save TMDB key to global settings
+    const globalPayload: Record<string, any> = { tmdb_api_key: tmdbKey || null };
+    if (useGlobal) {
+      globalPayload.movies_directory = moviesDir || null;
+      globalPayload.tvshows_directory = tvshowsDir || null;
+    }
     if (useGlobal) {
       // Save to global settings
       Promise.all([
         fetch("/api/global-settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ movies_directory: moviesDir || null, tvshows_directory: tvshowsDir || null }),
+          body: JSON.stringify(globalPayload),
         }),
         fetch("/api/profile", {
           method: "PUT",
@@ -1373,17 +1386,24 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
         .catch((err) => console.error("Failed to save settings:", err))
         .finally(() => setSaving(false));
     } else {
-      // Save to profile-specific directories
-      fetch("/api/profile", {
-        method: "PUT",
-        headers: pHeaders,
-        body: JSON.stringify({
-          movies_directory: moviesDir || null,
-          tvshows_directory: tvshowsDir || null,
-          use_global_dirs: 0,
+      // Save to profile-specific directories + TMDB key to global
+      Promise.all([
+        fetch("/api/global-settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tmdb_api_key: tmdbKey || null }),
         }),
-      })
-        .then((r) => r.json())
+        fetch("/api/profile", {
+          method: "PUT",
+          headers: pHeaders,
+          body: JSON.stringify({
+            movies_directory: moviesDir || null,
+            tvshows_directory: tvshowsDir || null,
+            use_global_dirs: 0,
+          }),
+        }),
+      ])
+        .then(([, profileRes]) => profileRes.json())
         .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
         .catch((err) => console.error("Failed to save settings:", err))
         .finally(() => setSaving(false));
@@ -1554,6 +1574,72 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                       <IconFolder /> Browse
                     </button>
                   </div>
+                </div>
+
+                {/* TMDB API Key */}
+                <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid var(--oss-border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{
+                      width: "36px", height: "36px", borderRadius: "10px",
+                      background: "rgba(168,85,247,0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#a855f7",
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>TMDB API Key</p>
+                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Optional. Enables auto-fetching metadata from TMDB.</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      type="password" value={tmdbKey}
+                      onChange={(e) => { setTmdbKey(e.target.value); setTmdbTestResult(null); }}
+                      onFocus={() => setTmdbFocused(true)}
+                      onBlur={() => setTmdbFocused(false)}
+                      placeholder="Enter your TMDB API key"
+                      style={{
+                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
+                        ...(tmdbFocused ? css.inputFocus : {}),
+                      }}
+                    />
+                    <button
+                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0, opacity: !tmdbKey.trim() ? 0.5 : 1 }}
+                      disabled={!tmdbKey.trim() || tmdbTesting}
+                      onClick={() => {
+                        setTmdbTesting(true);
+                        setTmdbTestResult(null);
+                        fetch(`/api/tmdb/search?q=test&type=movie`, {
+                          headers: { "x-tmdb-key-test": tmdbKey },
+                        })
+                          .then(async (r) => {
+                            // We need to actually test with the key directly
+                            const testUrl = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(tmdbKey)}&query=test`;
+                            const testRes = await fetch(testUrl);
+                            if (testRes.ok) {
+                              setTmdbTestResult({ ok: true, message: "API key is valid!" });
+                            } else {
+                              setTmdbTestResult({ ok: false, message: "Invalid API key" });
+                            }
+                          })
+                          .catch(() => setTmdbTestResult({ ok: false, message: "Connection failed" }))
+                          .finally(() => setTmdbTesting(false));
+                      }}
+                    >
+                      {tmdbTesting ? "Testing..." : "Test"}
+                    </button>
+                  </div>
+                  {tmdbTestResult && (
+                    <p style={{
+                      marginTop: "6px", fontSize: "0.78rem", fontWeight: 500,
+                      color: tmdbTestResult.ok ? "#22c55e" : "#ef4444",
+                    }}>
+                      {tmdbTestResult.message}
+                    </p>
+                  )}
                 </div>
               </>
             )}

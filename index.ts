@@ -3,9 +3,13 @@ import { resolve, join, dirname } from "node:path";
 import { readdir } from "node:fs/promises";
 import { extname } from "node:path";
 import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles } from "./scripts/autoresolver";
+import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
 import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs } from "./scripts/profile";
+import { detectSleepPattern } from "./scripts/sleepdetect";
+import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
+import { updateTomlFile } from "./scripts/tomlwriter";
+import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
 import db from "./scripts/db";
 
 function getProfileFromReq(req: Request) {
@@ -36,6 +40,7 @@ Bun.serve({
     "/profiles": index,
     "/history": index,
     "/mylist": index,
+    "/explore": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -628,6 +633,167 @@ Bun.serve({
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 500 });
         }
+      },
+    },
+    // Feature 1: Genre exploration
+    "/api/genres/all": {
+      GET() {
+        const genres = getAllGenreNames();
+        return Response.json(genres);
+      },
+    },
+    "/api/media/filter": {
+      GET(req) {
+        const url = new URL(req.url);
+        const genresParam = url.searchParams.get("genres");
+        if (!genresParam) {
+          return Response.json({ error: "Missing genres parameter" }, { status: 400 });
+        }
+        const genreNames = genresParam.split(",").map(g => g.trim()).filter(Boolean);
+        if (genreNames.length === 0) {
+          return Response.json([]);
+        }
+        const titles = getTitlesByMultipleGenres(genreNames);
+        return Response.json(titles);
+      },
+    },
+    // Feature 2: Sleep detection
+    "/api/playback/sleep-detect": {
+      GET(req) {
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) return Response.json({ error: "Missing dir parameter" }, { status: 400 });
+        const profile = getProfileFromReq(req);
+        const pHeaders: Record<string, string> = { "x-profile-id": String(profile.id) };
+
+        // Get progress entries for this dir
+        const entries = db.query(
+          "SELECT video_src, current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at"
+        ).all(profile.id, dir) as any[];
+
+        // Get videos for this title
+        const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dir) as { videos: string | null } | null;
+        const videos: string[] = title?.videos ? JSON.parse(title.videos) : [];
+
+        const result = detectSleepPattern(entries, videos);
+        return Response.json(result);
+      },
+    },
+    // Feature 3: TMDB integration
+    "/api/tmdb/search": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const q = url.searchParams.get("q");
+        const type = url.searchParams.get("type") as "movie" | "tv" | null;
+        if (!q) return Response.json({ error: "Missing q parameter" }, { status: 400 });
+        const settings = getGlobalSettings();
+        if (!settings.tmdb_api_key) return Response.json({ error: "TMDB API key not configured" }, { status: 400 });
+        try {
+          const results = await searchTMDB(q, settings.tmdb_api_key, type || undefined);
+          return Response.json(results);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    "/api/tmdb/details": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const id = url.searchParams.get("id");
+        const type = url.searchParams.get("type") as "movie" | "tv" | null;
+        if (!id || !type) return Response.json({ error: "Missing id or type parameter" }, { status: 400 });
+        const settings = getGlobalSettings();
+        if (!settings.tmdb_api_key) return Response.json({ error: "TMDB API key not configured" }, { status: 400 });
+        try {
+          const details = await getTMDBDetails(parseInt(id, 10), type, settings.tmdb_api_key);
+          return Response.json(details);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    "/api/tmdb/apply": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { dirPath, tmdbId, mediaType } = body;
+          if (!dirPath || !tmdbId || !mediaType) {
+            return Response.json({ error: "Missing dirPath, tmdbId, or mediaType" }, { status: 400 });
+          }
+          const settings = getGlobalSettings();
+          if (!settings.tmdb_api_key) return Response.json({ error: "TMDB API key not configured" }, { status: 400 });
+
+          const details = await getTMDBDetails(tmdbId, mediaType, settings.tmdb_api_key);
+
+          // Resolve the actual source path for the title
+          const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(dirPath) as { source_path: string } | null;
+          if (!title) return Response.json({ error: "Title not found" }, { status: 404 });
+
+          const updates: Record<string, any> = {};
+          const name = details.title || details.name;
+          if (name) updates.name = name;
+          if (details.overview) updates.description = details.overview;
+          if (details.genres?.length > 0) {
+            updates.genre = details.genres.map(g => g.name);
+          }
+          if (details.credits?.cast?.length) {
+            updates.cast = details.credits.cast
+              .sort((a, b) => a.order - b.order)
+              .slice(0, 10)
+              .map(c => c.name);
+          }
+          updates.type = mediaType === "movie" ? "Movie" : "TV Show";
+          if (mediaType === "tv" && details.number_of_seasons) {
+            updates.season = details.number_of_seasons;
+          }
+          if (mediaType === "tv" && details.number_of_episodes) {
+            updates.episodes = details.number_of_episodes;
+          }
+
+          await updateTomlFile(title.source_path, updates);
+
+          // Download poster if available
+          if (details.poster_path) {
+            try {
+              await downloadImage(details.poster_path, title.source_path, "poster");
+            } catch {
+              // Non-fatal if image download fails
+            }
+          }
+
+          // Re-resolve library
+          await resolveToDb();
+
+          return Response.json({ ok: true, name });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    // Feature 4: Auto intro/outro detection
+    "/api/detect/intros": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { dirPath } = body;
+          if (!dirPath) return Response.json({ error: "Missing dirPath" }, { status: 400 });
+          const jobId = createJob("intro_detection", dirPath);
+          // Run detection async (don't await)
+          detectIntros(dirPath, jobId);
+          return Response.json({ jobId });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    "/api/detect/status": {
+      GET(req) {
+        const url = new URL(req.url);
+        const jobId = url.searchParams.get("jobId");
+        if (!jobId) return Response.json({ error: "Missing jobId" }, { status: 400 });
+        const job = getJob(parseInt(jobId, 10));
+        if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
+        return Response.json(job);
       },
     },
     "/api/browse": {

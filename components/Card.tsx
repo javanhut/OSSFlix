@@ -190,19 +190,23 @@ function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
   );
 }
 
-function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose }: {
+function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose, dirPath, onTimingsRefresh }: {
   show: boolean;
   videos: string[];
   timingsMap: Record<string, EpisodeTiming>;
   onSaveAll: (timings: EpisodeTiming[]) => void;
   onClearAll: () => void;
   onClose: () => void;
+  dirPath?: string;
+  onTimingsRefresh?: () => void;
 }) {
   const [rows, setRows] = useState<TimingRowData[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [importing, setImporting] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetectProgress, setAutoDetectProgress] = useState("");
 
   // Re-init rows when modal opens
   useEffect(() => {
@@ -250,6 +254,47 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
 
   const handleImport = () => {
     setShowFileBrowser(true);
+  };
+
+  const handleAutoDetect = async () => {
+    if (!dirPath) return;
+    setAutoDetecting(true);
+    setAutoDetectProgress("Starting detection...");
+    try {
+      const res = await fetch("/api/detect/intros", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dirPath }),
+      });
+      const data = await res.json();
+      if (data.error) { setAutoDetectProgress(data.error); setAutoDetecting(false); return; }
+      const jobId = data.jobId;
+
+      // Poll for status
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/detect/status?jobId=${jobId}`);
+          const job = await statusRes.json();
+          if (job.progress) setAutoDetectProgress(job.progress);
+          if (job.status === "completed") {
+            clearInterval(poll);
+            setAutoDetecting(false);
+            setAutoDetectProgress("");
+            onTimingsRefresh?.();
+          } else if (job.status === "failed") {
+            clearInterval(poll);
+            setAutoDetecting(false);
+            setAutoDetectProgress(job.error || "Detection failed");
+          }
+        } catch {
+          clearInterval(poll);
+          setAutoDetecting(false);
+        }
+      }, 2000);
+    } catch {
+      setAutoDetecting(false);
+      setAutoDetectProgress("Failed to start detection");
+    }
   };
 
   const handleFileSelected = async (filePath: string) => {
@@ -374,11 +419,19 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
         </div>
       </ModalBody>
       <ModalFooter style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <button className="oss-btn oss-btn-sm" onClick={handleImport} disabled={importing}
             style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.3)" }}>
             {importing ? "Importing..." : "Import timing.toml"}
           </button>
+          {dirPath && (
+            <button className="oss-btn oss-btn-sm" onClick={handleAutoDetect} disabled={autoDetecting}
+              style={{ background: "rgba(168,85,247,0.12)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.25)" }}
+              title="Auto-detect intro/outro using audio fingerprinting (requires fpcalc)"
+            >
+              {autoDetecting ? autoDetectProgress || "Detecting..." : "Auto-detect"}
+            </button>
+          )}
           <button className="oss-btn oss-btn-sm" onClick={handleClearAll}
             style={{ background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }}>
             Clear All
@@ -438,6 +491,20 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   const [showTimingsModal, setShowTimingsModal] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  // Feature 2: Sleep detection
+  const [sleepInfo, setSleepInfo] = useState<{ fellAsleep: boolean; resumeEpisode?: string; consecutiveCount?: number } | null>(null);
+  const [sleepDismissed, setSleepDismissed] = useState(false);
+  // Feature 3: TMDB
+  const [showTmdbModal, setShowTmdbModal] = useState(false);
+  const [tmdbApiKey, setTmdbApiKey] = useState<string | null>(null);
+  const [tmdbQuery, setTmdbQuery] = useState("");
+  const [tmdbResults, setTmdbResults] = useState<any[]>([]);
+  const [tmdbSearching, setTmdbSearching] = useState(false);
+  const [tmdbApplying, setTmdbApplying] = useState(false);
+  // Feature 4: Auto-detect
+  const [detectJobId, setDetectJobId] = useState<number | null>(null);
+  const [detectProgress, setDetectProgress] = useState<string>("");
+  const [detecting, setDetecting] = useState(false);
 
   const fetchProgress = () => {
     if (!dirPath) return;
@@ -525,6 +592,18 @@ export function Card({ show, onHide, dirPath }: CardProps) {
       fetchProgress();
       fetchTimings();
       fetchWatchlistStatus();
+      setSleepDismissed(false);
+      setSleepInfo(null);
+      // Check sleep pattern
+      fetch(`/api/playback/sleep-detect?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
+        .then((r) => r.json())
+        .then((data) => setSleepInfo(data))
+        .catch(() => {});
+      // Check TMDB key availability
+      fetch("/api/global-settings")
+        .then((r) => r.json())
+        .then((data) => setTmdbApiKey(data.tmdb_api_key || null))
+        .catch(() => {});
     }
   }, [show, dirPath]);
 
@@ -631,6 +710,41 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   {information.cast.filter(c => c).join(", ")}
                 </p>
               )}
+
+              {/* Sleep detection banner */}
+              {sleepInfo?.fellAsleep && !sleepDismissed && (
+                <div style={{
+                  padding: "12px 16px", borderRadius: "8px", marginBottom: "1rem",
+                  background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
+                  display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap",
+                }}>
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "#fbbf24", fontWeight: 600 }}>
+                      It looks like you fell asleep during {parseEpisodeLabel(sleepInfo.resumeEpisode || "")}.
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "rgba(251,191,36,0.7)" }}>
+                      {sleepInfo.consecutiveCount} episodes auto-played after.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      className="oss-btn oss-btn-sm"
+                      onClick={() => { if (sleepInfo.resumeEpisode) handlePlay(sleepInfo.resumeEpisode, false); }}
+                      style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontWeight: 600, fontSize: "0.78rem" }}
+                    >
+                      Resume from there
+                    </button>
+                    <button
+                      className="oss-btn oss-btn-sm"
+                      onClick={() => setSleepDismissed(true)}
+                      style={{ background: "rgba(255,255,255,0.08)", color: "var(--oss-text-muted)", border: "1px solid var(--oss-border)", fontSize: "0.78rem" }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {(() => {
                 const seasonMap = groupVideosBySeason(information.videos || []);
                 const seasonKeys = [...seasonMap.keys()];
@@ -791,6 +905,15 @@ export function Card({ show, onHide, dirPath }: CardProps) {
             </ModalBody>
             <ModalFooter>
               <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>
+              {tmdbApiKey && (
+                <button
+                  className="oss-btn oss-btn-sm"
+                  onClick={() => { setTmdbQuery(information.name); setShowTmdbModal(true); }}
+                  style={{ background: "rgba(16,185,129,0.12)", color: "#10b981", border: "1px solid rgba(16,185,129,0.25)" }}
+                >
+                  Fetch from TMDB
+                </button>
+              )}
               {information.videos?.length > 1 && (
                 <button
                   className="oss-btn oss-btn-sm"
@@ -828,6 +951,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
           onSaveAll={saveAllTimings}
           onClearAll={clearAllTimings}
           onClose={() => setShowTimingsModal(false)}
+          dirPath={dirPath}
+          onTimingsRefresh={fetchTimings}
         />
       )}
 
@@ -860,6 +985,141 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         hasNext={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)}
         profileId={pid}
       />
+
+      {/* TMDB Search Modal */}
+      <Modal show={showTmdbModal} onHide={() => setShowTmdbModal(false)} size="lg" centered>
+        <ModalHeader closeButton>
+          <ModalTitle style={{ fontSize: "1.1rem" }}>Fetch from TMDB</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+            <input
+              type="text"
+              value={tmdbQuery}
+              onChange={(e) => setTmdbQuery(e.target.value)}
+              placeholder="Search TMDB..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  setTmdbSearching(true);
+                  const type = information?.type?.toLowerCase().includes("movie") ? "movie" : "tv";
+                  fetch(`/api/tmdb/search?q=${encodeURIComponent(tmdbQuery)}&type=${type}`)
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (Array.isArray(data)) setTmdbResults(data);
+                      else setTmdbResults([]);
+                    })
+                    .catch(() => setTmdbResults([]))
+                    .finally(() => setTmdbSearching(false));
+                }
+              }}
+              style={{
+                flex: 1, padding: "8px 14px", borderRadius: "8px",
+                border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)",
+                color: "#fff", fontSize: "0.85rem", outline: "none",
+              }}
+            />
+            <button
+              className="oss-btn oss-btn-primary oss-btn-sm"
+              disabled={tmdbSearching || !tmdbQuery.trim()}
+              onClick={() => {
+                setTmdbSearching(true);
+                const type = information?.type?.toLowerCase().includes("movie") ? "movie" : "tv";
+                fetch(`/api/tmdb/search?q=${encodeURIComponent(tmdbQuery)}&type=${type}`)
+                  .then((r) => r.json())
+                  .then((data) => {
+                    if (Array.isArray(data)) setTmdbResults(data);
+                    else setTmdbResults([]);
+                  })
+                  .catch(() => setTmdbResults([]))
+                  .finally(() => setTmdbSearching(false));
+              }}
+            >
+              {tmdbSearching ? "Searching..." : "Search"}
+            </button>
+          </div>
+
+          {tmdbApplying && (
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <Spinner animation="border" size="sm" />
+              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginTop: "8px" }}>Applying metadata...</p>
+            </div>
+          )}
+
+          {!tmdbApplying && tmdbResults.length > 0 && (
+            <div style={{ maxHeight: "400px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+              {tmdbResults.slice(0, 10).map((r: any) => (
+                <button
+                  key={r.id}
+                  onClick={() => {
+                    setTmdbApplying(true);
+                    const mediaType = (r.media_type === "tv" || r.name) ? "tv" : "movie";
+                    fetch("/api/tmdb/apply", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ dirPath, tmdbId: r.id, mediaType }),
+                    })
+                      .then((res) => res.json())
+                      .then((data) => {
+                        if (data.ok) {
+                          setShowTmdbModal(false);
+                          setTmdbResults([]);
+                          // Refetch media info
+                          fetch(`/api/media/info?dir=${encodeURIComponent(dirPath)}`)
+                            .then((res) => res.json())
+                            .then((info) => setInformation(info))
+                            .catch(() => {});
+                          window.dispatchEvent(new CustomEvent("ossflix-media-updated"));
+                        }
+                      })
+                      .catch(() => {})
+                      .finally(() => setTmdbApplying(false));
+                  }}
+                  style={{
+                    display: "flex", gap: "12px", padding: "10px", borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.08)", background: "transparent",
+                    color: "var(--oss-text)", cursor: "pointer", textAlign: "left",
+                    transition: "background 0.15s ease", width: "100%",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                >
+                  {r.poster_path ? (
+                    <img
+                      src={`https://image.tmdb.org/t/p/w92${r.poster_path}`}
+                      alt=""
+                      style={{ width: "60px", height: "90px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div style={{ width: "60px", height: "90px", borderRadius: "4px", background: "var(--oss-bg-elevated)", flexShrink: 0 }} />
+                  )}
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>
+                      {r.title || r.name}
+                    </p>
+                    <p style={{ margin: "2px 0", fontSize: "0.78rem", color: "var(--oss-text-muted)" }}>
+                      {r.release_date || r.first_air_date || ""}
+                    </p>
+                    <p style={{
+                      margin: 0, fontSize: "0.78rem", color: "var(--oss-text-muted)",
+                      display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as any,
+                      overflow: "hidden",
+                    }}>
+                      {r.overview}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!tmdbApplying && !tmdbSearching && tmdbResults.length === 0 && tmdbQuery.trim() && (
+            <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "1rem" }}>
+              Press Enter or click Search to find results.
+            </p>
+          )}
+        </ModalBody>
+      </Modal>
     </>
   );
 }

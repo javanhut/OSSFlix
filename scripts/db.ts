@@ -141,4 +141,25 @@ try {
   // column already exists
 }
 
+// Migration: add tmdb_api_key to global_settings
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN tmdb_api_key TEXT");
+} catch {
+  // column already exists
+}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS background_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    dir_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    progress TEXT,
+    result TEXT,
+    error TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`);
+
 export default db;

@@ -341,6 +341,24 @@ export function resolveSourcePath(servePath: string): string | null {
   return `${title.source_path}/${filename}`;
 }
 
+export function getAllGenreNames(): string[] {
+  const rows = db.prepare("SELECT name FROM genres ORDER BY name").all() as { name: string }[];
+  return rows.map(r => r.name);
+}
+
+export function getTitlesByMultipleGenres(genreNames: string[]) {
+  const lowerNames = genreNames.map(n => n.toLowerCase());
+  const placeholders = lowerNames.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
+    FROM titles t
+    JOIN title_genres tg ON tg.title_id = t.id
+    JOIN genres g ON g.id = tg.genre_id
+    WHERE LOWER(g.name) IN (${placeholders})
+    GROUP BY t.id HAVING COUNT(DISTINCT g.id) = ?
+  `).all(...lowerNames, lowerNames.length) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+}
+
 // Run directly: bun scripts/autoresolver.ts
 if (import.meta.main) {
   await resolveToDb();
