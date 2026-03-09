@@ -149,6 +149,9 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
           Set intro and outro timestamps for skip buttons during playback. Use m:ss format (e.g. 1:30 for 1 minute 30 seconds).
         </p>
 
+        {/* Scrollable grid wrapper for mobile */}
+        <div style={{ overflowX: "auto" }}>
+        <div style={{ minWidth: "600px" }}>
         {/* Column headers */}
         <div style={{
           display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: "10px",
@@ -207,6 +210,8 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
               />
             </div>
           ))}
+        </div>
+        </div>
         </div>
       </ModalBody>
       <ModalFooter>
@@ -398,7 +403,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
             </ModalHeader>
             <ModalBody>
               {information.bannerImage && (
-                <div style={{ position: "relative", marginBottom: "1rem", borderRadius: "var(--oss-radius)", overflow: "hidden" }}>
+                <div className="oss-modal-banner" style={{ position: "relative", marginBottom: "1rem", borderRadius: "var(--oss-radius)", overflow: "hidden" }}>
                   <img
                     src={information.bannerImage}
                     alt={information.name}
@@ -529,7 +534,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                             onClick={() => handlePlay(v)}
                           />
                           {/* Status badges & actions */}
-                          <div style={{
+                          <div className="oss-episode-status" style={{
                             position: "absolute", top: "50%", right: "40px",
                             transform: "translateY(-50%)",
                             display: "flex", alignItems: "center", gap: "6px",

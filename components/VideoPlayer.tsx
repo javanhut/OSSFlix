@@ -571,9 +571,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     return { time: ratio * dur, x: clientX - rect.left };
   };
 
-  const handleProgressMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const { time, x } = getTimeFromXRef(e.clientX);
+  const startDrag = (clientX: number) => {
+    const { time, x } = getTimeFromXRef(clientX);
     setDragging(true);
     setDragTime(time);
     setDragX(x);
@@ -584,16 +583,26 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     }
   };
 
+  const handleProgressMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    startDrag(e.clientX);
+  };
+
+  const handleProgressTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    startDrag(e.touches[0].clientX);
+  };
+
   useEffect(() => {
     if (!dragging) return;
-    const handleMouseMove = (e: MouseEvent) => {
-      const { time, x } = getTimeFromXRef(e.clientX);
+    const handleMove = (clientX: number) => {
+      const { time, x } = getTimeFromXRef(clientX);
       setDragTime(time);
       setDragX(x);
       if (videoRef.current) videoRef.current.currentTime = time;
     };
-    const handleMouseUp = (e: MouseEvent) => {
-      const { time } = getTimeFromXRef(e.clientX);
+    const handleEnd = (clientX: number) => {
+      const { time } = getTimeFromXRef(clientX);
       const video = videoRef.current;
       if (video) {
         seekLockRef.current = true;
@@ -616,11 +625,22 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       setDragging(false);
       showControlsTemporarily();
     };
+    const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX);
+    const handleMouseUp = (e: MouseEvent) => handleEnd(e.clientX);
+    const handleTouchMove = (e: TouchEvent) => { e.preventDefault(); handleMove(e.touches[0].clientX); };
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      handleEnd(touch.clientX);
+    };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [dragging]);
 
@@ -776,7 +796,11 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     return () => window.removeEventListener("keydown", handleKey);
   }, [show, playing]);
 
-  // ── Double click sides to skip ──
+  // ── Double click/tap sides to skip ──
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapCountRef = useRef(0);
+  const lastTapXRef = useRef(0);
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-controls]")) return;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -786,6 +810,38 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (x < third) skip(-10);
     else if (x > third * 2) skip(10);
     else toggleFullscreen();
+  };
+
+  const handleTouchTap = (e: React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest("[data-controls]")) return;
+    const touch = e.changedTouches[0];
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = touch.clientX - rect.left;
+
+    tapCountRef.current++;
+    lastTapXRef.current = x;
+
+    if (tapCountRef.current === 1) {
+      tapTimeoutRef.current = setTimeout(() => {
+        // Single tap: toggle controls
+        if (tapCountRef.current === 1) {
+          if (showControls) {
+            setShowControls(false);
+          } else {
+            showControlsTemporarily();
+          }
+        }
+        tapCountRef.current = 0;
+      }, 300);
+    } else if (tapCountRef.current === 2) {
+      if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+      tapCountRef.current = 0;
+      const third = rect.width / 3;
+      if (x < third) skip(-10);
+      else if (x > third * 2) skip(10);
+      else togglePlay();
+    }
   };
 
   const displayTime = dragging ? dragTime : currentTime;
@@ -838,6 +894,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           }
         }}
         onDoubleClick={handleDoubleClick}
+        onTouchEnd={handleTouchTap}
       >
         <video
           ref={videoRef}
@@ -902,7 +959,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Skip Intro button */}
         {showSkipIntro && (
-          <button onClick={skipIntro} style={{
+          <button className="vp-skip-btn" onClick={skipIntro} style={{
             position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
             background: "rgba(255,255,255,0.92)", color: "#000",
             border: "none", borderRadius: "4px",
@@ -920,7 +977,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Skip Outro / Next Episode button */}
         {showSkipOutro && hasNext && countdown === null && (
-          <button onClick={skipOutro} style={{
+          <button className="vp-skip-btn" onClick={skipOutro} style={{
             position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
             background: "rgba(255,255,255,0.92)", color: "#000",
             border: "none", borderRadius: "4px",
@@ -938,7 +995,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Countdown to next episode */}
         {countdown !== null && (
-          <div style={{
+          <div className="vp-countdown" style={{
             position: "absolute", bottom: "80px", right: "40px", zIndex: 20,
             background: "rgba(20,20,28,0.92)", backdropFilter: "blur(16px)",
             border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
@@ -1053,6 +1110,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           <div
             ref={progressRef}
             onMouseDown={handleProgressMouseDown}
+            onTouchStart={handleProgressTouchStart}
             onMouseMove={(e) => { handleProgressHover(e); setProgressHovered(true); }}
             onMouseLeave={handleProgressLeave}
             onMouseEnter={() => setProgressHovered(true)}
@@ -1159,7 +1217,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               )}
 
               {/* Volume */}
-              <div style={{ display: "flex", alignItems: "center", position: "relative" }}
+              <div className="vp-volume-wrapper" style={{ display: "flex", alignItems: "center", position: "relative" }}
                 onMouseEnter={() => { setShowVolumeSlider(true); if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current); }}
                 onMouseLeave={() => { volumeTimeoutRef.current = window.setTimeout(() => setShowVolumeSlider(false), 800); }}
               >
@@ -1201,7 +1259,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
               {/* Remaining time badge */}
               {playing && duration > 0 && (
-                <span style={{
+                <span className="vp-hide-mobile" style={{
                   color: "rgba(255,255,255,0.45)", fontSize: "0.78rem",
                   fontVariantNumeric: "tabular-nums", marginRight: "4px",
                 }}>
@@ -1234,7 +1292,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </div>
 
               {/* Restart */}
-              <button className="vp-ctrl-btn" onClick={restartFromBeginning}>
+              <button className="vp-ctrl-btn vp-hide-mobile" onClick={restartFromBeginning}>
                 <IconRestart />
                 <span className="vp-tooltip">Restart</span>
               </button>
@@ -1266,7 +1324,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </div>
 
               {/* PiP */}
-              <button className="vp-ctrl-btn" onClick={togglePip}>
+              <button className="vp-ctrl-btn vp-hide-mobile" onClick={togglePip}>
                 <IconPip />
                 <span className="vp-tooltip">{isPip ? "Exit PiP (p)" : "PiP (p)"}</span>
               </button>

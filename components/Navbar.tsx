@@ -26,7 +26,12 @@ export function NavBar() {
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedDir, setSelectedDir] = useState("");
   const [rescanning, setRescanning] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [genreOpen, setGenreOpen] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const navRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -35,17 +40,18 @@ export function NavBar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Close on outside click
+  // Close search on outside click
   useEffect(() => {
-    if (!showResults) return;
+    if (!showResults && !searchExpanded) return;
     const handler = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
         setShowResults(false);
+        if (searchExpanded && !query.trim()) setSearchExpanded(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [showResults]);
+  }, [showResults, searchExpanded, query]);
 
   const doSearch = (q: string) => {
     if (q.trim().length < 1) {
@@ -120,44 +126,153 @@ export function NavBar() {
   return (
     <>
       <nav className={`oss-navbar${scrolled ? " scrolled" : ""}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <button
+            className="oss-hamburger"
+            onClick={() => setNavOpen((v) => !v)}
+            aria-label="Toggle navigation"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              {navOpen
+                ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+                : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>
+              }
+            </svg>
+          </button>
           <Link to="/home" className="oss-navbar-brand">Reelscape</Link>
-          <ul className="oss-nav-links">
-            <li><Link to="/movies" className="oss-nav-link">Movies</Link></li>
-            <li><Link to="/tvshows" className="oss-nav-link">TV Shows</Link></li>
-            <li><Link to="/anime" className="oss-nav-link">Anime</Link></li>
-            <li><Link to="/mylist" className="oss-nav-link">My List</Link></li>
-            <li><Link to="/history" className="oss-nav-link">History</Link></li>
-            <li className="oss-genre-trigger">
+          <ul ref={navRef} className={`oss-nav-links${navOpen ? " oss-nav-open" : ""}`}>
+            <li className="oss-nav-brand-mobile">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px" }}>
+                <span>Reelscape</span>
+                <button
+                  onClick={() => { setNavOpen(false); setGenreOpen(false); }}
+                  style={{
+                    background: "none", border: "none", color: "var(--oss-text-muted)",
+                    cursor: "pointer", padding: "4px", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                  }}
+                  aria-label="Close menu"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            </li>
+            <li><Link to="/movies" className="oss-nav-link" onClick={() => setNavOpen(false)}>Movies</Link></li>
+            <li><Link to="/tvshows" className="oss-nav-link" onClick={() => setNavOpen(false)}>TV Shows</Link></li>
+            <li><Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>Anime</Link></li>
+            <li><Link to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>My List</Link></li>
+            <li><Link to="/history" className="oss-nav-link" onClick={() => setNavOpen(false)}>History</Link></li>
+            <li
+              className={`oss-genre-trigger${genreOpen ? " oss-genre-open" : ""}`}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest(".oss-genre-dropdown")) return;
+                setGenreOpen((v) => !v);
+              }}
+            >
               <span className="oss-nav-link">Genres</span>
               <div className="oss-genre-dropdown">
+                <div className="oss-genre-header">
+                  <span>Genres</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setGenreOpen(false); }}
+                    className="oss-genre-close"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
                 {movieGenres.map((genre) => (
                   <Link
                     key={genre}
                     to={`/genre/${encodeURIComponent(genre)}`}
                     className="oss-genre-item"
+                    onClick={() => { setNavOpen(false); setGenreOpen(false); }}
                   >
                     {genre}
                   </Link>
                 ))}
               </div>
             </li>
+
+            {/* Rescan — inside overlay on mobile, visible in navbar on desktop */}
+            <li className="oss-nav-menu-rescan">
+              <button
+                onClick={() => { handleRescan(); setNavOpen(false); }}
+                disabled={rescanning}
+                className="oss-nav-link"
+                style={{ background: "none", border: "none", cursor: rescanning ? "not-allowed" : "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+              >
+                <svg
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={rescanning ? { animation: "spin 1s linear infinite" } : {}}
+                >
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+                {rescanning ? "Scanning..." : "Rescan Library"}
+              </button>
+            </li>
+
+            {/* Profile — inside overlay on mobile */}
+            <li className="oss-nav-menu-profile">
+              <Profile />
+            </li>
           </ul>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div className="oss-search" ref={searchRef}>
+
+        {/* Right side: search + rescan + profile (desktop), search icon only (mobile) */}
+        <div className="oss-navbar-right">
+          {/* Search icon button — mobile only */}
+          <button
+            className="oss-search-toggle"
+            onClick={() => {
+              setSearchExpanded(true);
+              setTimeout(() => searchInputRef.current?.focus(), 50);
+            }}
+            aria-label="Open search"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
+
+          <div className={`oss-search${searchExpanded ? " oss-search-expanded" : ""}`} ref={searchRef}>
             <svg className="oss-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input
+              ref={searchInputRef}
               type="search"
               placeholder="Search..."
               aria-label="Search"
               value={query}
               onChange={handleChange}
               onFocus={() => { if (results.length > 0) setShowResults(true); }}
-              onKeyDown={handleKeyDown}
+              onKeyDown={(e) => {
+                handleKeyDown(e);
+                if (e.key === "Escape" && searchExpanded) {
+                  setSearchExpanded(false);
+                  setShowResults(false);
+                }
+              }}
             />
+            {/* Close button inside expanded search — mobile only */}
+            {searchExpanded && (
+              <button
+                className="oss-search-close"
+                onClick={() => { setSearchExpanded(false); setShowResults(false); setQuery(""); setResults([]); setGenreResults([]); }}
+                aria-label="Close search"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            )}
             {showResults && totalResults > 0 && (
               <div className="oss-search-results">
                 {genreResults.map((g, i) => (
@@ -213,6 +328,7 @@ export function NavBar() {
             )}
           </div>
           <button
+            className="oss-navbar-rescan"
             onClick={handleRescan}
             disabled={rescanning}
             title="Rescan media library"
@@ -240,9 +356,11 @@ export function NavBar() {
               <polyline points="1 20 1 14 7 14"/>
               <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
-            {rescanning ? "Scanning..." : "Rescan"}
+            <span className="oss-rescan-text">{rescanning ? "Scanning..." : "Rescan"}</span>
           </button>
-          <Profile />
+          <div className="oss-navbar-profile">
+            <Profile />
+          </div>
         </div>
       </nav>
 

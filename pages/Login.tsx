@@ -53,7 +53,7 @@ export default function Login() {
     }}>
       {/* Logo */}
       <div style={{ marginBottom: "12px", textAlign: "center" }}>
-        <h1 style={{
+        <h1 className="oss-login-logo" style={{
           fontSize: "3.5rem", fontWeight: 800, color: "#fff", margin: 0,
           letterSpacing: "-1px",
           background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",

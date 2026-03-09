@@ -1614,6 +1614,7 @@ function DropdownItem({ onClick, children, style: extraStyle }: {
 }) {
   return (
     <button
+      className="oss-profile-dropdown-item"
       onClick={onClick}
       style={{ ...dropdownItemStyle, ...extraStyle }}
       onMouseEnter={(e) => (e.currentTarget.style.background = "var(--oss-bg-hover)")}
@@ -1686,8 +1687,9 @@ export function Profile() {
 
   return (
     <>
-      <div ref={dropdownRef} style={{ position: "relative" }}>
+      <div ref={dropdownRef} className="oss-profile-wrapper" style={{ position: "relative" }}>
         <button
+          className="oss-profile-trigger"
           onClick={() => setDropdownOpen(!dropdownOpen)}
           style={{
             display: "flex", alignItems: "center", gap: "8px",
@@ -1706,29 +1708,34 @@ export function Profile() {
               width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover",
             }}
           />
-          <span style={{ color: "var(--oss-text)", fontSize: "0.85rem", fontWeight: 500 }}>{profile.name}</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--oss-text-muted)" strokeWidth="2.5"
+          <span className="oss-profile-name" style={{ color: "var(--oss-text)", fontSize: "0.85rem", fontWeight: 500 }}>{profile.name}</span>
+          <svg className="oss-profile-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--oss-text-muted)" strokeWidth="2.5"
             style={{ transition: "transform 0.2s ease", transform: dropdownOpen ? "rotate(180deg)" : "rotate(0)" }}>
             <polyline points="6,9 12,15 18,9"/>
           </svg>
         </button>
 
         {dropdownOpen && (
-          <div style={{
-            position: "absolute", top: "calc(100% + 8px)", right: 0,
-            background: "var(--oss-bg-elevated)",
-            border: "1px solid var(--oss-border)",
-            borderRadius: "12px", padding: "6px", minWidth: "200px",
-            boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
-            animation: "vpSlideUp 0.15s ease",
-            zIndex: 1001,
-          }}>
+          <div className="oss-profile-dropdown">
+            {/* Close button — mobile only */}
+            <div className="oss-profile-dropdown-header">
+              <span>Account</span>
+              <button
+                onClick={() => setDropdownOpen(false)}
+                style={{
+                  background: "none", border: "none", color: "var(--oss-text-muted)",
+                  cursor: "pointer", padding: "4px", display: "flex",
+                  alignItems: "center", justifyContent: "center",
+                }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
             {/* Profile header in dropdown */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: "10px",
-              padding: "10px 12px", marginBottom: "4px",
-              borderBottom: "1px solid var(--oss-border)",
-            }}>
+            <div className="oss-profile-dropdown-user">
               <img
                 src={profile.image_path || "/images/profileicon.png"}
                 alt="Profile"
@@ -1748,7 +1755,7 @@ export function Profile() {
             <DropdownItem onClick={() => { setDropdownOpen(false); setShowSettings(true); }}>
               <IconSettings /> Settings
             </DropdownItem>
-            <div style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
+            <div className="oss-profile-dropdown-divider" style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
             <DropdownItem onClick={() => { setDropdownOpen(false); switchProfile(); navigate("/profiles"); }}>
               <IconUser /> Switch Profile
             </DropdownItem>

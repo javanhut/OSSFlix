@@ -119,7 +119,7 @@ export default function History() {
             const isCompleted = entry.duration > 0 && entry.current_time >= entry.duration - 10;
 
             return (
-              <div key={entry.video_src} style={{
+              <div key={entry.video_src} className="oss-history-entry" style={{
                 display: "flex", alignItems: "center", gap: "16px",
                 padding: "12px 16px", borderRadius: "var(--oss-radius, 8px)",
                 background: "rgba(255,255,255,0.03)",
@@ -131,7 +131,7 @@ export default function History() {
               onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
               >
                 {/* Thumbnail */}
-                <div style={{
+                <div className="oss-history-thumb" style={{
                   width: "80px", height: "48px", borderRadius: "4px", overflow: "hidden",
                   flexShrink: 0, background: "rgba(255,255,255,0.08)",
                 }}>
@@ -147,7 +147,7 @@ export default function History() {
                 </div>
 
                 {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="oss-history-info" style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: "#fff", fontSize: "0.9rem", fontWeight: 600, marginBottom: "2px" }}>
                     {entry.name || "Unknown Title"}
                   </div>
@@ -177,7 +177,7 @@ export default function History() {
                 </div>
 
                 {/* Time info */}
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div className="oss-history-time" style={{ textAlign: "right", flexShrink: 0 }}>
                   <div style={{ color: "var(--oss-text-muted)", fontSize: "0.75rem", marginBottom: "2px" }}>
                     {relativeTime(entry.updated_at)}
                   </div>
@@ -190,6 +190,7 @@ export default function History() {
 
                 {/* Remove button */}
                 <button
+                  className="oss-history-remove"
                   onClick={(e) => { e.stopPropagation(); removeEntry(entry.video_src); }}
                   title="Remove from history"
                   style={{
