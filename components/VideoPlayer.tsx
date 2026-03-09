@@ -359,12 +359,16 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       }
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
+        try { screen.orientation.unlock(); } catch {}
       }
     } else {
       requestAnimationFrame(() => {
         const container = containerRef.current;
         if (container && !document.fullscreenElement) {
-          container.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+          container.requestFullscreen().then(() => {
+            setIsFullscreen(true);
+            try { screen.orientation.lock("landscape").catch(() => {}); } catch {}
+          }).catch(() => {});
         }
       });
     }
@@ -732,16 +736,28 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const container = containerRef.current;
     if (!container) return;
     if (!document.fullscreenElement) {
-      container.requestFullscreen();
+      container.requestFullscreen().then(() => {
+        try { screen.orientation.lock("landscape").catch(() => {}); } catch {}
+      }).catch(() => {});
     } else {
       document.exitFullscreen();
+      try { screen.orientation.unlock(); } catch {}
     }
   };
 
   useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const handleFsChange = () => {
+      const inFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(inFullscreen);
+      if (!inFullscreen) {
+        try { screen.orientation.unlock(); } catch {}
+      }
+    };
     document.addEventListener("fullscreenchange", handleFsChange);
-    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFsChange);
+      try { screen.orientation.unlock(); } catch {}
+    };
   }, []);
 
   // ── Picture-in-Picture ──

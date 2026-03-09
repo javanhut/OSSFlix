@@ -849,7 +849,7 @@ body.modal-open #root {
 }
 
 /* ── Responsive: 768px (small tablets / large phones) ── */
-@media (max-width: 768px) {
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
   .oss-navbar { padding: 0 0.75rem; height: 56px; }
   .oss-page { padding-top: 56px; }
 
@@ -983,7 +983,7 @@ body.modal-open #root {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;
-    overflow: hidden;
+    overflow-y: auto;
   }
   .oss-nav-links.oss-nav-open {
     opacity: 1;
@@ -1134,7 +1134,7 @@ body.modal-open #root {
 }
 
 /* ── Responsive: 480px (small phones) ── */
-@media (max-width: 480px) {
+@media (max-width: 480px), (orientation: landscape) and (max-height: 360px) {
   .oss-card { width: 130px; }
   .oss-card-img { height: 190px; }
   .oss-hero { height: 40vh; min-height: 280px; }
