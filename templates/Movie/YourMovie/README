@@ -1,0 +1,7 @@
+Place your files here:
+
+  metadata.toml        - Required. Edit with your movie's info.
+  banner.jpg           - Optional. Any image file for the poster/banner.
+  movie.mp4            - Your video file (.mp4, .mkv, or .webm).
+
+The filename for movies does not matter, just place the video in this folder.

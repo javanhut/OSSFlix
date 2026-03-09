@@ -2,7 +2,7 @@
 
 An open-source, self-hosted media browser and player built with **Bun**, **React**, **Bootstrap**, and **SQLite**.
 
-Browse your local movie and TV show library through a Netflix-style interface with carousel banners, genre filtering, episode browsing, and a full-featured video player with auto-play and seamless episode transitions.
+Browse your local movie and TV show library through a Streaming-Service like interface with carousel banners, genre filtering, episode browsing, and a full-featured video player with auto-play and seamless episode transitions.
 
 ## Prerequisites
 

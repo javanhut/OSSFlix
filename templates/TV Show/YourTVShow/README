@@ -1,0 +1,17 @@
+Place your files here:
+
+  metadata.toml                   - Required. Edit with your show's info.
+  banner.jpg                      - Optional. Any image file for the poster/banner.
+  Episode Title_s1_ep1.mp4        - Video files following the naming convention.
+  Episode Title_s1_ep2.mp4
+  Episode Title_s1_ep3.mp4
+
+Episode naming convention:
+  <title>_s<season>_ep<episode>.<ext>
+
+Examples:
+  Pilot_s1_ep1.mp4
+  The Journey Begins_s1_ep2.mp4
+  New Horizons_s2_ep1.mp4
+
+The part before _s becomes the episode title (underscores become spaces in the UI).

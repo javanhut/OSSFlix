@@ -1,0 +1,8 @@
+[series]
+name = "Your TV Show"
+type = "tv show"
+season = 1
+episodes = 3
+description = """A brief synopsis of the show."""
+genre = ["Action", "Comedy", "Drama"]
+cast = ["Actor One", "Actor Two"]
