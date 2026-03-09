@@ -10,6 +10,7 @@ import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
 import { updateTomlFile } from "./scripts/tomlwriter";
 import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
+import { getRecommendations } from "./scripts/recommend";
 import db from "./scripts/db";
 
 function getProfileFromReq(req: Request) {
@@ -41,6 +42,7 @@ Bun.serve({
     "/history": index,
     "/mylist": index,
     "/explore": index,
+    "/foryou": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -633,6 +635,16 @@ Bun.serve({
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 500 });
         }
+      },
+    },
+    // Recommendations
+    "/api/recommendations": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const url = new URL(req.url);
+        const limit = parseInt(url.searchParams.get("limit") || "6", 10);
+        const recs = getRecommendations(profile.id, Math.min(limit, 20));
+        return Response.json(recs);
       },
     },
     // Feature 1: Genre exploration

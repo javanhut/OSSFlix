@@ -11,6 +11,7 @@ import ProfileSelect from "./pages/ProfileSelect";
 import History from "./pages/History";
 import MyList from "./pages/MyList";
 import Explore from "./pages/Explore";
+import ForYou from "./pages/ForYou";
 
 function AppRoutes() {
   const { authenticated, profile } = useProfile();
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="/anime" element={<Anime />} />
         <Route path="/genre/:genre" element={<Genre />} />
         <Route path="/explore" element={<Explore />} />
+        <Route path="/foryou" element={<ForYou />} />
         <Route path="/history" element={<History />} />
         <Route path="/mylist" element={<MyList />} />
       </Route>
