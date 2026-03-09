@@ -858,7 +858,6 @@ body.modal-open #root {
 
   /* Navbar right: only search icon on mobile */
   .oss-navbar-right { gap: 0; }
-  .oss-navbar-rescan { display: none !important; }
   .oss-navbar-profile { display: none !important; }
 
   /* Search: collapsed to icon by default */

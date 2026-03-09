@@ -36,6 +36,13 @@ const IconLogout = () => (
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/>
   </svg>
 );
+const IconRescan = ({ spinning }: { spinning?: boolean }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    style={spinning ? { animation: "spin 1s linear infinite" } : {}}>
+    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+  </svg>
+);
 const IconFolder = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -1648,6 +1655,7 @@ export function Profile() {
   const [showProfile, setShowProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const setProfile = (p: ProfileData | null) => {
@@ -1662,6 +1670,14 @@ export function Profile() {
       .then((data) => setProfileLocal(data))
       .catch((err) => console.error("Failed to load profile:", err));
   }, [ctxProfile?.id]);
+
+  const handleRescan = () => {
+    setRescanning(true);
+    setDropdownOpen(false);
+    fetch("/api/media/resolve")
+      .then(() => window.location.reload())
+      .catch(() => setRescanning(false));
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1754,6 +1770,9 @@ export function Profile() {
             </DropdownItem>
             <DropdownItem onClick={() => { setDropdownOpen(false); setShowSettings(true); }}>
               <IconSettings /> Settings
+            </DropdownItem>
+            <DropdownItem onClick={handleRescan} style={rescanning ? { cursor: "not-allowed", opacity: 0.6 } : {}}>
+              <IconRescan spinning={rescanning} /> {rescanning ? "Scanning..." : "Rescan Library"}
             </DropdownItem>
             <div className="oss-profile-dropdown-divider" style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
             <DropdownItem onClick={() => { setDropdownOpen(false); switchProfile(); navigate("/profiles"); }}>

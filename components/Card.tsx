@@ -432,6 +432,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   const [loading, setLoading] = useState(false);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
   const [playerInitialTime, setPlayerInitialTime] = useState(0);
+  const [restartMode, setRestartMode] = useState(false);
   const [progressMap, setProgressMap] = useState<Record<string, ProgressEntry>>({});
   const [timingsMap, setTimingsMap] = useState<Record<string, EpisodeTiming>>({});
   const [showTimingsModal, setShowTimingsModal] = useState(false);
@@ -532,9 +533,11 @@ export function Card({ show, onHide, dirPath }: CardProps) {
     if (!src) return;
     if (fromBeginning) {
       setPlayerInitialTime(0);
+      setRestartMode(true);
     } else {
       const saved = progressMap[src];
       setPlayerInitialTime(saved?.current_time || 0);
+      setRestartMode(false);
     }
     setPlayerSrc(src);
   };
@@ -715,7 +718,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                           <Episode
                             filename={v.split("/").pop()!}
                             thumbnail={information.bannerImage}
-                            onClick={() => handlePlay(v)}
+                            onClick={() => handlePlay(v, !!isCompleted)}
                           />
                           {/* Status badges & actions */}
                           <div className="oss-episode-status" style={{
@@ -743,7 +746,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                                 &#10003; Watched
                               </span>
                             )}
-                            {(isInProgress || isCompleted) && (
+                            {isInProgress && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handlePlay(v, true); }}
                                 style={{
@@ -830,7 +833,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
       <VideoPlayer
         show={!!playerSrc}
-        onHide={() => { setPlayerSrc(null); fetchProgress(); }}
+        onHide={() => { setPlayerSrc(null); setRestartMode(false); fetchProgress(); }}
         src={playerSrc || ""}
         title={information?.name || ""}
         dirPath={dirPath}
@@ -842,8 +845,12 @@ export function Card({ show, onHide, dirPath }: CardProps) {
           const currentIndex = information.videos.indexOf(playerSrc);
           if (currentIndex >= 0 && currentIndex < information.videos.length - 1) {
             const nextSrc = information.videos[currentIndex + 1];
-            const saved = progressMap[nextSrc];
-            setPlayerInitialTime(saved?.current_time || 0);
+            if (restartMode) {
+              setPlayerInitialTime(0);
+            } else {
+              const saved = progressMap[nextSrc];
+              setPlayerInitialTime(saved?.current_time || 0);
+            }
             setPlayerSrc(nextSrc);
           } else {
             setPlayerSrc(null);
