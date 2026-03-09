@@ -937,16 +937,24 @@ body.modal-open #root {
     flex-shrink: 0;
   }
   .oss-profile-dropdown-user {
-    padding: 20px 24px;
-    gap: 14px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 28px 24px;
+    gap: 10px;
     border-bottom: 1px solid var(--oss-border);
   }
   .oss-profile-dropdown-user img {
-    width: 48px !important;
-    height: 48px !important;
+    width: 64px !important;
+    height: 64px !important;
+  }
+  .oss-profile-dropdown-user > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
   .oss-profile-dropdown-user p:first-child {
-    font-size: 1rem !important;
+    font-size: 1.1rem !important;
   }
   .oss-profile-dropdown-item {
     padding: 18px 24px !important;
