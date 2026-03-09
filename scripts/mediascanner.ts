@@ -97,7 +97,8 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     const ext = extname(entry.name).toLowerCase();
 
     if (ext === ".toml") {
-      if (entry.name.toLowerCase() === "timing.toml") {
+      const lowerName = entry.name.toLowerCase();
+      if (lowerName === "timing.toml" || lowerName === "timings.toml") {
         timingTomlFile = join(dirPath, entry.name);
       } else if (!metadataTomlFile) {
         metadataTomlFile = join(dirPath, entry.name);
@@ -135,17 +136,23 @@ export async function scanSingleMedia(dirPath: string, servePath: string): Promi
 
 export async function scanDirectory(basePath: string, servePrefix: string): Promise<ScannedMedia[]> {
   const results: ScannedMedia[] = [];
+  let mediaDirs;
   try {
-    const mediaDirs = await readdir(basePath, { withFileTypes: true });
-    for (const mediaDir of mediaDirs) {
-      if (!mediaDir.isDirectory()) continue;
-      const fullPath = join(basePath, mediaDir.name);
-      const servePath = `${servePrefix}/${mediaDir.name}`;
+    mediaDirs = await readdir(basePath, { withFileTypes: true });
+  } catch {
+    console.error(`Could not read directory: ${basePath}`);
+    return results;
+  }
+  for (const mediaDir of mediaDirs) {
+    if (!mediaDir.isDirectory()) continue;
+    const fullPath = join(basePath, mediaDir.name);
+    const servePath = `${servePrefix}/${mediaDir.name}`;
+    try {
       const scanned = await scanMediaDir(fullPath, servePath);
       if (scanned) results.push(scanned);
+    } catch (err) {
+      console.error(`Failed to scan ${fullPath}:`, err);
     }
-  } catch {
-    console.error(`Could not scan directory: ${basePath}`);
   }
   return results;
 }
