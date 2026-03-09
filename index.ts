@@ -431,6 +431,84 @@ Bun.serve({
         ).all(`${dir}%`) as any[];
         return Response.json(rows);
       },
+      DELETE(req) {
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) {
+          return Response.json({ error: "Missing dir parameter" }, { status: 400 });
+        }
+        db.run("DELETE FROM episode_timings WHERE video_src LIKE ?", [`${dir}%`]);
+        return Response.json({ ok: true });
+      },
+    },
+    "/api/episode/timings/parse": {
+      async POST(req) {
+        try {
+          const toml = await import("toml");
+          const text = await req.text();
+          const parsed = toml.parse(text);
+          const result: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = {};
+          const parseMinSec = (v: unknown): number | null => {
+            if (typeof v === "number") return v;
+            if (typeof v !== "string") return null;
+            const m = v.match(/^(\d+):(\d{1,2})$/);
+            if (!m) return null;
+            return Number(m[1]) * 60 + Number(m[2]);
+          };
+          for (const [key, value] of Object.entries(parsed)) {
+            if (!/^s\d+e\d+$/i.test(key) || typeof value !== "object" || !value) continue;
+            const entry = value as Record<string, unknown>;
+            result[key.toLowerCase()] = {
+              intro_start: parseMinSec(entry.intro_start),
+              intro_end: parseMinSec(entry.intro_end),
+              outro_start: parseMinSec(entry.outro_start),
+              outro_end: parseMinSec(entry.outro_end),
+            };
+          }
+          return Response.json(result);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/episode/timings/parse-file": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const filePath = body.path as string;
+          if (!filePath) {
+            return Response.json({ error: "Missing path" }, { status: 400 });
+          }
+          const file = Bun.file(filePath);
+          if (!(await file.exists())) {
+            return Response.json({ error: "File not found" }, { status: 404 });
+          }
+          const toml = await import("toml");
+          const text = await file.text();
+          const parsed = toml.parse(text);
+          const result: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = {};
+          const parseMinSec = (v: unknown): number | null => {
+            if (typeof v === "number") return v;
+            if (typeof v !== "string") return null;
+            const m = v.match(/^(\d+):(\d{1,2})$/);
+            if (!m) return null;
+            return Number(m[1]) * 60 + Number(m[2]);
+          };
+          for (const [key, value] of Object.entries(parsed)) {
+            if (!/^s\d+e\d+$/i.test(key) || typeof value !== "object" || !value) continue;
+            const entry = value as Record<string, unknown>;
+            result[key.toLowerCase()] = {
+              intro_start: parseMinSec(entry.intro_start),
+              intro_end: parseMinSec(entry.intro_end),
+              outro_start: parseMinSec(entry.outro_start),
+              outro_end: parseMinSec(entry.outro_end),
+            };
+          }
+          return Response.json(result);
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
     },
     "/api/media/titles": {
       GET() {
@@ -458,7 +536,7 @@ Bun.serve({
           // Update episode count in TOML to match actual video files
           if (updateEpisodeCount) {
             const dirEntries = await readdir(sourcePath);
-            const tomlFile = dirEntries.find((f) => f.endsWith(".toml"));
+            const tomlFile = dirEntries.find((f) => f.endsWith(".toml") && f.toLowerCase() !== "timing.toml");
             if (tomlFile) {
               const tomlPath = join(sourcePath, tomlFile);
               let content = await Bun.file(tomlPath).text();
@@ -580,6 +658,14 @@ Bun.serve({
           } else if (mode === "all") {
             files = entries
               .filter((e) => e.isFile() && !e.name.startsWith("."))
+              .map((e) => ({
+                name: e.name,
+                path: join(resolved, e.name),
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name));
+          } else if (mode === "toml") {
+            files = entries
+              .filter((e) => e.isFile() && extname(e.name).toLowerCase() === ".toml")
               .map((e) => ({
                 name: e.name,
                 path: join(resolved, e.name),

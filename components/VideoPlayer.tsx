@@ -39,6 +39,13 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function parseEpisodeFromSrc(src: string): string | null {
+  const filename = src.split("/").pop() || "";
+  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
+  if (!match) return null;
+  return `S${Number(match[2])} E${Number(match[3])} - ${match[1].replace(/_/g, " ")}`;
+}
+
 // ── SVG Icon components ──
 const IconPlay = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="6,3 20,12 6,21" /></svg>
@@ -195,7 +202,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [isPip, setIsPip] = useState(false);
 
   // Skip feedback
-  const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number } | null>(null);
+  const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number; seconds: number } | null>(null);
+  const skipAccumulatorRef = useRef(0);
+  const skipResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSkipDirectionRef = useRef<"left" | "right" | null>(null);
 
   // CC state
   const [ccEnabled, setCcEnabled] = useState(false);
@@ -288,6 +298,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setShowSkipOutro(false);
   }, [src]);
 
+  const episodeLabel = useMemo(() => parseEpisodeFromSrc(src), [src]);
+
   const videoSrc = useMemo(() => {
     const ext = src.split(".").pop()?.toLowerCase();
     if (ext === "mkv" || ext === "avi" || ext === "wmv") {
@@ -308,6 +320,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setIsLoading(true);
     setShowVolumeSlider(false);
     setSkipFeedback(null);
+    skipAccumulatorRef.current = 0;
+    lastSkipDirectionRef.current = null;
+    if (skipResetTimeoutRef.current) { clearTimeout(skipResetTimeoutRef.current); skipResetTimeoutRef.current = null; }
     setShowSkipIntro(false);
     setShowSkipOutro(false);
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
@@ -685,13 +700,31 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setSpeedIndicator({ speed, key: Date.now() });
   };
 
-  // ── Skip with feedback ──
+  // ── Skip with feedback (incremental accumulation) ──
   const skip = (seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
+    const direction: "left" | "right" = seconds > 0 ? "right" : "left";
+    // Clear pending reset timeout
+    if (skipResetTimeoutRef.current) {
+      clearTimeout(skipResetTimeoutRef.current);
+      skipResetTimeoutRef.current = null;
+    }
+    // Reset accumulator if direction changed
+    if (lastSkipDirectionRef.current !== direction) {
+      skipAccumulatorRef.current = 0;
+      lastSkipDirectionRef.current = direction;
+    }
+    // Accumulate
+    skipAccumulatorRef.current += Math.abs(seconds);
     video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
-    setSkipFeedback({ side: seconds > 0 ? "right" : "left", key: Date.now() });
+    setSkipFeedback({ side: direction, key: Date.now(), seconds: skipAccumulatorRef.current });
     showControlsTemporarily();
+    // Reset after 1 second of inactivity
+    skipResetTimeoutRef.current = setTimeout(() => {
+      skipAccumulatorRef.current = 0;
+      lastSkipDirectionRef.current = null;
+    }, 1000);
   };
 
   // ── Fullscreen ──
@@ -940,7 +973,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         {isLoading && playing && <LoadingSpinner />}
 
         {/* Skip feedback */}
-        {skipFeedback && <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={10} />}
+        {skipFeedback && <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={skipFeedback.seconds} />}
 
         {/* Speed change indicator */}
         {speedIndicator && (
@@ -1189,7 +1222,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           {/* ── Control buttons ── */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             {/* Left controls */}
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
               {/* Play/Pause */}
               <button className="vp-ctrl-btn" onClick={togglePlay}>
                 {playing ? <IconPause /> : <IconPlay />}
@@ -1255,8 +1288,21 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </span>
             </div>
 
+            {/* Episode info (center) */}
+            {episodeLabel && (
+              <div className="vp-hide-mobile" style={{
+                flex: 1, textAlign: "center", minWidth: 0,
+                color: "rgba(255,255,255,0.7)", fontSize: "0.82rem",
+                fontWeight: 500, overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap",
+                padding: "0 12px",
+              }}>
+                {episodeLabel}
+              </div>
+            )}
+
             {/* Right controls */}
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
               {/* Remaining time badge */}
               {playing && duration > 0 && (
                 <span className="vp-hide-mobile" style={{

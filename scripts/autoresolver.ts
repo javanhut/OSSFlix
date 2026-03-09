@@ -131,6 +131,42 @@ export async function resolveToDb(): Promise<void> {
   });
 
   tx();
+
+  // Upsert episode timings from timing.toml files
+  const upsertTiming = db.prepare(`
+    INSERT INTO episode_timings (video_src, intro_start, intro_end, outro_start, outro_end)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(video_src) DO UPDATE SET
+      intro_start = excluded.intro_start,
+      intro_end = excluded.intro_end,
+      outro_start = excluded.outro_start,
+      outro_end = excluded.outro_end
+  `);
+
+  for (const media of allMedia) {
+    if (!media.timings) continue;
+    for (const [sectionKey, timing] of Object.entries(media.timings)) {
+      // sectionKey is like "s01e01" — match to video files with _s01_ep01 pattern
+      const match = sectionKey.match(/^s(\d+)e(\d+)$/i);
+      if (!match) continue;
+      const seasonNum = Number(match[1]);
+      const epNum = Number(match[2]);
+      const pattern = new RegExp(`_s0*${seasonNum}_ep0*${epNum}\\.[^.]+$`, "i");
+      for (const videoSrc of media.videos) {
+        const filename = videoSrc.split("/").pop() || "";
+        if (pattern.test(filename)) {
+          upsertTiming.run(
+            videoSrc,
+            timing.intro_start ?? null,
+            timing.intro_end ?? null,
+            timing.outro_start ?? null,
+            timing.outro_end ?? null,
+          );
+        }
+      }
+    }
+  }
+
   console.log(`Resolved ${allMedia.length} titles into database (movies: ${moviesDir}, tvshows: ${tvshowsDir})`);
 }
 

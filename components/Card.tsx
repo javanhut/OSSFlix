@@ -81,16 +81,128 @@ type TimingRowData = {
   outroEnd: string;
 };
 
-function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
+type BrowseResult = {
+  current: string;
+  parent: string | null;
+  directories: { name: string; path: string }[];
+  files: { name: string; path: string }[];
+};
+
+function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
+  show: boolean; onHide: () => void; onSelect: (path: string) => void;
+  initialPath?: string;
+}) {
+  const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const browseTo = (path: string) => {
+    setLoading(true); setError(null);
+    fetch(`/api/browse?path=${encodeURIComponent(path)}&mode=toml`)
+      .then((r) => r.json())
+      .then((data) => data.error ? setError(data.error) : setBrowseData(data))
+      .catch(() => setError("Failed to browse"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (show) browseTo(initialPath || "/"); }, [show]);
+
+  const itemStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: "10px",
+    padding: "10px 14px", border: "none", borderRadius: "8px",
+    background: "transparent", color: "var(--oss-text)",
+    cursor: "pointer", fontSize: "0.85rem", textAlign: "left",
+    transition: "background 0.15s ease", width: "100%",
+  };
+
+  return (
+    <Modal show={show} onHide={onHide} size="lg" centered>
+      <ModalHeader closeButton>
+        <ModalTitle style={{ fontSize: "1.1rem" }}>Select timing.toml</ModalTitle>
+      </ModalHeader>
+      <ModalBody>
+        {browseData && (
+          <div style={{
+            padding: "8px 14px", borderRadius: "8px", marginBottom: "12px",
+            background: "var(--oss-bg-elevated)", fontSize: "0.82rem",
+            color: "var(--oss-text-muted)", fontFamily: "monospace",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {browseData.current}
+          </div>
+        )}
+        {error && <p style={{ color: "#ef4444", fontSize: "0.85rem" }}>{error}</p>}
+        {loading && (
+          <div style={{ textAlign: "center", padding: "2rem" }}>
+            <Spinner animation="border" size="sm" />
+          </div>
+        )}
+        {!loading && browseData && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "400px", overflowY: "auto" }}>
+            {browseData.parent && (
+              <button
+                style={itemStyle}
+                onClick={() => browseTo(browseData.parent!)}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5"/></svg>
+                <span style={{ color: "var(--oss-accent)" }}>..</span>
+              </button>
+            )}
+            {browseData.directories.map((dir) => (
+              <button
+                key={dir.path}
+                style={itemStyle}
+                onClick={() => browseTo(dir.path)}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }}><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5z"/></svg>
+                <span style={{ flex: 1, textAlign: "left" }}>{dir.name}</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.3 }}><path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/></svg>
+              </button>
+            ))}
+            {browseData.files.map((file) => (
+              <button
+                key={file.path}
+                style={{ ...itemStyle, color: "var(--oss-accent)" }}
+                onClick={() => { onSelect(file.path); onHide(); }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(59,130,246,0.1)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.414A2 2 0 0 0 13.414 3L11 .586A2 2 0 0 0 9.586 0zm5.586 1H10v3a1 1 0 0 0 1 1h3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/></svg>
+                <span style={{ flex: 1, textAlign: "left" }}>{file.name}</span>
+              </button>
+            ))}
+            {browseData.directories.length === 0 && browseData.files.length === 0 && (
+              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "1.5rem" }}>
+                No .toml files found
+              </p>
+            )}
+          </div>
+        )}
+      </ModalBody>
+      <ModalFooter>
+        <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Cancel</button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose }: {
   show: boolean;
   videos: string[];
   timingsMap: Record<string, EpisodeTiming>;
   onSaveAll: (timings: EpisodeTiming[]) => void;
+  onClearAll: () => void;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState<TimingRowData[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
 
   // Re-init rows when modal opens
   useEffect(() => {
@@ -126,6 +238,53 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
     }));
     onSaveAll(timings);
     setTimeout(() => { setSaving(false); setSaved(true); }, 400);
+  };
+
+  const handleClearAll = () => {
+    setRows((prev) => prev.map((r) => ({
+      ...r, introStart: "", introEnd: "", outroStart: "", outroEnd: "",
+    })));
+    onClearAll();
+    setSaved(false);
+  };
+
+  const handleImport = () => {
+    setShowFileBrowser(true);
+  };
+
+  const handleFileSelected = async (filePath: string) => {
+    setImporting(true);
+    try {
+      const res = await fetch("/api/episode/timings/parse-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      });
+      if (!res.ok) throw new Error("Parse failed");
+      const parsed: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = await res.json();
+      setRows((prev) => prev.map((r) => {
+        const filename = r.video_src.split("/").pop() || "";
+        const epMatch = filename.match(/_s(\d+)_ep(\d+)\./i);
+        if (!epMatch) return r;
+        const key = `s${epMatch[1].replace(/^0+/, "") || "0"}e${epMatch[2].replace(/^0+/, "") || "0"}`;
+        const timing = parsed[key.toLowerCase()]
+          || parsed[`s${epMatch[1]}e${epMatch[2]}`.toLowerCase()]
+          || parsed[`s${String(Number(epMatch[1])).padStart(2, "0")}e${String(Number(epMatch[2])).padStart(2, "0")}`.toLowerCase()];
+        if (!timing) return r;
+        return {
+          ...r,
+          introStart: secsToMmSs(timing.intro_start),
+          introEnd: secsToMmSs(timing.intro_end),
+          outroStart: secsToMmSs(timing.outro_start),
+          outroEnd: secsToMmSs(timing.outro_end),
+        };
+      }));
+      setSaved(false);
+    } catch {
+      alert("Failed to parse timing file. Make sure it is a valid timing.toml.");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -214,17 +373,35 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClose }: {
         </div>
         </div>
       </ModalBody>
-      <ModalFooter>
-        {saved && (
-          <span style={{ color: "#22c55e", fontSize: "0.82rem", fontWeight: 600, marginRight: "auto" }}>
-            &#10003; Saved successfully
-          </span>
-        )}
-        <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onClose}>Cancel</button>
-        <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save All"}
-        </button>
+      <ModalFooter style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button className="oss-btn oss-btn-sm" onClick={handleImport} disabled={importing}
+            style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.3)" }}>
+            {importing ? "Importing..." : "Import timing.toml"}
+          </button>
+          <button className="oss-btn oss-btn-sm" onClick={handleClearAll}
+            style={{ background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }}>
+            Clear All
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {saved && (
+            <span style={{ color: "#22c55e", fontSize: "0.82rem", fontWeight: 600 }}>
+              &#10003; Saved
+            </span>
+          )}
+          <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onClose}>Cancel</button>
+          <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save All"}
+          </button>
+        </div>
       </ModalFooter>
+      <TimingFileBrowser
+        show={showFileBrowser}
+        onHide={() => setShowFileBrowser(false)}
+        onSelect={handleFileSelected}
+        initialPath="/"
+      />
     </Modal>
   );
 }
@@ -299,6 +476,13 @@ export function Card({ show, onHide, dirPath }: CardProps) {
       for (const t of timings) map[t.video_src] = t;
       setTimingsMap(map);
     }).catch(() => {});
+  };
+
+  const clearAllTimings = () => {
+    if (!dirPath) return;
+    fetch(`/api/episode/timings/batch?dir=${encodeURIComponent(dirPath)}`, { method: "DELETE" })
+      .then(() => setTimingsMap({}))
+      .catch(() => {});
   };
 
   const fetchWatchlistStatus = () => {
@@ -639,6 +823,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
           videos={information.videos}
           timingsMap={timingsMap}
           onSaveAll={saveAllTimings}
+          onClearAll={clearAllTimings}
           onClose={() => setShowTimingsModal(false)}
         />
       )}

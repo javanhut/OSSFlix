@@ -13,6 +13,13 @@ export interface SubtitleTrack {
   format: string;
 }
 
+export interface EpisodeTimingEntry {
+  intro_start?: number | null;
+  intro_end?: number | null;
+  outro_start?: number | null;
+  outro_end?: number | null;
+}
+
 export interface ScannedMedia {
   name: string;
   description: string;
@@ -26,6 +33,7 @@ export interface ScannedMedia {
   subtitles: SubtitleTrack[];
   dirPath: string;
   sourcePath: string;
+  timings?: Record<string, EpisodeTimingEntry>;
 }
 
 const LANG_NAMES: Record<string, string> = {
@@ -44,10 +52,42 @@ function parseSubtitleFilename(filename: string, servePath: string): SubtitleTra
   return { label, language, src: `${servePath}/${filename}`, format: ext };
 }
 
+function parseMinSec(value: unknown): number | null {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return null;
+  const match = value.match(/^(\d+):(\d{1,2})$/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+async function parseTimingToml(filePath: string): Promise<Record<string, EpisodeTimingEntry> | undefined> {
+  try {
+    const toml = await import("toml");
+    const content = await Bun.file(filePath).text();
+    const parsed = toml.parse(content);
+    const timings: Record<string, EpisodeTimingEntry> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!/^s\d+e\d+$/i.test(key) || typeof value !== "object" || !value) continue;
+      const entry = value as Record<string, unknown>;
+      timings[key.toLowerCase()] = {
+        intro_start: parseMinSec(entry.intro_start),
+        intro_end: parseMinSec(entry.intro_end),
+        outro_start: parseMinSec(entry.outro_start),
+        outro_end: parseMinSec(entry.outro_end),
+      };
+    }
+    return Object.keys(timings).length > 0 ? timings : undefined;
+  } catch {
+    console.error(`Failed to parse timing.toml: ${filePath}`);
+    return undefined;
+  }
+}
+
 async function scanMediaDir(dirPath: string, servePath: string): Promise<ScannedMedia | null> {
   const entries = await readdir(dirPath, { withFileTypes: true });
 
-  let tomlFile: string | null = null;
+  let metadataTomlFile: string | null = null;
+  let timingTomlFile: string | null = null;
   let bannerImage: string | null = null;
   const videos: string[] = [];
   const subtitles: SubtitleTrack[] = [];
@@ -57,7 +97,11 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     const ext = extname(entry.name).toLowerCase();
 
     if (ext === ".toml") {
-      tomlFile = join(dirPath, entry.name);
+      if (entry.name.toLowerCase() === "timing.toml") {
+        timingTomlFile = join(dirPath, entry.name);
+      } else if (!metadataTomlFile) {
+        metadataTomlFile = join(dirPath, entry.name);
+      }
     } else if (IMAGE_EXTS.has(ext)) {
       bannerImage = `${servePath}/${entry.name}`;
     } else if (VIDEO_EXTS.has(ext)) {
@@ -67,10 +111,12 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     }
   }
 
-  if (!tomlFile) return null;
+  if (!metadataTomlFile) return null;
 
-  const data = await readTomlFile(tomlFile);
+  const data = await readTomlFile(metadataTomlFile);
   if (!data) return null;
+
+  const timings = timingTomlFile ? await parseTimingToml(timingTomlFile) : undefined;
 
   return {
     ...data,
@@ -79,6 +125,7 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     subtitles,
     dirPath: servePath,
     sourcePath: dirPath,
+    timings,
   };
 }
 

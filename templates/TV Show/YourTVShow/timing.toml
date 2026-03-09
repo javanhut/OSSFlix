@@ -1,0 +1,13 @@
+# Episode timing definitions for intro/outro skip buttons
+# Section headers use the format: s##e## (season and episode number)
+# Values use "min:sec" format (e.g. "1:30" = 90 seconds). Any field can be omitted.
+
+[s01e01]
+intro_start = "0:00"
+intro_end = "1:30"
+outro_start = "21:00"
+outro_end = "22:00"
+
+[s01e02]
+intro_start = "0:00"
+intro_end = "1:25"
