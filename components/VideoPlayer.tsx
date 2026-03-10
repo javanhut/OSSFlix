@@ -39,6 +39,10 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function safePlay(video: HTMLVideoElement): void {
+  video.play().catch(() => {});
+}
+
 function parseEpisodeFromSrc(src: string): string | null {
   const filename = src.split("/").pop() || "";
   const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
@@ -393,7 +397,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
+      safePlay(video);
       setPlaying(true);
     } else {
       video.pause();
@@ -407,7 +411,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (!video) return;
     video.currentTime = 0;
     setCurrentTime(0);
-    video.play();
+    safePlay(video);
     setPlaying(true);
     showControlsTemporarily();
   };
@@ -630,14 +634,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         const onSeeked = () => {
           seekLockRef.current = false;
           video.removeEventListener("seeked", onSeeked);
-          if (wasPlayingRef.current) { video.play(); setPlaying(true); }
+          if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
         };
         video.addEventListener("seeked", onSeeked);
         setTimeout(() => {
           if (seekLockRef.current) {
             seekLockRef.current = false;
             video.removeEventListener("seeked", onSeeked);
-            if (wasPlayingRef.current) { video.play(); setPlaying(true); }
+            if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
           }
         }, 2000);
       }
