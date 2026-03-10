@@ -61,27 +61,43 @@ Bun.serve({
           return new Response("Not found", { status: 404 });
         }
 
-        // Probe the file for codec and duration
+        // Parse audio stream selection
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+
+        // Probe the file for codec, duration, and audio streams
         const probe = Bun.spawnSync([
-          "ffprobe", "-v", "quiet", "-select_streams", "v:0",
-          "-show_entries", "stream=codec_name", "-show_entries", "format=duration",
+          "ffprobe", "-v", "quiet",
+          "-show_entries", "stream=index,codec_name,codec_type,channels",
+          "-show_entries", "format=duration",
           "-of", "json",
           sourcePath,
         ]);
         const probeData = JSON.parse(probe.stdout.toString() || "{}");
-        const videoCodec = probeData.streams?.[0]?.codec_name || "";
+        const videoStream = probeData.streams?.find((s: any) => s.codec_type === "video");
+        const videoCodec = videoStream?.codec_name || "";
         const probeDuration = probeData.format?.duration || "";
         const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
+
+        const audioStreams = probeData.streams?.filter((s: any) => s.codec_type === "audio") || [];
+        const selectedAudio = audioStreams[audioIndex] || audioStreams[0];
+        const audioCodec = selectedAudio?.codec_name || "";
+        const audioChannels = selectedAudio?.channels || 2;
+        const canCopyAudio = audioCodec === "aac";
+        const audioBitrate = audioChannels > 2 ? "384k" : "192k";
 
         // Remux when possible (near-instant), transcode only when needed
         const args = [
           "ffmpeg",
           ...(startTime > 0 ? ["-ss", String(startTime)] : []),
           "-i", sourcePath,
+          "-map", "0:v:0",
+          ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
           ...(canCopyVideo
             ? ["-c:v", "copy"]
             : ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]),
-          "-c:a", "aac", "-b:a", "128k",
+          ...(canCopyAudio
+            ? ["-c:a", "copy"]
+            : ["-c:a", "aac", "-b:a", audioBitrate]),
           "-movflags", "frag_keyframe+empty_moov+faststart",
           "-f", "mp4", "-",
         ];
@@ -116,12 +132,24 @@ Bun.serve({
         const probe = Bun.spawnSync([
           "ffprobe", "-v", "quiet",
           "-show_entries", "format=duration",
+          "-show_entries", "stream=index,codec_name,codec_type,channels,channel_layout",
+          "-show_entries", "stream_tags=language,title",
           "-of", "json",
           sourcePath,
         ]);
         const data = JSON.parse(probe.stdout.toString() || "{}");
         const duration = parseFloat(data.format?.duration || "0");
-        return Response.json({ duration });
+        const audioTracks = (data.streams || [])
+          .filter((s: any) => s.codec_type === "audio")
+          .map((s: any) => ({
+            index: s.index,
+            codec: s.codec_name,
+            channels: s.channels || 2,
+            channelLayout: s.channel_layout || "",
+            language: s.tags?.language || "und",
+            title: s.tags?.title || "",
+          }));
+        return Response.json({ duration, audioTracks });
       },
     },
     "/api/media/resolve": {

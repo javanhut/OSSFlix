@@ -15,6 +15,15 @@ type SubtitleTrack = {
   format: string;
 };
 
+type AudioTrack = {
+  index: number;
+  codec: string;
+  channels: number;
+  channelLayout: string;
+  language: string;
+  title: string;
+};
+
 type VideoPlayerProps = {
   show: boolean;
   onHide: () => void;
@@ -132,6 +141,13 @@ const IconCC = ({ active }: { active: boolean }) => (
     <path d="M19 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
   </svg>
 );
+const IconAudio = ({ active }: { active: boolean }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#3b82f6" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 18V5l12-2v13"/>
+    <circle cx="6" cy="18" r="3" fill={active ? "#3b82f6" : "none"}/>
+    <circle cx="18" cy="16" r="3" fill={active ? "#3b82f6" : "none"}/>
+  </svg>
+);
 const IconSettings = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3"/>
@@ -216,6 +232,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [ccAvailable, setCcAvailable] = useState(false);
   const [showCcMenu, setShowCcMenu] = useState(false);
   const [activeTrackIndex, setActiveTrackIndex] = useState(-1);
+
+  // Audio track state
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState(0);
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
+  const activeAudioTrackRef = useRef(0);
 
   // Dragging state
   const [dragging, setDragging] = useState(false);
@@ -310,6 +332,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setCountdown(null);
     setShowSkipIntro(false);
     setShowSkipOutro(false);
+    // Reset audio track selection
+    setActiveAudioTrack(0);
+    activeAudioTrackRef.current = 0;
+    setAudioTracks([]);
   }, [src]);
 
   const episodeLabel = useMemo(() => parseEpisodeFromSrc(src), [src]);
@@ -321,11 +347,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   const videoSrc = useMemo(() => {
     if (isStreamed) {
-      const base = `/api/stream?src=${encodeURIComponent(src)}`;
-      return streamOffset > 0 ? `${base}&start=${streamOffset}` : base;
+      let url = `/api/stream?src=${encodeURIComponent(src)}`;
+      if (streamOffset > 0) url += `&start=${streamOffset}`;
+      if (activeAudioTrack > 0) url += `&audio=${activeAudioTrack}`;
+      return url;
     }
     return src;
-  }, [src, isStreamed, streamOffset]);
+  }, [src, isStreamed, streamOffset, activeAudioTrack]);
 
   const resetState = useCallback(() => {
     setPlaying(false);
@@ -336,6 +364,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setShowControls(true);
     setShowSettingsMenu(false);
     setShowCcMenu(false);
+    setShowAudioMenu(false);
     setDragging(false);
     setHoverTime(null);
     setIsLoading(true);
@@ -357,6 +386,21 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setCurrentTime(seekTo);
     setIsLoading(true);
   }, []);
+
+  const selectAudioTrack = useCallback((trackIndex: number) => {
+    if (trackIndex === activeAudioTrackRef.current) {
+      setShowAudioMenu(false);
+      return;
+    }
+    activeAudioTrackRef.current = trackIndex;
+    setActiveAudioTrack(trackIndex);
+    setShowAudioMenu(false);
+    const video = videoRef.current;
+    if (video && isStreamed) {
+      const currentAbsoluteTime = video.currentTime + streamOffsetRef.current;
+      seekStream(currentAbsoluteTime);
+    }
+  }, [isStreamed, seekStream]);
 
   // ── Show / hide lifecycle ──
   useEffect(() => {
@@ -412,6 +456,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         setShowControls(false);
         setShowSettingsMenu(false);
         setShowCcMenu(false);
+        setShowAudioMenu(false);
         setShowVolumeSlider(false);
       }, 2500);
     }
@@ -494,6 +539,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (subtitles && subtitles.length > 1) {
       setShowCcMenu((v) => !v);
       setShowSettingsMenu(false);
+      setShowAudioMenu(false);
       return;
     }
     const video = videoRef.current;
@@ -588,10 +634,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (!isStreamed) return;
     fetch(`/api/stream/probe?src=${encodeURIComponent(src)}`)
       .then((res) => res.json())
-      .then((data: { duration?: number }) => {
+      .then((data: { duration?: number; audioTracks?: AudioTrack[] }) => {
         if (data.duration && isFinite(data.duration)) {
           setDuration(data.duration);
           durationRef.current = data.duration;
+        }
+        if (data.audioTracks) {
+          setAudioTracks(data.audioTracks);
         }
       })
       .catch(() => {});
@@ -896,6 +945,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         case "n": if (onNext) { e.preventDefault(); onNext(); } break;
         case "r": e.preventDefault(); restartFromBeginning(); break;
         case "c": e.preventDefault(); toggleCC(); break;
+        case "a": if (isStreamed && audioTracks.length > 1) { e.preventDefault(); setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); } break;
         case ",": if (video.paused) {
           if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current - 1); }
           else { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); }
@@ -1409,7 +1459,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
               {/* Settings (speed) */}
               <div style={{ position: "relative" }}>
-                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); }}
+                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); setShowAudioMenu(false); }}
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}>
                   <IconSettings />
                   {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#3b82f6" }}>{playbackRate}x</span>}
@@ -1462,6 +1512,39 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                   </div>
                 )}
               </div>
+
+              {/* Audio Track Selector */}
+              {isStreamed && audioTracks.length > 1 && (
+                <div style={{ position: "relative" }}>
+                  <button className="vp-ctrl-btn" onClick={() => { setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); }}>
+                    <IconAudio active={activeAudioTrack > 0} />
+                    <span className="vp-tooltip">Audio (a)</span>
+                  </button>
+                  {showAudioMenu && (
+                    <div className="vp-settings-panel" style={{ right: 0 }}>
+                      <div style={{ padding: "6px 16px 8px", color: "rgba(255,255,255,0.4)", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>
+                        Audio
+                      </div>
+                      {audioTracks.map((track, i) => {
+                        const label = track.title
+                          ? track.title
+                          : track.language !== "und"
+                            ? track.language.toUpperCase()
+                            : `Track ${i + 1}`;
+                        const channelInfo = track.channels > 2
+                          ? ` (${track.channelLayout || `${track.channels}ch`})`
+                          : "";
+                        return (
+                          <button key={track.index} className={`vp-speed-btn${i === activeAudioTrack ? " active" : ""}`} onClick={() => selectAudioTrack(i)}>
+                            <span>{label}{channelInfo}</span>
+                            {i === activeAudioTrack && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* PiP */}
               <button className="vp-ctrl-btn vp-hide-mobile" onClick={togglePip}>
