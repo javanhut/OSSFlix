@@ -226,6 +226,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const durationRef = useRef(0);
   const seekLockRef = useRef(false);
   const transitioningRef = useRef(false);
+  const streamOffsetRef = useRef(0);
+  const [streamOffset, setStreamOffset] = useState(0);
 
   // Skip intro/outro state
   const [showSkipIntro, setShowSkipIntro] = useState(false);
@@ -264,8 +266,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const video = videoRef.current;
     const videoSrcToSave = currentSrcRef.current;
     if (!video || !videoSrcToSave) return;
-    const ct = video.currentTime;
-    const dur = video.duration;
+    const ct = video.currentTime + streamOffsetRef.current;
+    const dur = isStreamed ? durationRef.current : (isFinite(video.duration) ? video.duration : 0);
     if (!isFinite(ct) || (ct === 0 && !force)) return;
     if (!force && Math.abs(ct - lastSavedTimeRef.current) < 3) return;
     lastSavedTimeRef.current = ct;
@@ -292,6 +294,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   useEffect(() => {
     initialTimeAppliedRef.current = false;
+    streamOffsetRef.current = 0;
+    setStreamOffset(0);
+    // For streamed files, apply initialTime via stream offset
+    if (isStreamed && initialTime && initialTime > 0) {
+      streamOffsetRef.current = initialTime;
+      setStreamOffset(initialTime);
+      initialTimeAppliedRef.current = true;
+    }
     // Clear countdown when src changes
     if (countdownRef.current) {
       clearInterval(countdownRef.current);
@@ -310,14 +320,19 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   }, [src]);
 
   const videoSrc = useMemo(() => {
-    if (isStreamed) return `/api/stream?src=${encodeURIComponent(src)}`;
+    if (isStreamed) {
+      const base = `/api/stream?src=${encodeURIComponent(src)}`;
+      return streamOffset > 0 ? `${base}&start=${streamOffset}` : base;
+    }
     return src;
-  }, [src, isStreamed]);
+  }, [src, isStreamed, streamOffset]);
 
   const resetState = useCallback(() => {
     setPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    streamOffsetRef.current = 0;
+    setStreamOffset(0);
     setShowControls(true);
     setShowSettingsMenu(false);
     setShowCcMenu(false);
@@ -335,13 +350,21 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setCountdown(null);
   }, []);
 
+  const seekStream = useCallback((absoluteTime: number) => {
+    const seekTo = Math.max(0, Math.min(absoluteTime, durationRef.current - 1));
+    streamOffsetRef.current = seekTo;
+    setStreamOffset(seekTo);
+    setCurrentTime(seekTo);
+    setIsLoading(true);
+  }, []);
+
   // ── Show / hide lifecycle ──
   useEffect(() => {
     if (!show) {
       const video = videoRef.current;
       if (video && currentSrcRef.current) {
-        const ct = video.currentTime;
-        const dur = video.duration;
+        const ct = video.currentTime + streamOffsetRef.current;
+        const dur = isStreamed ? durationRef.current : video.duration;
         if (isFinite(ct) && ct > 0) {
           const hdrs: Record<string, string> = { "Content-Type": "application/json" };
           if (profileId) hdrs["x-profile-id"] = String(profileId);
@@ -411,10 +434,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const restartFromBeginning = () => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = 0;
-    setCurrentTime(0);
-    safePlay(video);
-    setPlaying(true);
+    if (isStreamed) {
+      seekStream(0);
+    } else {
+      video.currentTime = 0;
+      setCurrentTime(0);
+      safePlay(video);
+      setPlaying(true);
+    }
     showControlsTemporarily();
   };
 
@@ -422,8 +449,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const video = videoRef.current;
     const t = timingsRef.current;
     if (!video || !t?.intro_end) return;
-    video.currentTime = t.intro_end;
-    setCurrentTime(t.intro_end);
+    if (isStreamed) {
+      seekStream(t.intro_end);
+    } else {
+      video.currentTime = t.intro_end;
+      setCurrentTime(t.intro_end);
+    }
     showControlsTemporarily();
   };
 
@@ -504,10 +535,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video || dragging || seekLockRef.current) return;
-    const ct = video.currentTime;
-    const dur = video.duration;
+    const ct = video.currentTime + streamOffsetRef.current;
+    const dur = isStreamed ? durationRef.current : video.duration;
     setCurrentTime(ct);
-    if (video.buffered.length > 0) {
+    if (!isStreamed && video.buffered.length > 0) {
       setBuffered(video.buffered.end(video.buffered.length - 1));
     }
 
@@ -587,7 +618,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         video.textTracks[i].mode = i === activeTrackIndex ? "showing" : "hidden";
       }
     }
-    if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
+    if (isStreamed) {
+      // For streamed files, initialTime is handled via stream offset
+      setCurrentTime(streamOffsetRef.current);
+      // Auto-play after stream seek
+      if (streamOffsetRef.current > 0 || wasPlayingRef.current) {
+        safePlay(video);
+        setPlaying(true);
+      }
+    } else if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
       initialTimeAppliedRef.current = true;
       video.currentTime = Math.min(initialTime, video.duration - 1);
       setCurrentTime(video.currentTime);
@@ -622,7 +661,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     wasPlayingRef.current = playing;
     if (videoRef.current) {
       if (!videoRef.current.paused) videoRef.current.pause();
-      videoRef.current.currentTime = time;
+      if (!isStreamed) videoRef.current.currentTime = time;
     }
   };
 
@@ -642,28 +681,32 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       const { time, x } = getTimeFromXRef(clientX);
       setDragTime(time);
       setDragX(x);
-      if (videoRef.current) videoRef.current.currentTime = time;
+      if (!isStreamed && videoRef.current) videoRef.current.currentTime = time;
     };
     const handleEnd = (clientX: number) => {
       const { time } = getTimeFromXRef(clientX);
       const video = videoRef.current;
       if (video) {
-        seekLockRef.current = true;
-        video.currentTime = time;
-        setCurrentTime(time);
-        const onSeeked = () => {
-          seekLockRef.current = false;
-          video.removeEventListener("seeked", onSeeked);
-          if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
-        };
-        video.addEventListener("seeked", onSeeked);
-        setTimeout(() => {
-          if (seekLockRef.current) {
+        if (isStreamed) {
+          seekStream(time);
+        } else {
+          seekLockRef.current = true;
+          video.currentTime = time;
+          setCurrentTime(time);
+          const onSeeked = () => {
             seekLockRef.current = false;
             video.removeEventListener("seeked", onSeeked);
             if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
-          }
-        }, 2000);
+          };
+          video.addEventListener("seeked", onSeeked);
+          setTimeout(() => {
+            if (seekLockRef.current) {
+              seekLockRef.current = false;
+              video.removeEventListener("seeked", onSeeked);
+              if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
+            }
+          }, 2000);
+        }
       }
       setDragging(false);
       showControlsTemporarily();
@@ -745,7 +788,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     }
     // Accumulate
     skipAccumulatorRef.current += Math.abs(seconds);
-    video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+    if (isStreamed) {
+      const absoluteCurrent = video.currentTime + streamOffsetRef.current;
+      seekStream(absoluteCurrent + seconds);
+    } else {
+      video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+    }
     setSkipFeedback({ side: direction, key: Date.now(), seconds: skipAccumulatorRef.current });
     showControlsTemporarily();
     // Reset after 1 second of inactivity
@@ -848,8 +896,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         case "n": if (onNext) { e.preventDefault(); onNext(); } break;
         case "r": e.preventDefault(); restartFromBeginning(); break;
         case "c": e.preventDefault(); toggleCC(); break;
-        case ",": if (video.paused) { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); } break;
-        case ".": if (video.paused) { video.currentTime = Math.min(video.duration, video.currentTime + 1/30); setCurrentTime(video.currentTime); } break;
+        case ",": if (video.paused) {
+          if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current - 1); }
+          else { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); }
+        } break;
+        case ".": if (video.paused) {
+          if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current + 1); }
+          else { video.currentTime = Math.min(video.duration, video.currentTime + 1/30); setCurrentTime(video.currentTime); }
+        } break;
         case "<": case "[": {
           e.preventDefault();
           const idx = speeds.indexOf(playbackRate);

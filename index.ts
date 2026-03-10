@@ -47,6 +47,7 @@ Bun.serve({
       async GET(req) {
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
+        const startTime = parseFloat(url.searchParams.get("start") || "0") || 0;
         if (!srcParam) {
           return Response.json({ error: "Missing src parameter" }, { status: 400 });
         }
@@ -74,7 +75,9 @@ Bun.serve({
 
         // Remux when possible (near-instant), transcode only when needed
         const args = [
-          "ffmpeg", "-i", sourcePath,
+          "ffmpeg",
+          ...(startTime > 0 ? ["-ss", String(startTime)] : []),
+          "-i", sourcePath,
           ...(canCopyVideo
             ? ["-c:v", "copy"]
             : ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]),
