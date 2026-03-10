@@ -119,6 +119,18 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
 
   const timings = timingTomlFile ? await parseTimingToml(timingTomlFile) : undefined;
 
+  videos.sort((a, b) => {
+    const re = /_s(\d+)_ep(\d+)\.[^.]+$/i;
+    const ma = a.match(re);
+    const mb = b.match(re);
+    if (ma && mb) {
+      const seasonDiff = Number(ma[1]) - Number(mb[1]);
+      if (seasonDiff !== 0) return seasonDiff;
+      return Number(ma[2]) - Number(mb[2]);
+    }
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+
   return {
     ...data,
     bannerImage,
