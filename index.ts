@@ -60,13 +60,16 @@ Bun.serve({
           return new Response("Not found", { status: 404 });
         }
 
-        // Probe the file to decide remux vs transcode
+        // Probe the file for codec and duration
         const probe = Bun.spawnSync([
           "ffprobe", "-v", "quiet", "-select_streams", "v:0",
-          "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+          "-show_entries", "stream=codec_name", "-show_entries", "format=duration",
+          "-of", "json",
           sourcePath,
         ]);
-        const videoCodec = probe.stdout.toString().trim();
+        const probeData = JSON.parse(probe.stdout.toString() || "{}");
+        const videoCodec = probeData.streams?.[0]?.codec_name || "";
+        const probeDuration = probeData.format?.duration || "";
         const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
 
         // Remux when possible (near-instant), transcode only when needed
@@ -85,12 +88,37 @@ Bun.serve({
           stderr: "ignore",
         });
 
-        return new Response(ffmpeg.stdout, {
-          headers: {
-            "Content-Type": "video/mp4",
-            "Transfer-Encoding": "chunked",
-          },
-        });
+        const headers: Record<string, string> = {
+          "Content-Type": "video/mp4",
+          "Transfer-Encoding": "chunked",
+        };
+        if (probeDuration) {
+          headers["X-Duration"] = probeDuration;
+        }
+
+        return new Response(ffmpeg.stdout, { headers });
+      },
+    },
+    "/api/stream/probe": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const srcParam = url.searchParams.get("src");
+        if (!srcParam) {
+          return Response.json({ error: "Missing src parameter" }, { status: 400 });
+        }
+        const sourcePath = resolveSourcePath(srcParam);
+        if (!sourcePath) {
+          return Response.json({ error: "Not found" }, { status: 404 });
+        }
+        const probe = Bun.spawnSync([
+          "ffprobe", "-v", "quiet",
+          "-show_entries", "format=duration",
+          "-of", "json",
+          sourcePath,
+        ]);
+        const data = JSON.parse(probe.stdout.toString() || "{}");
+        const duration = parseFloat(data.format?.duration || "0");
+        return Response.json({ duration });
       },
     },
     "/api/media/resolve": {

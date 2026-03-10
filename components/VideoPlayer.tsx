@@ -304,13 +304,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   const episodeLabel = useMemo(() => parseEpisodeFromSrc(src), [src]);
 
-  const videoSrc = useMemo(() => {
+  const isStreamed = useMemo(() => {
     const ext = src.split(".").pop()?.toLowerCase();
-    if (ext === "mkv" || ext === "avi" || ext === "wmv") {
-      return `/api/stream?src=${encodeURIComponent(src)}`;
-    }
-    return src;
+    return ext === "mkv" || ext === "avi" || ext === "wmv";
   }, [src]);
+
+  const videoSrc = useMemo(() => {
+    if (isStreamed) return `/api/stream?src=${encodeURIComponent(src)}`;
+    return src;
+  }, [src, isStreamed]);
 
   const resetState = useCallback(() => {
     setPlaying(false);
@@ -550,11 +552,29 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     }
   };
 
+  // Fetch real duration from server for streamed (transcoded) files
+  useEffect(() => {
+    if (!isStreamed) return;
+    fetch(`/api/stream/probe?src=${encodeURIComponent(src)}`)
+      .then((res) => res.json())
+      .then((data: { duration?: number }) => {
+        if (data.duration && isFinite(data.duration)) {
+          setDuration(data.duration);
+          durationRef.current = data.duration;
+        }
+      })
+      .catch(() => {});
+  }, [src, isStreamed]);
+
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
-    setDuration(video.duration);
-    durationRef.current = video.duration;
+    const dur = video.duration;
+    // For streamed files, only update duration if the browser reports a valid one
+    if (!isStreamed || (isFinite(dur) && dur > 60)) {
+      setDuration(dur);
+      durationRef.current = dur;
+    }
     setBuffered(0);
     setIsLoading(false);
     // Reapply playback rate after source change
