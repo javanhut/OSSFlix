@@ -60,20 +60,27 @@ Bun.serve({
           return new Response("Not found", { status: 404 });
         }
 
-        // Use ffmpeg to transcode to mp4 for browser playback
-        const ffmpeg = Bun.spawn([
-          "ffmpeg",
-          "-i", sourcePath,
-          "-c:v", "libx264",
-          "-preset", "ultrafast",
-          "-tune", "zerolatency",
-          "-crf", "23",
-          "-c:a", "aac",
-          "-b:a", "128k",
+        // Probe the file to decide remux vs transcode
+        const probe = Bun.spawnSync([
+          "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+          "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+          sourcePath,
+        ]);
+        const videoCodec = probe.stdout.toString().trim();
+        const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
+
+        // Remux when possible (near-instant), transcode only when needed
+        const args = [
+          "ffmpeg", "-i", sourcePath,
+          ...(canCopyVideo
+            ? ["-c:v", "copy"]
+            : ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]),
+          "-c:a", "aac", "-b:a", "128k",
           "-movflags", "frag_keyframe+empty_moov+faststart",
-          "-f", "mp4",
-          "-",
-        ], {
+          "-f", "mp4", "-",
+        ];
+
+        const ffmpeg = Bun.spawn(args, {
           stdout: "pipe",
           stderr: "ignore",
         });
