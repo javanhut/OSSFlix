@@ -616,7 +616,7 @@ Bun.serve({
             if (tomlFile) {
               const tomlPath = join(sourcePath, tomlFile);
               let content = await Bun.file(tomlPath).text();
-              const VIDEO_EXTS_SET = new Set([".mp4", ".mkv", ".webm"]);
+              const VIDEO_EXTS_SET = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv"]);
               const videoCount = dirEntries.filter((f) => VIDEO_EXTS_SET.has(extname(f).toLowerCase())).length;
               if (content.match(/episodes\s*=\s*\d+/)) {
                 content = content.replace(/episodes\s*=\s*\d+/, `episodes = ${videoCount}`);

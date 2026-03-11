@@ -3,7 +3,7 @@ import { join, extname } from "node:path";
 import { readTomlFile } from "./tomlreader";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
-const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm"]);
+const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv"]);
 const SUBTITLE_EXTS = new Set([".srt", ".vtt", ".ass", ".ssa"]);
 
 export interface SubtitleTrack {

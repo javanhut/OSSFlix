@@ -350,7 +350,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   const isStreamed = useMemo(() => {
     const ext = src.split(".").pop()?.toLowerCase();
-    return ext === "mkv" || ext === "avi" || ext === "wmv";
+    return ext === "mkv" || ext === "avi" || ext === "wmv" || ext === "mov" || ext === "webm";
   }, [src]);
 
   const videoSrc = useMemo(() => {
