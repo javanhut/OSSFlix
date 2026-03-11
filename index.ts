@@ -1,7 +1,8 @@
 import index from "./index.html";
 import { resolve, join, dirname } from "node:path";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { extname } from "node:path";
+import { createHash } from "node:crypto";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
@@ -25,6 +26,175 @@ function getProfileFromReq(req: Request) {
 const IMAGES_BASE = resolve("./images");
 const AVATARS_BASE = resolve("./data/avatars");
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
+
+// ── Transcode cache ──
+const CACHE_DIR = resolve("./data/cache");
+await mkdir(CACHE_DIR, { recursive: true });
+
+// Track active transcoding jobs: cacheKey -> { process, bytesWritten, duration, done, error }
+const activeTranscodes = new Map<string, {
+  process: ReturnType<typeof Bun.spawn>;
+  bytesWritten: number;
+  duration: number;
+  done: boolean;
+  error: boolean;
+}>();
+
+function getCacheKey(sourcePath: string, audioIndex: number): string {
+  const hash = createHash("sha256").update(`${sourcePath}:audio=${audioIndex}`).digest("hex").slice(0, 16);
+  const baseName = sourcePath.split("/").pop()?.replace(/\.[^.]+$/, "") || "video";
+  return `${baseName}_${hash}`;
+}
+
+function getCachePath(cacheKey: string): string {
+  return join(CACHE_DIR, `${cacheKey}.mp4`);
+}
+
+async function getCacheStatus(sourcePath: string, audioIndex: number): Promise<{
+  cached: boolean;
+  cacheKey: string;
+  cachePath: string;
+  transcoding: boolean;
+  bytesWritten: number;
+  duration: number;
+  fileSize: number;
+}> {
+  const cacheKey = getCacheKey(sourcePath, audioIndex);
+  const cachePath = getCachePath(cacheKey);
+  const active = activeTranscodes.get(cacheKey);
+  const file = Bun.file(cachePath);
+  const exists = await file.exists();
+  const done = active?.done ?? false;
+
+  return {
+    cached: exists && (done || !active),
+    cacheKey,
+    cachePath,
+    transcoding: !!active && !active.done && !active.error,
+    bytesWritten: active?.bytesWritten ?? (exists ? file.size : 0),
+    duration: active?.duration ?? 0,
+    fileSize: exists ? file.size : 0,
+  };
+}
+
+// Start a background full-file transcode and save to cache
+async function startCacheTranscode(sourcePath: string, audioIndex: number): Promise<string> {
+  const cacheKey = getCacheKey(sourcePath, audioIndex);
+  const cachePath = getCachePath(cacheKey);
+
+  // Already cached or in-progress
+  if (activeTranscodes.has(cacheKey)) return cacheKey;
+  const file = Bun.file(cachePath);
+  if (await file.exists()) return cacheKey;
+
+  // Probe for codec info
+  const probe = Bun.spawnSync([
+    "ffprobe", "-v", "quiet",
+    "-show_entries", "stream=index,codec_name,codec_type,channels",
+    "-show_entries", "format=duration",
+    "-of", "json",
+    sourcePath,
+  ]);
+  const probeData = JSON.parse(probe.stdout.toString() || "{}");
+  const videoStream = probeData.streams?.find((s: any) => s.codec_type === "video");
+  const videoCodec = videoStream?.codec_name || "";
+  const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
+  const audioStreams = probeData.streams?.filter((s: any) => s.codec_type === "audio") || [];
+  const selectedAudio = audioStreams[audioIndex] || audioStreams[0];
+  const audioCodec = selectedAudio?.codec_name || "";
+  const audioChannels = selectedAudio?.channels || 2;
+  const canCopyAudio = audioCodec === "aac";
+  const audioBitrate = audioChannels > 2 ? "384k" : "192k";
+  const duration = parseFloat(probeData.format?.duration || "0");
+
+  const tmpPath = cachePath + ".tmp";
+
+  const args = [
+    "ffmpeg", "-y",
+    "-i", sourcePath,
+    "-fflags", "+genpts",
+    "-map", "0:v:0",
+    ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
+    ...(canCopyVideo
+      ? ["-c:v", "copy"]
+      : ["-c:v", "libx264", "-preset", "fast", "-tune", "zerolatency", "-crf", "23"]),
+    ...(canCopyAudio
+      ? ["-c:a", "copy"]
+      : ["-c:a", "aac", "-b:a", audioBitrate,
+         "-af", "aresample=async=1000"]),
+    "-avoid_negative_ts", "make_zero",
+    "-max_muxing_queue_size", "9999",
+    "-movflags", "+faststart",
+    "-f", "mp4", tmpPath,
+  ];
+
+  const ffmpeg = Bun.spawn(args, {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+
+  const job = {
+    process: ffmpeg,
+    bytesWritten: 0,
+    duration,
+    done: false,
+    error: false,
+  };
+  activeTranscodes.set(cacheKey, job);
+
+  // Monitor progress by polling tmp file size
+  const progressInterval = setInterval(async () => {
+    try {
+      const tmpFile = Bun.file(tmpPath);
+      if (await tmpFile.exists()) {
+        job.bytesWritten = tmpFile.size;
+      }
+    } catch {}
+  }, 1000);
+
+  // Drain stderr to prevent pipe blocking
+  (async () => {
+    try {
+      const reader = ffmpeg.stderr.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    } catch {}
+  })();
+
+  // Wait for completion
+  ffmpeg.exited.then(async (code) => {
+    clearInterval(progressInterval);
+    if (code === 0) {
+      // Rename tmp to final
+      try {
+        const { rename } = await import("node:fs/promises");
+        await rename(tmpPath, cachePath);
+        job.done = true;
+        const finalFile = Bun.file(cachePath);
+        job.bytesWritten = finalFile.size;
+      } catch {
+        job.error = true;
+      }
+    } else {
+      job.error = true;
+      // Clean up tmp file
+      try {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(tmpPath);
+      } catch {}
+    }
+    // Clean up active transcodes after a delay (keep status available briefly)
+    setTimeout(() => {
+      if (job.done || job.error) {
+        activeTranscodes.delete(cacheKey);
+      }
+    }, 30000);
+  });
+
+  return cacheKey;
+}
 
 // Resolve media into SQLite on startup using profile-stored directories
 await resolveToDb();
@@ -51,7 +221,6 @@ Bun.serve({
         if (!srcParam) {
           return Response.json({ error: "Missing src parameter" }, { status: 400 });
         }
-        // Resolve the actual file path from the serve path
         const sourcePath = resolveSourcePath(srcParam);
         if (!sourcePath) {
           return new Response("Not found", { status: 404 });
@@ -61,10 +230,60 @@ Bun.serve({
           return new Response("Not found", { status: 404 });
         }
 
-        // Parse audio stream selection
         const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
 
-        // Probe the file for codec, duration, and audio streams
+        // Check if we have a completed cache for this file
+        const cache = await getCacheStatus(sourcePath, audioIndex);
+        if (cache.cached && !cache.transcoding) {
+          // Serve from cache with range request support for instant seeking
+          const cachedFile = Bun.file(cache.cachePath);
+          const fileSize = cachedFile.size;
+
+          // Start background cache for this file (no-op if already cached)
+          // This ensures future plays are also instant
+          const probeDuration = await (async () => {
+            const p = Bun.spawnSync([
+              "ffprobe", "-v", "quiet",
+              "-show_entries", "format=duration",
+              "-of", "json",
+              sourcePath,
+            ]);
+            return JSON.parse(p.stdout.toString() || "{}").format?.duration || "";
+          })();
+
+          const rangeHeader = req.headers.get("range");
+          if (rangeHeader) {
+            const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+            if (match) {
+              const start = parseInt(match[1], 10);
+              const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+              const chunkSize = end - start + 1;
+              return new Response(cachedFile.slice(start, end + 1), {
+                status: 206,
+                headers: {
+                  "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                  "Accept-Ranges": "bytes",
+                  "Content-Length": String(chunkSize),
+                  "Content-Type": "video/mp4",
+                  ...(probeDuration ? { "X-Duration": probeDuration } : {}),
+                  "X-Cache": "hit",
+                },
+              });
+            }
+          }
+
+          return new Response(cachedFile, {
+            headers: {
+              "Accept-Ranges": "bytes",
+              "Content-Length": String(fileSize),
+              "Content-Type": "video/mp4",
+              ...(probeDuration ? { "X-Duration": probeDuration } : {}),
+              "X-Cache": "hit",
+            },
+          });
+        }
+
+        // No cache — live transcode (and start background full-file cache)
         const probe = Bun.spawnSync([
           "ffprobe", "-v", "quiet",
           "-show_entries", "stream=index,codec_name,codec_type,channels",
@@ -84,6 +303,9 @@ Bun.serve({
         const audioChannels = selectedAudio?.channels || 2;
         const canCopyAudio = audioCodec === "aac";
         const audioBitrate = audioChannels > 2 ? "384k" : "192k";
+
+        // Start background full-file cache transcode (no seek, full file)
+        startCacheTranscode(sourcePath, audioIndex).catch(() => {});
 
         // Hybrid seek: fast-seek to ~30s before target, then accurate-seek the rest
         const seekWindow = 30;
@@ -120,12 +342,75 @@ Bun.serve({
         const headers: Record<string, string> = {
           "Content-Type": "video/mp4",
           "Transfer-Encoding": "chunked",
+          "X-Cache": "miss",
         };
         if (probeDuration) {
           headers["X-Duration"] = probeDuration;
         }
 
         return new Response(ffmpeg.stdout, { headers });
+      },
+    },
+    "/api/stream/cache/status": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const srcParam = url.searchParams.get("src");
+        if (!srcParam) {
+          return Response.json({ error: "Missing src parameter" }, { status: 400 });
+        }
+        const sourcePath = resolveSourcePath(srcParam);
+        if (!sourcePath) {
+          return Response.json({ error: "Not found" }, { status: 404 });
+        }
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+        const status = await getCacheStatus(sourcePath, audioIndex);
+        return Response.json({
+          cached: status.cached,
+          transcoding: status.transcoding,
+          bytesWritten: status.bytesWritten,
+          duration: status.duration,
+          fileSize: status.fileSize,
+        });
+      },
+    },
+    "/api/stream/cache/clear": {
+      async DELETE(req) {
+        const url = new URL(req.url);
+        const srcParam = url.searchParams.get("src");
+        if (srcParam) {
+          // Clear specific file cache
+          const sourcePath = resolveSourcePath(srcParam);
+          if (!sourcePath) {
+            return Response.json({ error: "Not found" }, { status: 404 });
+          }
+          const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+          const cacheKey = getCacheKey(sourcePath, audioIndex);
+          const cachePath = getCachePath(cacheKey);
+          const active = activeTranscodes.get(cacheKey);
+          if (active && !active.done) {
+            active.process.kill();
+          }
+          activeTranscodes.delete(cacheKey);
+          try {
+            const { unlink } = await import("node:fs/promises");
+            await unlink(cachePath);
+            await unlink(cachePath + ".tmp").catch(() => {});
+          } catch {}
+          return Response.json({ cleared: true });
+        }
+        // Clear all cache
+        const { readdir: rd, unlink } = await import("node:fs/promises");
+        for (const [key, job] of activeTranscodes) {
+          if (!job.done) job.process.kill();
+        }
+        activeTranscodes.clear();
+        try {
+          const files = await rd(CACHE_DIR);
+          for (const f of files) {
+            await unlink(join(CACHE_DIR, f)).catch(() => {});
+          }
+        } catch {}
+        return Response.json({ cleared: true });
       },
     },
     "/api/stream/probe": {

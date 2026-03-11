@@ -221,6 +221,17 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [isPip, setIsPip] = useState(false);
 
+  // Cache/buffer state for streamed content
+  const [cacheStatus, setCacheStatus] = useState<{
+    cached: boolean;
+    transcoding: boolean;
+    bytesWritten: number;
+    duration: number;
+    fileSize: number;
+  } | null>(null);
+  const [streamBufferedPercent, setStreamBufferedPercent] = useState(0);
+  const cachePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Skip feedback
   const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number; seconds: number } | null>(null);
   const skipAccumulatorRef = useRef(0);
@@ -326,11 +337,45 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     initialTimeAppliedRef.current = false;
     streamOffsetRef.current = 0;
     setStreamOffset(0);
-    // For streamed files, apply initialTime via stream offset
+    // Reset cache mode for new source
+    isCachedRef.current = false;
+    setCachedMode(false);
+    // For streamed files, check if already cached and apply initialTime
     if (isStreamed && initialTime && initialTime > 0) {
-      streamOffsetRef.current = initialTime;
-      setStreamOffset(initialTime);
-      initialTimeAppliedRef.current = true;
+      // Check cache status to decide how to apply initialTime
+      fetch(`/api/stream/cache/status?src=${encodeURIComponent(src)}`)
+        .then((res) => res.json())
+        .then((data: any) => {
+          if (data.cached && !data.transcoding) {
+            // Already cached — use cached mode with native seeking
+            isCachedRef.current = true;
+            setCachedMode(true);
+            // Don't set streamOffset — we'll seek natively in handleLoadedMetadata
+            initialTimeAppliedRef.current = true;
+          } else {
+            // Not cached — use stream offset
+            streamOffsetRef.current = initialTime;
+            setStreamOffset(initialTime);
+            initialTimeAppliedRef.current = true;
+          }
+        })
+        .catch(() => {
+          // Fallback to stream offset
+          streamOffsetRef.current = initialTime;
+          setStreamOffset(initialTime);
+          initialTimeAppliedRef.current = true;
+        });
+    } else if (isStreamed) {
+      // No initial time — still check if cached for instant playback
+      fetch(`/api/stream/cache/status?src=${encodeURIComponent(src)}`)
+        .then((res) => res.json())
+        .then((data: any) => {
+          if (data.cached && !data.transcoding) {
+            isCachedRef.current = true;
+            setCachedMode(true);
+          }
+        })
+        .catch(() => {});
     }
     // Clear countdown when src changes
     if (countdownRef.current) {
@@ -353,15 +398,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     return ext === "mkv" || ext === "avi" || ext === "wmv" || ext === "mov" || ext === "webm";
   }, [src]);
 
+  const isCachedRef = useRef(false);
+  // Track if we've switched to cached playback mode
+  const [cachedMode, setCachedMode] = useState(false);
+
   const videoSrc = useMemo(() => {
     if (isStreamed) {
       let url = `/api/stream?src=${encodeURIComponent(src)}`;
-      if (streamOffset > 0) url += `&start=${streamOffset}`;
+      // When cached, don't include start offset — use native seeking instead
+      if (!cachedMode && streamOffset > 0) url += `&start=${streamOffset}`;
       if (activeAudioTrack > 0) url += `&audio=${activeAudioTrack}`;
       return url;
     }
     return src;
-  }, [src, isStreamed, streamOffset, activeAudioTrack]);
+  }, [src, isStreamed, streamOffset, activeAudioTrack, cachedMode]);
 
   const resetState = useCallback(() => {
     setPlaying(false);
@@ -387,10 +437,31 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setShowSkipOutro(false);
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     setCountdown(null);
+    setCacheStatus(null);
+    setStreamBufferedPercent(0);
+    isCachedRef.current = false;
+    setCachedMode(false);
+    if (cachePollingRef.current) { clearInterval(cachePollingRef.current); cachePollingRef.current = null; }
   }, []);
 
   const seekStream = useCallback((absoluteTime: number) => {
     const seekTo = Math.max(0, Math.min(absoluteTime, durationRef.current - 1));
+    const video = videoRef.current;
+
+    // If we're in cached mode, use native seeking (much faster)
+    if (isCachedRef.current && video) {
+      video.currentTime = seekTo;
+      streamOffsetRef.current = 0;
+      setStreamOffset(0);
+      setCurrentTime(seekTo);
+      if (wasPlayingRef.current || !video.paused) {
+        safePlay(video);
+        setPlaying(true);
+      }
+      return;
+    }
+
+    // Not cached — reload stream with new start offset
     streamOffsetRef.current = seekTo;
     setStreamOffset(seekTo);
     setCurrentTime(seekTo);
@@ -408,9 +479,18 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const video = videoRef.current;
     if (video && isStreamed) {
       const currentAbsoluteTime = video.currentTime + streamOffsetRef.current;
-      seekStream(currentAbsoluteTime);
+      // Different audio track may have a different cache — reset cached mode
+      isCachedRef.current = false;
+      setCachedMode(false);
+      setCacheStatus(null);
+      setStreamBufferedPercent(0);
+      // This will trigger a new stream request (and start caching the new audio variant)
+      streamOffsetRef.current = currentAbsoluteTime;
+      setStreamOffset(currentAbsoluteTime);
+      setCurrentTime(currentAbsoluteTime);
+      setIsLoading(true);
     }
-  }, [isStreamed, seekStream]);
+  }, [isStreamed]);
 
   // ── Show / hide lifecycle ──
   useEffect(() => {
@@ -604,8 +684,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const ct = video.currentTime + streamOffsetRef.current;
     const dur = isStreamed ? durationRef.current : video.duration;
     setCurrentTime(ct);
-    if (!isStreamed && video.buffered.length > 0) {
-      setBuffered(video.buffered.end(video.buffered.length - 1));
+    if (video.buffered.length > 0) {
+      const bufEnd = video.buffered.end(video.buffered.length - 1);
+      if (isStreamed) {
+        // For streamed: buffered is relative to stream offset
+        setBuffered(bufEnd + streamOffsetRef.current);
+        // Update stream buffer percent from actual video buffer
+        const totalDur = durationRef.current;
+        if (totalDur > 0) {
+          const bufPercent = ((bufEnd + streamOffsetRef.current) / totalDur) * 100;
+          setStreamBufferedPercent((prev) => Math.max(prev, bufPercent));
+        }
+      } else {
+        setBuffered(bufEnd);
+      }
     }
 
     const t = timingsRef.current;
@@ -666,6 +758,89 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       .catch(() => {});
   }, [src, isStreamed]);
 
+  // Poll cache/buffer status for streamed content
+  useEffect(() => {
+    if (!isStreamed || !show) {
+      setCacheStatus(null);
+      setStreamBufferedPercent(0);
+      if (cachePollingRef.current) {
+        clearInterval(cachePollingRef.current);
+        cachePollingRef.current = null;
+      }
+      return;
+    }
+
+    const pollCache = () => {
+      let url = `/api/stream/cache/status?src=${encodeURIComponent(src)}`;
+      if (activeAudioTrackRef.current > 0) url += `&audio=${activeAudioTrackRef.current}`;
+      fetch(url)
+        .then((res) => res.json())
+        .then((data: any) => {
+          setCacheStatus(data);
+          if (data.cached && !data.transcoding) {
+            // Fully cached — 100% buffered
+            setStreamBufferedPercent(100);
+            // Stop polling once fully cached
+            if (cachePollingRef.current) {
+              clearInterval(cachePollingRef.current);
+              cachePollingRef.current = null;
+            }
+          } else if (data.transcoding && data.duration > 0 && data.fileSize > 0) {
+            // Estimate buffer progress based on bytes written vs estimated total
+            // Use a rough estimate: (bytesWritten / fileSize) isn't useful during transcoding
+            // Instead, we watch the file growing and estimate based on transcode speed
+            // For simplicity, use bytesWritten relative to what we've seen as max
+            setStreamBufferedPercent((prev) => Math.max(prev, 0));
+          }
+        })
+        .catch(() => {});
+    };
+
+    pollCache();
+    cachePollingRef.current = setInterval(pollCache, 2000);
+
+    return () => {
+      if (cachePollingRef.current) {
+        clearInterval(cachePollingRef.current);
+        cachePollingRef.current = null;
+      }
+    };
+  }, [src, isStreamed, show]);
+
+  // When cache completes mid-playback, switch to cached mode for instant seeking
+  useEffect(() => {
+    if (!cacheStatus?.cached || !isStreamed || !show) return;
+    if (isCachedRef.current) return; // Already switched
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Record current playback position and state
+    const absoluteTime = video.currentTime + streamOffsetRef.current;
+    const wasPlaying = !video.paused;
+
+    // Switch to cached mode
+    isCachedRef.current = true;
+    setCachedMode(true);
+
+    // After the videoSrc updates (no &start= param), the video element will reload.
+    // We need to seek to the correct position once loaded.
+    streamOffsetRef.current = 0;
+    setStreamOffset(0);
+
+    const onCachedLoaded = () => {
+      video.removeEventListener("loadedmetadata", onCachedLoaded);
+      video.currentTime = absoluteTime;
+      setCurrentTime(absoluteTime);
+      if (wasPlaying) {
+        safePlay(video);
+        setPlaying(true);
+      }
+      setIsLoading(false);
+    };
+    video.addEventListener("loadedmetadata", onCachedLoaded);
+  }, [cacheStatus?.cached, isStreamed, show]);
+
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -687,10 +862,26 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         video.textTracks[i].mode = i === activeTrackIndex ? "showing" : "hidden";
       }
     }
-    if (isStreamed) {
-      // For streamed files, initialTime is handled via stream offset
+    if (isStreamed && isCachedRef.current) {
+      // Cached streamed file — use native seeking like a regular MP4
+      if (isFinite(dur) && dur > 0) {
+        setDuration(dur);
+        durationRef.current = dur;
+      }
+      if (initialTime && initialTime > 0 && !initialTimeAppliedRef.current) {
+        initialTimeAppliedRef.current = true;
+        video.currentTime = Math.min(initialTime, dur - 1);
+        setCurrentTime(video.currentTime);
+      } else {
+        setCurrentTime(video.currentTime);
+      }
+      if (wasPlayingRef.current) {
+        safePlay(video);
+        setPlaying(true);
+      }
+    } else if (isStreamed) {
+      // Live transcoded streamed file — use stream offset
       setCurrentTime(streamOffsetRef.current);
-      // Auto-play after stream seek
       if (streamOffsetRef.current > 0 || wasPlayingRef.current) {
         safePlay(video);
         setPlaying(true);
@@ -730,7 +921,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     wasPlayingRef.current = playing;
     if (videoRef.current) {
       if (!videoRef.current.paused) videoRef.current.pause();
-      if (!isStreamed) videoRef.current.currentTime = time;
+      // Allow real-time scrub preview for non-streamed and cached-streamed files
+      if (!isStreamed || isCachedRef.current) videoRef.current.currentTime = time;
     }
   };
 
@@ -750,7 +942,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       const { time, x } = getTimeFromXRef(clientX);
       setDragTime(time);
       setDragX(x);
-      if (!isStreamed && videoRef.current) videoRef.current.currentTime = time;
+      if ((!isStreamed || isCachedRef.current) && videoRef.current) videoRef.current.currentTime = time;
     };
     const handleEnd = (clientX: number) => {
       const { time } = getTimeFromXRef(clientX);
@@ -1043,7 +1235,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   const displayTime = dragging ? dragTime : currentTime;
   const progress = duration > 0 ? (displayTime / duration) * 100 : 0;
-  const bufferedProgress = duration > 0 ? (buffered / duration) * 100 : 0;
+  const bufferedProgress = isStreamed
+    ? Math.min(100, streamBufferedPercent)
+    : (duration > 0 ? (buffered / duration) * 100 : 0);
   const remaining = duration - displayTime;
 
   if (!show) return null;
@@ -1449,9 +1643,11 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             <div style={{
               position: "absolute", top: 0, left: 0, height: "100%",
               width: `${bufferedProgress}%`,
-              background: "rgba(255,255,255,0.2)",
+              background: isStreamed
+                ? "rgba(255,255,255,0.25)"
+                : "rgba(255,255,255,0.2)",
               borderRadius: "4px",
-              transition: "width 0.3s ease",
+              transition: "width 0.5s ease",
             }} />
 
             {/* Played */}
