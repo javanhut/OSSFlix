@@ -538,7 +538,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         if (prev === null || prev <= 1) {
           cancelCountdown();
           const next = onNextRef.current;
-          if (next) { transitioningRef.current = true; next(); }
+          if (next) { transitioningRef.current = true; setTimeout(next, 0); }
           return null;
         }
         return prev - 1;
@@ -740,7 +740,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   };
 
   const handleProgressTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    e.preventDefault();
+    // touch-action: none on the element already prevents scrolling, so no preventDefault needed
     startDrag(e.touches[0].clientX);
   };
 
@@ -1120,7 +1120,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           const deltaY = volumeGestureRef.current.startY - touch.clientY;
           // Require 15px of vertical movement to activate
           if (!volumeGestureRef.current.active && Math.abs(deltaY) < 15) return;
-          e.preventDefault();
+          // touch-action: none on the container already prevents scrolling, so no preventDefault needed
           volumeGestureRef.current.active = true;
           const rect = containerRef.current?.getBoundingClientRect();
           const height = rect?.height || 400;
