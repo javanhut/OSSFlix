@@ -88,8 +88,9 @@ Bun.serve({
         // Remux when possible (near-instant), transcode only when needed
         const args = [
           "ffmpeg",
-          ...(startTime > 0 ? ["-ss", String(startTime)] : []),
           "-i", sourcePath,
+          ...(startTime > 0 ? ["-ss", String(startTime), "-accurate_seek"] : []),
+          "-fflags", "+genpts",
           "-map", "0:v:0",
           ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
           ...(canCopyVideo
@@ -98,7 +99,7 @@ Bun.serve({
           ...(canCopyAudio
             ? ["-c:a", "copy"]
             : ["-c:a", "aac", "-b:a", audioBitrate,
-               "-af", "aresample=async=1:first_pts=0"]),
+               "-af", "aresample=async=1000"]),
           "-avoid_negative_ts", "make_zero",
           "-max_muxing_queue_size", "9999",
           "-movflags", "frag_keyframe+empty_moov+faststart",
