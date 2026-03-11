@@ -85,11 +85,17 @@ Bun.serve({
         const canCopyAudio = audioCodec === "aac";
         const audioBitrate = audioChannels > 2 ? "384k" : "192k";
 
+        // Hybrid seek: fast-seek to ~30s before target, then accurate-seek the rest
+        const seekWindow = 30;
+        const preSeek = startTime > 0 ? Math.max(0, startTime - seekWindow) : 0;
+        const postSeek = startTime > 0 ? startTime - preSeek : 0;
+
         // Remux when possible (near-instant), transcode only when needed
         const args = [
           "ffmpeg",
+          ...(preSeek > 0 ? ["-ss", String(preSeek)] : []),
           "-i", sourcePath,
-          ...(startTime > 0 ? ["-ss", String(startTime), "-accurate_seek"] : []),
+          ...(postSeek > 0 ? ["-ss", String(postSeek), "-accurate_seek"] : []),
           "-fflags", "+genpts",
           "-map", "0:v:0",
           ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
