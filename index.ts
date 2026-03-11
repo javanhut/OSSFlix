@@ -97,7 +97,10 @@ Bun.serve({
             : ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]),
           ...(canCopyAudio
             ? ["-c:a", "copy"]
-            : ["-c:a", "aac", "-b:a", audioBitrate]),
+            : ["-c:a", "aac", "-b:a", audioBitrate,
+               "-af", "aresample=async=1:first_pts=0"]),
+          "-avoid_negative_ts", "make_zero",
+          "-max_muxing_queue_size", "9999",
           "-movflags", "frag_keyframe+empty_moov+faststart",
           "-f", "mp4", "-",
         ];

@@ -239,6 +239,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [showAudioMenu, setShowAudioMenu] = useState(false);
   const activeAudioTrackRef = useRef(0);
 
+  // Mouse tracking for mobile (avoid synthetic mousemove)
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+  const isTouchDeviceRef = useRef(false);
+
+  // Volume swipe gesture state
+  const volumeGestureRef = useRef<{ active: boolean; startY: number; startVolume: number } | null>(null);
+  const [volumeGestureValue, setVolumeGestureValue] = useState<number | null>(null);
+
   // Dragging state
   const [dragging, setDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
@@ -369,6 +377,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setHoverTime(null);
     setIsLoading(true);
     setShowVolumeSlider(false);
+    setVolumeGestureValue(null);
+    volumeGestureRef.current = null;
     setSkipFeedback(null);
     skipAccumulatorRef.current = 0;
     lastSkipDirectionRef.current = null;
@@ -448,19 +458,28 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   }, [show, resetState]);
 
   // ── Controls auto-hide ──
-  const showControlsTemporarily = useCallback(() => {
+  const showControlsTemporarily = useCallback((timeout = 2500) => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    if (playing && !dragging) {
+    if (playing && !dragging && !showVolumeSlider) {
       controlsTimeoutRef.current = window.setTimeout(() => {
         setShowControls(false);
         setShowSettingsMenu(false);
         setShowCcMenu(false);
         setShowAudioMenu(false);
         setShowVolumeSlider(false);
-      }, 2500);
+      }, timeout);
     }
-  }, [playing, dragging]);
+  }, [playing, dragging, showVolumeSlider]);
+
+  const handleMouseMoveControls = useCallback((e: React.MouseEvent) => {
+    // On touch devices, ignore synthetic mousemove events
+    if (isTouchDeviceRef.current) return;
+    const last = lastMousePosRef.current;
+    if (last && last.x === e.clientX && last.y === e.clientY) return;
+    lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
 
   // ── Playback ──
   const togglePlay = () => {
@@ -540,6 +559,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       setShowCcMenu((v) => !v);
       setShowSettingsMenu(false);
       setShowAudioMenu(false);
+      setShowVolumeSlider(false);
       return;
     }
     const video = videoRef.current;
@@ -945,7 +965,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         case "n": if (onNext) { e.preventDefault(); onNext(); } break;
         case "r": e.preventDefault(); restartFromBeginning(); break;
         case "c": e.preventDefault(); toggleCC(); break;
-        case "a": if (isStreamed && audioTracks.length > 1) { e.preventDefault(); setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); } break;
+        case "a": if (isStreamed && audioTracks.length > 1) { e.preventDefault(); setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); setShowVolumeSlider(false); } break;
         case ",": if (video.paused) {
           if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current - 1); }
           else { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); }
@@ -1046,6 +1066,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         .vp-volume-track { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); outline: none; cursor: pointer; }
         .vp-volume-track::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; cursor: pointer; box-shadow: 0 0 4px rgba(0,0,0,0.4); }
         .vp-volume-track::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; cursor: pointer; border: none; box-shadow: 0 0 4px rgba(0,0,0,0.4); }
+        .vp-volume-popup .vp-volume-track { width: 6px; height: 120px; }
+        .vp-volume-popup .vp-volume-track::-webkit-slider-thumb { width: 22px; height: 22px; }
+        .vp-volume-popup .vp-volume-track::-moz-range-thumb { width: 22px; height: 22px; }
         .vp-settings-panel { position: absolute; bottom: calc(100% + 8px); right: 0; background: rgba(20,20,28,0.96); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 6px; min-width: 180px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); animation: vpSlideUp 0.2s ease; }
         @keyframes vpSlideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
         .vp-speed-btn { width: 100%; padding: 8px 16px; border: none; background: transparent; color: rgba(255,255,255,0.7); font-size: 0.85rem; cursor: pointer; border-radius: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s ease; }
@@ -1062,16 +1085,67 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           position: "relative", overflow: "hidden",
           cursor: showControls ? "default" : "none",
           userSelect: "none",
+          touchAction: "none",
         }}
-        onMouseMove={showControlsTemporarily}
+        onMouseMove={handleMouseMoveControls}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("[data-controls]")) return;
+          // On touch devices, play/pause is handled by handleTouchTap
+          if (isTouchDeviceRef.current) return;
           if ((e.target as HTMLElement).tagName === "VIDEO" || (e.target as HTMLElement).closest("[data-click-area]")) {
             togglePlay();
           }
         }}
         onDoubleClick={handleDoubleClick}
-        onTouchEnd={handleTouchTap}
+        onTouchStart={(e) => {
+          isTouchDeviceRef.current = true;
+          if ((e.target as HTMLElement).closest("[data-controls]")) return;
+          const touch = e.touches[0];
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const x = touch.clientX - rect.left;
+          // Right half of screen: prepare volume gesture
+          if (x > rect.width / 2) {
+            volumeGestureRef.current = {
+              active: false,
+              startY: touch.clientY,
+              startVolume: videoRef.current?.muted ? 0 : (videoRef.current?.volume ?? volume),
+            };
+          }
+        }}
+        onTouchMove={(e) => {
+          if (!volumeGestureRef.current) return;
+          if ((e.target as HTMLElement).closest("[data-controls]")) return;
+          const touch = e.touches[0];
+          const deltaY = volumeGestureRef.current.startY - touch.clientY;
+          // Require 15px of vertical movement to activate
+          if (!volumeGestureRef.current.active && Math.abs(deltaY) < 15) return;
+          e.preventDefault();
+          volumeGestureRef.current.active = true;
+          const rect = containerRef.current?.getBoundingClientRect();
+          const height = rect?.height || 400;
+          // Full swipe across half the screen height = full volume range
+          const volumeDelta = deltaY / (height * 0.5);
+          const newVol = Math.max(0, Math.min(1, volumeGestureRef.current.startVolume + volumeDelta));
+          if (videoRef.current) {
+            videoRef.current.volume = newVol;
+            videoRef.current.muted = newVol === 0;
+          }
+          setVolume(newVol);
+          setMuted(newVol === 0);
+          setVolumeGestureValue(newVol);
+          if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        }}
+        onTouchEnd={(e) => {
+          const wasVolumeGesture = volumeGestureRef.current?.active;
+          volumeGestureRef.current = null;
+          if (wasVolumeGesture) {
+            setVolumeGestureValue(null);
+            showControlsTemporarily();
+            return;
+          }
+          handleTouchTap(e);
+        }}
       >
         <video
           ref={videoRef}
@@ -1118,6 +1192,37 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Skip feedback */}
         {skipFeedback && <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={skipFeedback.seconds} />}
+
+        {/* Volume swipe gesture overlay */}
+        {volumeGestureValue !== null && (
+          <div style={{
+            position: "absolute", top: "50%", right: "12%",
+            transform: "translateY(-50%)",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
+            pointerEvents: "none", zIndex: 6,
+          }}>
+            <div style={{
+              width: "36px", height: "140px",
+              background: "rgba(0,0,0,0.5)", borderRadius: "18px",
+              position: "relative", overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.15)",
+            }}>
+              <div style={{
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                height: `${volumeGestureValue * 100}%`,
+                background: "rgba(255,255,255,0.85)",
+                borderRadius: "0 0 18px 18px",
+                transition: "height 0.05s ease",
+              }} />
+            </div>
+            <span style={{
+              color: "#fff", fontSize: "0.9rem", fontWeight: 700,
+              textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+            }}>
+              {Math.round(volumeGestureValue * 100)}%
+            </span>
+          </div>
+        )}
 
         {/* Speed change indicator */}
         {speedIndicator && (
@@ -1283,7 +1388,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           pointerEvents: (showControls || dragging) ? "auto" : "none",
         }}>
 
-          {/* ── Progress bar ── */}
+          {/* ── Progress bar (outer touch target) ── */}
           <div
             ref={progressRef}
             onMouseDown={handleProgressMouseDown}
@@ -1293,13 +1398,22 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             onMouseEnter={() => setProgressHovered(true)}
             style={{
               width: "100%",
+              padding: "14px 0",
+              marginBottom: "0px",
+              cursor: "pointer",
+              position: "relative",
+              touchAction: "none",
+            }}
+          >
+          {/* Visual bar */}
+          <div style={{
+              width: "100%",
               height: (dragging || progressHovered) ? "8px" : "4px",
               background: "rgba(255,255,255,0.15)",
               borderRadius: "4px",
-              cursor: "pointer",
-              marginBottom: "12px",
               position: "relative",
               transition: "height 0.15s ease",
+              pointerEvents: "none",
             }}
           >
             {/* Hover tooltip */}
@@ -1354,13 +1468,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               position: "absolute", top: "50%",
               left: `${progress}%`,
               transform: "translate(-50%, -50%)",
-              width: (dragging || progressHovered) ? "16px" : "0px",
-              height: (dragging || progressHovered) ? "16px" : "0px",
+              width: (dragging || progressHovered) ? "16px" : (isTouchDeviceRef.current ? "12px" : "0px"),
+              height: (dragging || progressHovered) ? "16px" : (isTouchDeviceRef.current ? "12px" : "0px"),
               borderRadius: "50%",
               background: "#fff",
               transition: "all 0.15s ease",
               boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(59,130,246,0.3)",
             }} />
+          </div>
           </div>
 
           {/* ── Control buttons ── */}
@@ -1395,13 +1510,23 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
               {/* Volume */}
               <div className="vp-volume-wrapper" style={{ display: "flex", alignItems: "center", position: "relative" }}
-                onMouseEnter={() => { setShowVolumeSlider(true); if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current); }}
-                onMouseLeave={() => { volumeTimeoutRef.current = window.setTimeout(() => setShowVolumeSlider(false), 800); }}
+                onMouseEnter={() => { if (!isTouchDeviceRef.current) { setShowVolumeSlider(true); if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current); } }}
+                onMouseLeave={() => { if (!isTouchDeviceRef.current) { volumeTimeoutRef.current = window.setTimeout(() => setShowVolumeSlider(false), 800); } }}
               >
-                <button className="vp-ctrl-btn" onClick={toggleMute}>
+                <button className="vp-ctrl-btn" onClick={() => {
+                  if (isTouchDeviceRef.current) {
+                    setShowVolumeSlider((v) => !v);
+                    setShowSettingsMenu(false);
+                    setShowCcMenu(false);
+                    setShowAudioMenu(false);
+                  } else {
+                    toggleMute();
+                  }
+                }}>
                   {muted || volume === 0 ? <IconVolumeMuted /> : volume < 0.5 ? <IconVolumeLow /> : <IconVolumeHigh />}
                 </button>
-                <div style={{
+                {/* Desktop: horizontal slider */}
+                <div className="vp-volume-horizontal" style={{
                   width: showVolumeSlider ? "100px" : "0px",
                   overflow: "hidden",
                   transition: "width 0.2s ease",
@@ -1418,6 +1543,42 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                     }}
                   />
                 </div>
+                {/* Mobile: vertical popup slider */}
+                {showVolumeSlider && (
+                  <div className="vp-volume-popup"
+                    onTouchStart={(e) => { e.stopPropagation(); if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); }}
+                    onTouchMove={(e) => { e.stopPropagation(); }}
+                    onTouchEnd={(e) => { e.stopPropagation(); }}
+                    style={{
+                    position: "absolute", bottom: "calc(100% + 12px)", left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "rgba(20,20,28,0.96)", backdropFilter: "blur(20px)",
+                    border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px",
+                    padding: "16px 12px", display: "none", flexDirection: "column",
+                    alignItems: "center", gap: "10px", minHeight: "140px",
+                    boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+                    animation: "vpSlideUp 0.2s ease",
+                  }}>
+                    <input
+                      type="range" min="0" max="1" step="0.02"
+                      value={muted ? 0 : volume}
+                      onChange={handleVolumeChange}
+                      className="vp-volume-track"
+                      style={{
+                        writingMode: "vertical-lr",
+                        direction: "rtl",
+                        width: "6px", height: "120px",
+                        background: `linear-gradient(to top, #3b82f6 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
+                      }}
+                    />
+                    <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.72rem", fontWeight: 600 }}>
+                      {Math.round((muted ? 0 : volume) * 100)}%
+                    </span>
+                    <button className="vp-speed-btn" onClick={toggleMute} style={{ padding: "6px 12px", fontSize: "0.78rem", justifyContent: "center" }}>
+                      {muted ? "Unmute" : "Mute"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Time */}
@@ -1459,7 +1620,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
               {/* Settings (speed) */}
               <div style={{ position: "relative" }}>
-                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); setShowAudioMenu(false); }}
+                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); setShowAudioMenu(false); setShowVolumeSlider(false); }}
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}>
                   <IconSettings />
                   {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#3b82f6" }}>{playbackRate}x</span>}
@@ -1516,7 +1677,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               {/* Audio Track Selector */}
               {isStreamed && audioTracks.length > 1 && (
                 <div style={{ position: "relative" }}>
-                  <button className="vp-ctrl-btn" onClick={() => { setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); }}>
+                  <button className="vp-ctrl-btn" onClick={() => { setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); setShowVolumeSlider(false); }}>
                     <IconAudio active={activeAudioTrack > 0} />
                     <span className="vp-tooltip">Audio (a)</span>
                   </button>
