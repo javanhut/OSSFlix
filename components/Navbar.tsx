@@ -40,6 +40,16 @@ export function NavBar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Lock body scroll when mobile menu or genre dropdown is open
+  useEffect(() => {
+    if (navOpen || genreOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [navOpen, genreOpen]);
+
   // Close search on outside click
   useEffect(() => {
     if (!showResults && !searchExpanded) return;

@@ -988,6 +988,7 @@ body.modal-open #root {
   .oss-nav-links.oss-nav-open {
     opacity: 1;
     pointer-events: auto;
+    overscroll-behavior: contain;
   }
 
   /* Brand inside overlay */
@@ -1057,6 +1058,7 @@ body.modal-open #root {
   .oss-genre-trigger.oss-genre-open .oss-genre-dropdown {
     opacity: 1;
     pointer-events: auto;
+    overscroll-behavior: contain;
   }
   .oss-genre-trigger.oss-genre-open .oss-genre-dropdown .oss-genre-item {
     padding: 16px 24px;
