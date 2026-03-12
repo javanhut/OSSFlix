@@ -171,18 +171,23 @@ export async function resolveToDb(): Promise<void> {
 }
 
 export function getCategoriesFromDb(): MenuRow[] {
-  const categories = db.prepare("SELECT id, name FROM categories ORDER BY sort_order").all() as { id: number; name: string }[];
+  const allRows = db.prepare(`
+    SELECT c.name AS category, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+    FROM categories c
+    JOIN category_titles ct ON ct.category_id = c.id
+    JOIN titles t ON t.id = ct.title_id
+    ORDER BY c.sort_order, c.name
+  `).all() as { category: string; name: string; imagePath: string; pathToDir: string }[];
+
+  const grouped = new Map<string, TitleInfo[]>();
+  for (const row of allRows) {
+    if (!grouped.has(row.category)) grouped.set(row.category, []);
+    grouped.get(row.category)!.push({ name: row.name, imagePath: row.imagePath, pathToDir: row.pathToDir });
+  }
+
   const rows: MenuRow[] = [];
-
-  for (const cat of categories) {
-    const titles = db.prepare(`
-      SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
-      FROM titles t
-      JOIN category_titles ct ON ct.title_id = t.id
-      WHERE ct.category_id = ?
-    `).all(cat.id) as TitleInfo[];
-
-    rows.push({ genre: cat.name, titles });
+  for (const [category, titles] of grouped) {
+    rows.push({ genre: category, titles });
   }
 
   return rows;
@@ -193,28 +198,24 @@ export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
   const lowerTypes = types.map(t => t.toLowerCase());
   const placeholders = lowerTypes.map(() => "?").join(", ");
 
-  const genres = db.prepare(`
-    SELECT DISTINCT g.name
-    FROM genres g
-    JOIN title_genres tg ON tg.genre_id = g.id
-    JOIN titles t ON t.id = tg.title_id
+  const allRows = db.prepare(`
+    SELECT g.name AS genre, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+    FROM titles t
+    JOIN title_genres tg ON tg.title_id = t.id
+    JOIN genres g ON g.id = tg.genre_id
     WHERE LOWER(t.type) IN (${placeholders})
-    ORDER BY g.name
-  `).all(...lowerTypes) as { name: string }[];
+    ORDER BY g.name, t.name
+  `).all(...lowerTypes) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
+
+  const grouped = new Map<string, TitleInfo[]>();
+  for (const row of allRows) {
+    if (!grouped.has(row.genre)) grouped.set(row.genre, []);
+    grouped.get(row.genre)!.push({ name: row.name, imagePath: row.imagePath, pathToDir: row.pathToDir });
+  }
 
   const rows: MenuRow[] = [];
-  for (const g of genres) {
-    const titles = db.prepare(`
-      SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
-      FROM titles t
-      JOIN title_genres tg ON tg.title_id = t.id
-      JOIN genres gen ON gen.id = tg.genre_id
-      WHERE gen.name = ? AND LOWER(t.type) IN (${placeholders})
-    `).all(g.name, ...lowerTypes) as TitleInfo[];
-
-    if (titles.length > 0) {
-      rows.push({ genre: g.name, titles });
-    }
+  for (const [genre, titles] of grouped) {
+    rows.push({ genre, titles });
   }
 
   return rows;
@@ -235,32 +236,28 @@ export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
 
   if (titleIds.length === 0) return [];
 
-  const idSet = new Set(titleIds.map(r => r.id));
   const idPlaceholders = titleIds.map(() => "?").join(", ");
   const idValues = titleIds.map(r => r.id);
 
-  // Get all genres for those titles (excluding the filter tags themselves to avoid redundancy)
-  const genres = db.prepare(`
-    SELECT DISTINCT g.name
-    FROM genres g
-    JOIN title_genres tg ON tg.genre_id = g.id
-    WHERE tg.title_id IN (${idPlaceholders}) AND LOWER(g.name) NOT IN (${tagPlaceholders})
-    ORDER BY g.name
-  `).all(...idValues, ...lowerTags) as { name: string }[];
+  // Single query: get all genre-title mappings for matching titles, excluding the filter tags
+  const allRows = db.prepare(`
+    SELECT DISTINCT g.name AS genre, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+    FROM titles t
+    JOIN title_genres tg ON tg.title_id = t.id
+    JOIN genres g ON g.id = tg.genre_id
+    WHERE t.id IN (${idPlaceholders}) AND LOWER(g.name) NOT IN (${tagPlaceholders})
+    ORDER BY g.name, t.name
+  `).all(...idValues, ...lowerTags) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
+
+  const grouped = new Map<string, TitleInfo[]>();
+  for (const row of allRows) {
+    if (!grouped.has(row.genre)) grouped.set(row.genre, []);
+    grouped.get(row.genre)!.push({ name: row.name, imagePath: row.imagePath, pathToDir: row.pathToDir });
+  }
 
   const rows: MenuRow[] = [];
-  for (const g of genres) {
-    const titles = db.prepare(`
-      SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
-      FROM titles t
-      JOIN title_genres tg ON tg.title_id = t.id
-      JOIN genres gen ON gen.id = tg.genre_id
-      WHERE gen.name = ? AND t.id IN (${idPlaceholders})
-    `).all(g.name, ...idValues) as TitleInfo[];
-
-    if (titles.length > 0) {
-      rows.push({ genre: g.name, titles });
-    }
+  for (const [genre, titles] of grouped) {
+    rows.push({ genre, titles });
   }
 
   return rows;

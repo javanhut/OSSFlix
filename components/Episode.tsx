@@ -27,8 +27,13 @@ export function Episode({ filename, thumbnail, onClick }: EpisodeProps) {
       ? `S${parsed.season} E${parsed.episode} - ${parsed.title}`
       : parsed.title;
 
+  const ariaLabel = parsed.type === "episode"
+    ? `Play Episode ${parsed.episode}`
+    : `Play ${parsed.title}`;
+
   return (
-    <div className="oss-episode" role="button" onClick={onClick}>
+    <div className="oss-episode" role="button" aria-label={ariaLabel} tabIndex={0} onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}>
       <img
         src={thumbnail || "/images/placeholders.dev-1280x720.webp"}
         alt={label}
@@ -40,7 +45,7 @@ export function Episode({ filename, thumbnail, onClick }: EpisodeProps) {
           {parsed.type === "episode" ? `Season ${parsed.season}` : "Movie"}
         </p>
       </div>
-      <span className="oss-episode-play">&#9654;</span>
+      <span className="oss-episode-play" aria-hidden="true">&#9654;</span>
     </div>
   );
 }

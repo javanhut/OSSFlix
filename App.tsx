@@ -12,6 +12,7 @@ import History from "./pages/History";
 import MyList from "./pages/MyList";
 import Explore from "./pages/Explore";
 import ForYou from "./pages/ForYou";
+import Stats from "./pages/Stats";
 
 function AppRoutes() {
   const { authenticated, profile } = useProfile();
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="/foryou" element={<ForYou />} />
         <Route path="/history" element={<History />} />
         <Route path="/mylist" element={<MyList />} />
+        <Route path="/stats" element={<Stats />} />
       </Route>
       <Route path="/profiles" element={<ProfileSelect />} />
       <Route path="*" element={<Navigate to="/home" replace />} />

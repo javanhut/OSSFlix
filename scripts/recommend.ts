@@ -27,7 +27,7 @@ export function getRecommendations(profileId: number, limit = 6): Recommendation
   const genreRows = db.prepare(`
     SELECT g.name AS genre,
            COUNT(DISTINCT pp.dir_path) AS watch_count,
-           SUM(CASE WHEN pp.current_time >= pp.duration - 10 AND pp.duration > 0 THEN 1 ELSE 0 END) AS completed_count
+           SUM(CASE WHEN pp.current_time >= pp.duration - 5 AND pp.duration > 0 THEN 1 ELSE 0 END) AS completed_count
     FROM playback_progress pp
     JOIN titles t ON t.dir_path = pp.dir_path
     JOIN title_genres tg ON tg.title_id = t.id
@@ -60,25 +60,42 @@ export function getRecommendations(profileId: number, limit = 6): Recommendation
     FROM titles t
   `).all() as (TitleInfo & { id: number })[];
 
+  const unwatchedTitles = allTitles.filter(t => !watchedSet.has(t.pathToDir));
   const scored: Recommendation[] = [];
 
-  for (const title of allTitles) {
-    if (watchedSet.has(title.pathToDir)) continue;
+  if (unwatchedTitles.length === 0) return [];
 
-    const titleGenres = db.prepare(`
-      SELECT g.name FROM genres g
-      JOIN title_genres tg ON tg.genre_id = g.id
-      WHERE tg.title_id = ?
-    `).all(title.id) as { name: string }[];
+  // Bulk query: get all genre mappings for unwatched titles in one query
+  const placeholders = unwatchedTitles.map(() => "?").join(",");
+  const unwatchedIds = unwatchedTitles.map(t => t.id);
+  const genreMappings = db.prepare(`
+    SELECT tg.title_id, g.name FROM title_genres tg
+    JOIN genres g ON g.id = tg.genre_id
+    WHERE tg.title_id IN (${placeholders})
+  `).all(...unwatchedIds) as { title_id: number; name: string }[];
+
+  // Group genres by title_id
+  const titleGenreMap = new Map<number, string[]>();
+  for (const row of genreMappings) {
+    let genres = titleGenreMap.get(row.title_id);
+    if (!genres) {
+      genres = [];
+      titleGenreMap.set(row.title_id, genres);
+    }
+    genres.push(row.name);
+  }
+
+  for (const title of unwatchedTitles) {
+    const titleGenres = titleGenreMap.get(title.id) || [];
 
     let totalScore = 0;
     const matchedGenres: string[] = [];
 
-    for (const g of titleGenres) {
-      const affinity = genreScores.get(g.name);
+    for (const genre of titleGenres) {
+      const affinity = genreScores.get(genre);
       if (affinity) {
         totalScore += affinity;
-        matchedGenres.push(g.name);
+        matchedGenres.push(genre);
       }
     }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Card } from "./Card";
+import { useProfile } from "../context/ProfileContext";
 
 type TitleInfo = {
   name: string;
@@ -14,11 +15,14 @@ type MenuRow = {
 
 type SelectorMenuProps = {
   rows: MenuRow[];
+  isContinueWatching?: boolean;
 };
 
-function TitleCard({ title, onClick }: { title: TitleInfo; onClick: () => void }) {
+function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick: () => void; showQuickAdd?: boolean }) {
+  const { profileHeaders } = useProfile();
   const [hovered, setHovered] = useState(false);
   const [description, setDescription] = useState<string | null>(null);
+  const [inWatchlist, setInWatchlist] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -31,10 +35,24 @@ function TitleCard({ title, onClick }: { title: TitleInfo; onClick: () => void }
     }
   }, [hovered, title.pathToDir]);
 
+  const handleWatchlistToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const pHeaders = profileHeaders();
+    const method = inWatchlist ? "DELETE" : "POST";
+    fetch("/api/watchlist", {
+      method,
+      headers: { "Content-Type": "application/json", ...pHeaders },
+      body: JSON.stringify({ dir_path: title.pathToDir }),
+    })
+      .then(() => setInWatchlist(!inWatchlist))
+      .catch(() => {});
+  };
+
   return (
     <div
       role="button"
       className="oss-card"
+      aria-label={title.name}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onClick}
@@ -43,6 +61,7 @@ function TitleCard({ title, onClick }: { title: TitleInfo; onClick: () => void }
         src={title.imagePath}
         alt={title.name}
         className="oss-card-img"
+        loading="lazy"
       />
       <div className="oss-card-overlay">
         <p>{hovered ? (description ?? "Loading...") : ""}</p>
@@ -50,11 +69,20 @@ function TitleCard({ title, onClick }: { title: TitleInfo; onClick: () => void }
       <div className="oss-card-title-bar">
         <span>{title.name}</span>
       </div>
+      {showQuickAdd && (
+        <button
+          className={`watchlist-quick${inWatchlist ? " in-list" : ""}`}
+          onClick={handleWatchlistToggle}
+          aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+        >
+          {inWatchlist ? "\u2713" : "+"}
+        </button>
+      )}
     </div>
   );
 }
 
-export function SelectorMenu({ rows }: SelectorMenuProps) {
+export function SelectorMenu({ rows, isContinueWatching }: SelectorMenuProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDir, setSelectedDir] = useState("");
 
@@ -65,15 +93,23 @@ export function SelectorMenu({ rows }: SelectorMenuProps) {
 
   return (
     <>
-      {rows.map((row) => (
-        <section key={row.genre} className="oss-section">
-          <h2 className="oss-section-title">{row.genre}</h2>
-          <div className="oss-row">
+      {rows.map((row, rowIdx) => (
+        <section
+          key={row.genre}
+          className="oss-section"
+          style={rows.length > 1 ? { animationDelay: `${rowIdx * 50}ms` } : undefined}
+        >
+          <h2 className="oss-section-title">
+            {row.genre}
+            {isContinueWatching && <span className="oss-resume-badge">Resume</span>}
+          </h2>
+          <div className="oss-row" role="list">
             {row.titles.map((title) => (
               <TitleCard
                 key={title.pathToDir}
                 title={title}
                 onClick={() => handleTitleClick(title.pathToDir)}
+                showQuickAdd={!isContinueWatching}
               />
             ))}
           </div>

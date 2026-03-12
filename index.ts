@@ -30,6 +30,36 @@ const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
 // ── Transcode cache ──
 const CACHE_DIR = resolve("./data/cache");
 await mkdir(CACHE_DIR, { recursive: true });
+const MAX_CACHE_SIZE = 50 * 1024 * 1024 * 1024; // 50GB
+
+async function enforceCacheLimit() {
+  try {
+    const entries = await readdir(CACHE_DIR);
+    const files: { path: string; size: number; mtime: number }[] = [];
+    let totalSize = 0;
+    for (const entry of entries) {
+      if (entry.endsWith(".tmp")) continue;
+      const filePath = join(CACHE_DIR, entry);
+      const s = await stat(filePath);
+      if (s.isFile()) {
+        files.push({ path: filePath, size: s.size, mtime: s.mtimeMs });
+        totalSize += s.size;
+      }
+    }
+    if (totalSize <= MAX_CACHE_SIZE) return;
+    // Delete oldest files until under 80% of limit
+    const target = MAX_CACHE_SIZE * 0.8;
+    files.sort((a, b) => a.mtime - b.mtime);
+    const { unlink } = await import("node:fs/promises");
+    for (const f of files) {
+      if (totalSize <= target) break;
+      try {
+        await unlink(f.path);
+        totalSize -= f.size;
+      } catch {}
+    }
+  } catch {}
+}
 
 // Track active transcoding jobs: cacheKey -> { process, bytesWritten, duration, done, error }
 const activeTranscodes = new Map<string, {
@@ -184,6 +214,8 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
         job.done = true;
         const finalFile = Bun.file(cachePath);
         job.bytesWritten = finalFile.size;
+        // Enforce cache size limit after successful transcode
+        enforceCacheLimit();
       } catch {
         job.error = true;
       }
@@ -195,12 +227,12 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
         await unlink(tmpPath);
       } catch {}
     }
-    // Clean up active transcodes after a delay (keep status available briefly)
+    // Clean up active transcodes after a short delay (keep status available briefly)
     setTimeout(() => {
       if (job.done || job.error) {
         activeTranscodes.delete(cacheKey);
       }
-    }, 30000);
+    }, 5000);
   });
 
   return cacheKey;
@@ -223,6 +255,7 @@ Bun.serve({
     "/mylist": index,
     "/explore": index,
     "/foryou": index,
+    "/stats": index,
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -664,7 +697,7 @@ Bun.serve({
 
         // Return most recent playback entries for "continue watching"
         const rows = db.query(
-          "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND playback_progress.current_time > 0 AND (duration = 0 OR playback_progress.current_time < duration - 10) ORDER BY updated_at DESC LIMIT 20"
+          "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND playback_progress.current_time > 0 AND (duration = 0 OR playback_progress.current_time < duration - 5) ORDER BY updated_at DESC LIMIT 20"
         ).all(profile.id) as any[];
         return Response.json(rows);
       },
@@ -700,7 +733,7 @@ Bun.serve({
           JOIN titles t ON t.dir_path = pp.dir_path
           WHERE pp.profile_id = ?
             AND pp.current_time > 0
-            AND (pp.duration = 0 OR pp.current_time < pp.duration - 10)
+            AND (pp.duration = 0 OR pp.current_time < pp.duration - 5)
           GROUP BY pp.dir_path
           ORDER BY MAX(pp.updated_at) DESC
           LIMIT 20
@@ -1050,6 +1083,114 @@ Bun.serve({
         return Response.json(recs);
       },
     },
+    "/api/stats": {
+      GET(req) {
+        const profile = getProfileFromReq(req);
+        const pid = profile.id;
+
+        // Total hours watched
+        const totalRow = db.prepare(`
+          SELECT COALESCE(SUM(current_time), 0) AS total_seconds
+          FROM playback_progress WHERE profile_id = ?
+        `).get(pid) as { total_seconds: number };
+        const totalHours = Math.round((totalRow.total_seconds / 3600) * 10) / 10;
+
+        // Titles completed
+        const completedRow = db.prepare(`
+          SELECT COUNT(DISTINCT dir_path) AS count
+          FROM playback_progress
+          WHERE profile_id = ? AND duration > 0 AND current_time >= duration - 5
+        `).get(pid) as { count: number };
+
+        // Top genres
+        const topGenres = db.prepare(`
+          SELECT g.name, COUNT(DISTINCT pp.dir_path) AS count
+          FROM playback_progress pp
+          JOIN titles t ON t.dir_path = pp.dir_path
+          JOIN title_genres tg ON tg.title_id = t.id
+          JOIN genres g ON g.id = tg.genre_id
+          WHERE pp.profile_id = ?
+          GROUP BY g.name
+          ORDER BY count DESC
+          LIMIT 5
+        `).all(pid) as { name: string; count: number }[];
+
+        // Total titles watched (any progress)
+        const watchedRow = db.prepare(`
+          SELECT COUNT(DISTINCT dir_path) AS count
+          FROM playback_progress WHERE profile_id = ?
+        `).get(pid) as { count: number };
+
+        // Watch streak (consecutive days with activity)
+        const recentDays = db.prepare(`
+          SELECT DISTINCT DATE(updated_at) AS day
+          FROM playback_progress
+          WHERE profile_id = ?
+          ORDER BY day DESC
+          LIMIT 30
+        `).all(pid) as { day: string }[];
+
+        let streak = 0;
+        if (recentDays.length > 0) {
+          const today = new Date().toISOString().split("T")[0];
+          let expected = today;
+          for (const row of recentDays) {
+            if (row.day === expected || (streak === 0 && row.day <= expected)) {
+              streak++;
+              const d = new Date(row.day);
+              d.setDate(d.getDate() - 1);
+              expected = d.toISOString().split("T")[0];
+            } else {
+              break;
+            }
+          }
+        }
+
+        return Response.json({
+          totalHours,
+          titlesCompleted: completedRow.count,
+          titlesWatched: watchedRow.count,
+          topGenres,
+          watchStreak: streak,
+        });
+      },
+    },
+    "/api/media/titles": {
+      GET(req) {
+        const url = new URL(req.url);
+        const type = url.searchParams.get("type");
+        const sort = url.searchParams.get("sort") || "name";
+        const genre = url.searchParams.get("genre");
+
+        let query = `
+          SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at
+          FROM titles t
+        `;
+        const conditions: string[] = [];
+        const params: any[] = [];
+
+        if (genre) {
+          query += ` JOIN title_genres tg ON tg.title_id = t.id JOIN genres g ON g.id = tg.genre_id`;
+          conditions.push("LOWER(g.name) = ?");
+          params.push(genre.toLowerCase());
+        }
+        if (type) {
+          conditions.push("LOWER(t.type) = ?");
+          params.push(type.toLowerCase());
+        }
+        if (conditions.length > 0) {
+          query += ` WHERE ${conditions.join(" AND ")}`;
+        }
+        if (sort === "recent") {
+          query += ` ORDER BY t.created_at DESC`;
+        } else {
+          query += ` ORDER BY t.name COLLATE NOCASE`;
+        }
+
+        const results = db.prepare(query).all(...params);
+        return Response.json(results);
+      },
+    },
     // Feature 1: Genre exploration
     "/api/genres/all": {
       GET() {
@@ -1331,7 +1472,16 @@ Bun.serve({
         if (!(await file.exists())) {
           return new Response("Not found", { status: 404 });
         }
-        return new Response(file);
+        const etag = `"${file.lastModified}-${file.size}"`;
+        if (req.headers.get("if-none-match") === etag) {
+          return new Response(null, { status: 304 });
+        }
+        return new Response(file, {
+          headers: {
+            "Cache-Control": "public, max-age=86400",
+            "ETag": etag,
+          },
+        });
       },
     },
     "/images/*": {
@@ -1347,7 +1497,16 @@ Bun.serve({
         if (!(await file.exists())) {
           return new Response("Not found", { status: 404 });
         }
-        return new Response(file);
+        const etag = `"${file.lastModified}-${file.size}"`;
+        if (req.headers.get("if-none-match") === etag) {
+          return new Response(null, { status: 304 });
+        }
+        return new Response(file, {
+          headers: {
+            "Cache-Control": "public, max-age=86400",
+            "ETag": etag,
+          },
+        });
       },
     },
     "/media/*": {
@@ -1363,6 +1522,23 @@ Bun.serve({
           return new Response("Not found", { status: 404 });
         }
         const fileSize = file.size;
+        const fileExt = extname(sourcePath).toLowerCase();
+        const isImage = IMAGE_EXTS.has(fileExt);
+
+        // Cache headers for image files (posters, thumbnails)
+        if (isImage) {
+          const etag = `"${file.lastModified}-${file.size}"`;
+          if (req.headers.get("if-none-match") === etag) {
+            return new Response(null, { status: 304 });
+          }
+          return new Response(file, {
+            headers: {
+              "Cache-Control": "public, max-age=86400",
+              "ETag": etag,
+            },
+          });
+        }
+
         const rangeHeader = req.headers.get("range");
 
         if (rangeHeader) {

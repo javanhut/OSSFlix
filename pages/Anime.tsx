@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
+import FilterBar from "../components/FilterBar";
+import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
   name: string;
@@ -15,6 +17,7 @@ type MenuRow = {
 export default function Anime() {
   const [allAnimeRow, setAllAnimeRow] = useState<MenuRow | null>(null);
   const [genreRows, setGenreRows] = useState<MenuRow[]>([]);
+  const [filteredRows, setFilteredRows] = useState<MenuRow[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -59,22 +62,28 @@ export default function Anime() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div className="spinner-border" role="status" />
-      </div>
+      <>
+        <h1 className="oss-page-title">Anime</h1>
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+      </>
     );
   }
 
-  const rows = [
+  const defaultRows = [
     ...(allAnimeRow ? [allAnimeRow] : []),
     ...genreRows,
   ];
 
+  const displayRows = filteredRows ?? defaultRows;
+
   return (
     <>
       <h1 className="oss-page-title">Anime</h1>
-      {rows.length > 0 && <SelectorMenu rows={rows} />}
-      {rows.length === 0 && <p className="oss-empty">No anime found.</p>}
+      <FilterBar type="Anime" onResults={setFilteredRows} />
+      {displayRows.length > 0 && <SelectorMenu rows={displayRows} />}
+      {displayRows.length === 0 && <p className="oss-empty">No anime found.</p>}
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from 'react-bootstrap';
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
@@ -506,6 +506,18 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   const [detectProgress, setDetectProgress] = useState<string>("");
   const [detecting, setDetecting] = useState(false);
 
+  // Focus trap for modal (D2)
+  const previousFocusRef = useRef<Element | null>(null);
+  useEffect(() => {
+    if (show && !playerSrc) {
+      previousFocusRef.current = document.activeElement;
+    }
+    if (!show && previousFocusRef.current && previousFocusRef.current instanceof HTMLElement) {
+      previousFocusRef.current.focus();
+      previousFocusRef.current = null;
+    }
+  }, [show, playerSrc]);
+
   const fetchProgress = () => {
     if (!dirPath) return;
     fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
@@ -622,21 +634,61 @@ export function Card({ show, onHide, dirPath }: CardProps) {
   };
 
   const handleResume = () => {
-    const entries = Object.values(progressMap).filter(
-      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 10)
+    // Find in-progress entries (not completed) sorted by video order in the title
+    const videos = information?.videos || [];
+    const inProgress = Object.values(progressMap).filter(
+      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5)
     );
-    if (entries.length > 0) {
-      const latest = entries[0];
+    if (inProgress.length > 0) {
+      // Pick the latest one by position in the video list (most recent episode)
+      const sorted = inProgress.sort((a, b) => {
+        const idxA = videos.indexOf(a.video_src);
+        const idxB = videos.indexOf(b.video_src);
+        return idxB - idxA;
+      });
+      const latest = sorted[0];
       setPlayerInitialTime(latest.current_time);
       setPlayerSrc(latest.video_src);
     } else {
+      // All episodes completed — find the next unwatched episode after the last completed one
+      const completedSrcs = Object.values(progressMap)
+        .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
+        .map((e) => e.video_src);
+      if (completedSrcs.length > 0 && videos.length > 0) {
+        let lastCompletedIdx = -1;
+        for (const src of completedSrcs) {
+          const idx = videos.indexOf(src);
+          if (idx > lastCompletedIdx) lastCompletedIdx = idx;
+        }
+        // Play next episode if available, otherwise restart from beginning
+        if (lastCompletedIdx < videos.length - 1) {
+          setPlayerInitialTime(0);
+          setPlayerSrc(videos[lastCompletedIdx + 1]);
+          return;
+        }
+      }
       handlePlay();
     }
   };
 
   const hasResumable = Object.values(progressMap).some(
-    (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 10)
-  );
+    (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5)
+  ) || (() => {
+    // Also show resume if there are completed episodes and a next episode to play
+    const videos = information?.videos || [];
+    const completedSrcs = Object.values(progressMap)
+      .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
+      .map((e) => e.video_src);
+    if (completedSrcs.length > 0 && videos.length > 1) {
+      let lastCompletedIdx = -1;
+      for (const src of completedSrcs) {
+        const idx = videos.indexOf(src);
+        if (idx > lastCompletedIdx) lastCompletedIdx = idx;
+      }
+      return lastCompletedIdx < videos.length - 1;
+    }
+    return false;
+  })();
 
   return (
     <>
@@ -654,6 +706,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                 <button
                   onClick={toggleWatchlist}
                   title={inWatchlist ? "Remove from My List" : "Add to My List"}
+                  aria-label={inWatchlist ? "Remove from My List" : "Add to My List"}
                   style={{
                     background: inWatchlist ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.08)",
                     border: inWatchlist ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.12)",
@@ -663,7 +716,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {inWatchlist ? "✓ In My List" : "+ My List"}
+                  {inWatchlist ? "\u2713 In My List" : "+ My List"}
                 </button>
               </div>
             </ModalHeader>
@@ -811,8 +864,8 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   {displayVideos.map((v) => {
                     const prog = progressMap[v];
                     const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
-                    const isInProgress = prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10);
-                    const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 10;
+                    const isInProgress = prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 5);
+                    const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
 
                     const formatTime = (secs: number) => {
                       const m = Math.floor(secs / 60);

@@ -77,8 +77,21 @@ export default function History() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div className="spinner-border" role="status" />
+      <div style={{ padding: "2rem 4%", maxWidth: "1200px", margin: "0 auto" }}>
+        <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem" }}>Watch History</h2>
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: "16px",
+            padding: "12px 16px", marginBottom: "4px", borderRadius: "var(--oss-radius, 8px)",
+            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
+          }}>
+            <div className="skeleton-shimmer" style={{ width: "80px", height: "48px", borderRadius: "4px", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div className="skeleton-shimmer" style={{ width: "200px", height: "14px", borderRadius: "4px", marginBottom: "6px" }} />
+              <div className="skeleton-shimmer" style={{ width: "120px", height: "10px", borderRadius: "4px" }} />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -116,7 +129,7 @@ export default function History() {
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           {entries.map((entry) => {
             const pct = entry.duration > 0 ? (entry.current_time / entry.duration) * 100 : 0;
-            const isCompleted = entry.duration > 0 && entry.current_time >= entry.duration - 10;
+            const isCompleted = entry.duration > 0 && entry.current_time >= entry.duration - 5;
 
             return (
               <div key={entry.video_src} className="oss-history-entry" style={{

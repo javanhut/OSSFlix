@@ -72,7 +72,7 @@ describe("detectSleepPattern", () => {
     expect(result.fellAsleep).toBe(false);
   });
 
-  test("ignores non-completed episodes (watched < duration - 10s)", () => {
+  test("ignores non-completed episodes (watched < duration - 5s)", () => {
     const entries = [
       { video_src: videos[0], current_time: 600, duration: 1200, updated_at: "2026-01-01 10:00:00" },
       { video_src: videos[1], current_time: 600, duration: 1200, updated_at: "2026-01-01 10:20:00" },

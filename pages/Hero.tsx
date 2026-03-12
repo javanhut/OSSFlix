@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
 import { useProfile } from "../context/ProfileContext";
+import { SkeletonRow, SkeletonHero } from "../components/SkeletonCard";
 
 type MediaItem = {
   imagePath: string;
@@ -88,9 +89,14 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div className="spinner-border" role="status" />
-      </div>
+      <>
+        <SkeletonHero />
+        <div style={{ paddingTop: "2rem" }}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </div>
+      </>
     );
   }
 
@@ -98,9 +104,13 @@ export default function Home() {
     <>
       {mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
       <div style={{ paddingTop: "2rem" }}>
-        {(continueRow || watchlistRow || rows.length > 0) && (
+        {continueRow && continueRow.titles.length > 0 && (
+          <div className="oss-continue-watching">
+            <SelectorMenu rows={[{ genre: "Continue Watching", titles: continueRow.titles }]} isContinueWatching />
+          </div>
+        )}
+        {(watchlistRow || rows.length > 0) && (
           <SelectorMenu rows={[
-            ...(continueRow ? [continueRow] : []),
             ...(watchlistRow ? [watchlistRow] : []),
             ...rows,
           ]} />

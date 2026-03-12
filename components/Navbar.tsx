@@ -33,11 +33,25 @@ export function NavBar() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const navRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Ctrl+K / Cmd+K to focus search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchExpanded(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   // Lock body scroll when mobile menu or genre dropdown is open
@@ -70,7 +84,12 @@ export function NavBar() {
       setShowResults(false);
       return;
     }
-    fetch(`/api/media/search?q=${encodeURIComponent(q.trim())}`)
+    // Cancel previous in-flight search
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    fetch(`/api/media/search?q=${encodeURIComponent(q.trim())}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((data: { titles: SearchResult[]; genres: GenreResult[] }) => {
         setResults(data.titles);
@@ -78,7 +97,9 @@ export function NavBar() {
         setShowResults(true);
         setActiveIndex(-1);
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err.name !== "AbortError") console.error(err);
+      });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,6 +190,7 @@ export function NavBar() {
                 </button>
               </div>
             </li>
+            <li><Link to="/home" className="oss-nav-link" onClick={() => setNavOpen(false)}>Home</Link></li>
             <li><Link to="/movies" className="oss-nav-link" onClick={() => setNavOpen(false)}>Movies</Link></li>
             <li><Link to="/tvshows" className="oss-nav-link" onClick={() => setNavOpen(false)}>TV Shows</Link></li>
             <li><Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>Anime</Link></li>
@@ -176,6 +198,7 @@ export function NavBar() {
             <li><Link to="/foryou" className="oss-nav-link" onClick={() => setNavOpen(false)}>For You</Link></li>
             <li><Link to="/history" className="oss-nav-link" onClick={() => setNavOpen(false)}>History</Link></li>
             <li><Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>Explore</Link></li>
+            <li><Link to="/stats" className="oss-nav-link" onClick={() => setNavOpen(false)}>Stats</Link></li>
             <li
               className={`oss-genre-trigger${genreOpen ? " oss-genre-open" : ""}`}
               onClick={(e) => {

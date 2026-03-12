@@ -21,9 +21,9 @@ export function detectSleepPattern(
     videoOrder.set(videos[i], i);
   }
 
-  // Get completed episodes (watched >= duration - 10s), sorted by episode order
+  // Get completed episodes (watched >= duration - 5s), sorted by episode order
   const completed = progressEntries
-    .filter(e => e.duration > 0 && e.current_time >= e.duration - 10)
+    .filter(e => e.duration > 0 && e.current_time >= e.duration - 5)
     .filter(e => videoOrder.has(e.video_src))
     .sort((a, b) => videoOrder.get(a.video_src)! - videoOrder.get(b.video_src)!);
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
 import { useProfile } from "../context/ProfileContext";
+import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
   name: string;
@@ -35,9 +36,10 @@ export default function MyList() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div className="spinner-border" role="status" />
-      </div>
+      <>
+        <h1 className="oss-page-title">My List</h1>
+        <SkeletonRow />
+      </>
     );
   }
 

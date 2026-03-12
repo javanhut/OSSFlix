@@ -88,7 +88,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     const cached = infoCache[item.pathToDir];
     if (!cached?.videos?.length) return;
     const prog = progressCache[item.pathToDir];
-    if (prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 10)) {
+    if (prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 5)) {
       setPlayerSrc(prog.video_src);
       setPlayerInitialTime(prog.current_time);
     } else {
@@ -108,7 +108,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
       <div className="oss-hero">
         {mediaList.map((item, idx) => (
           <div key={item.pathToDir} className={`oss-hero-slide${idx === activeIndex ? " active" : ""}`}>
-            <img src={item.imagePath} alt={item.title} />
+            <img src={item.imagePath} alt={item.title} loading={idx === 0 ? "eager" : "lazy"} />
           </div>
         ))}
         <div className="oss-hero-vignette" />
