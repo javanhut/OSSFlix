@@ -1,7 +1,9 @@
 import { Database } from "bun:sqlite";
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const DB_PATH = resolve("./data/ossflix.db");
+mkdirSync(dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH, { create: true });
 
