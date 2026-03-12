@@ -1146,12 +1146,41 @@ Bun.serve({
           }
         }
 
+        // Library stats (always available)
+        const libraryTitles = db.prepare(`SELECT COUNT(*) AS count FROM titles`).get() as { count: number };
+        const libraryMovies = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) = 'movie'`).get() as { count: number };
+        const libraryShows = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) != 'movie'`).get() as { count: number };
+        const libraryGenres = db.prepare(`SELECT COUNT(*) AS count FROM genres`).get() as { count: number };
+
+        // All genres with title counts for the library
+        const allGenreStats = db.prepare(`
+          SELECT g.name, COUNT(DISTINCT tg.title_id) AS count
+          FROM genres g
+          JOIN title_genres tg ON tg.genre_id = g.id
+          GROUP BY g.name
+          ORDER BY count DESC
+          LIMIT 10
+        `).all() as { name: string; count: number }[];
+
+        // Watchlist count
+        const watchlistCount = db.prepare(`
+          SELECT COUNT(*) AS count FROM watchlist WHERE profile_id = ?
+        `).get(pid) as { count: number };
+
         return Response.json({
           totalHours,
           titlesCompleted: completedRow.count,
           titlesWatched: watchedRow.count,
           topGenres,
           watchStreak: streak,
+          library: {
+            totalTitles: libraryTitles.count,
+            movies: libraryMovies.count,
+            shows: libraryShows.count,
+            genres: libraryGenres.count,
+            genreBreakdown: allGenreStats,
+          },
+          watchlistCount: watchlistCount.count,
         });
       },
     },
