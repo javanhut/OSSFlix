@@ -965,6 +965,11 @@ export function Card({ show, onHide, dirPath }: CardProps) {
         initialTime={playerInitialTime}
         timings={playerSrc ? timingsMap[playerSrc] : undefined}
         subtitles={information?.subtitles}
+        nextSrc={(() => {
+          if (!information?.videos || !playerSrc) return undefined;
+          const idx = information.videos.indexOf(playerSrc);
+          return (idx >= 0 && idx < information.videos.length - 1) ? information.videos[idx + 1] : undefined;
+        })()}
         onNext={() => {
           if (!information?.videos || !playerSrc) return;
           const currentIndex = information.videos.indexOf(playerSrc);

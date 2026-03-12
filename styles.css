@@ -1126,7 +1126,7 @@ body.modal-open #root {
 
   /* Video player mobile */
   .vp-hide-mobile { display: none !important; }
-  .vp-ctrl-btn { padding: 6px; }
+  .vp-ctrl-btn { padding: 12px; }
   .vp-volume-horizontal { display: none !important; }
   .vp-volume-popup { display: flex !important; }
   .vp-skip-btn { right: 16px !important; bottom: 80px !important; padding: 8px 16px !important; font-size: 0.85rem !important; }

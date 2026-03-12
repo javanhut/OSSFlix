@@ -104,8 +104,18 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
   const audioCodec = selectedAudio?.codec_name || "";
   const audioChannels = selectedAudio?.channels || 2;
   const canCopyAudio = audioCodec === "aac";
-  const audioBitrate = audioChannels > 2 ? "384k" : "192k";
+  const audioBitrate = audioChannels > 2 ? "448k" : "256k";
   const duration = parseFloat(probeData.format?.duration || "0");
+
+  // Build audio filter chain for cache transcode
+  const cacheAudioFilters: string[] = [];
+  if (!canCopyAudio && audioChannels > 2) {
+    cacheAudioFilters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
+  }
+  if (!canCopyAudio) {
+    cacheAudioFilters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
+    cacheAudioFilters.push("aresample=async=1:first_pts=0");
+  }
 
   const tmpPath = cachePath + ".tmp";
 
@@ -117,11 +127,11 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
     ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
     ...(canCopyVideo
       ? ["-c:v", "copy"]
-      : ["-c:v", "libx264", "-preset", "fast", "-tune", "zerolatency", "-crf", "23"]),
+      : ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]),
     ...(canCopyAudio
       ? ["-c:a", "copy"]
       : ["-c:a", "aac", "-b:a", audioBitrate,
-         "-af", "aresample=async=1000"]),
+         "-af", cacheAudioFilters.join(",")]),
     "-avoid_negative_ts", "make_zero",
     "-max_muxing_queue_size", "9999",
     "-movflags", "+faststart",
@@ -302,7 +312,16 @@ Bun.serve({
         const audioCodec = selectedAudio?.codec_name || "";
         const audioChannels = selectedAudio?.channels || 2;
         const canCopyAudio = audioCodec === "aac";
-        const audioBitrate = audioChannels > 2 ? "384k" : "192k";
+        const audioBitrate = audioChannels > 2 ? "448k" : "256k";
+
+        // Build audio filter chain for live transcode
+        const liveAudioFilters: string[] = [];
+        if (!canCopyAudio && audioChannels > 2) {
+          liveAudioFilters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
+        }
+        if (!canCopyAudio) {
+          liveAudioFilters.push("aresample=async=1:first_pts=0");
+        }
 
         // Start background full-file cache transcode (no seek, full file)
         startCacheTranscode(sourcePath, audioIndex).catch(() => {});
@@ -323,11 +342,11 @@ Bun.serve({
           ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
           ...(canCopyVideo
             ? ["-c:v", "copy"]
-            : ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]),
+            : ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-crf", "23"]),
           ...(canCopyAudio
             ? ["-c:a", "copy"]
             : ["-c:a", "aac", "-b:a", audioBitrate,
-               "-af", "aresample=async=1000"]),
+               "-af", liveAudioFilters.join(",")]),
           "-avoid_negative_ts", "make_zero",
           "-max_muxing_queue_size", "9999",
           "-movflags", "frag_keyframe+empty_moov+faststart",
@@ -338,6 +357,13 @@ Bun.serve({
           stdout: "pipe",
           stderr: "ignore",
         });
+
+        // Kill live transcode FFmpeg when client disconnects
+        if (req.signal) {
+          req.signal.addEventListener("abort", () => {
+            try { ffmpeg.kill(); } catch {}
+          });
+        }
 
         const headers: Record<string, string> = {
           "Content-Type": "video/mp4",
@@ -371,6 +397,22 @@ Bun.serve({
           duration: status.duration,
           fileSize: status.fileSize,
         });
+      },
+    },
+    "/api/stream/prefetch": {
+      async GET(req) {
+        const url = new URL(req.url);
+        const srcParam = url.searchParams.get("src");
+        if (!srcParam) {
+          return Response.json({ error: "Missing src parameter" }, { status: 400 });
+        }
+        const sourcePath = resolveSourcePath(srcParam);
+        if (!sourcePath) {
+          return Response.json({ error: "Not found" }, { status: 404 });
+        }
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+        startCacheTranscode(sourcePath, audioIndex).catch(() => {});
+        return Response.json({ prefetching: true });
       },
     },
     "/api/stream/cache/clear": {

@@ -37,6 +37,7 @@ type VideoPlayerProps = {
   hasNext?: boolean;
   profileId?: number;
   subtitles?: SubtitleTrack[];
+  nextSrc?: string;
 };
 
 function formatTime(seconds: number): string {
@@ -200,7 +201,7 @@ function LoadingSpinner() {
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId, subtitles }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId, subtitles, nextSrc }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -285,11 +286,55 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   useEffect(() => { hasNextRef.current = hasNext; }, [hasNext]);
   useEffect(() => { onNextRef.current = onNext; }, [onNext]);
 
+  // Source ready gate for race condition fix (2A)
+  const sourceReadyRef = useRef(true);
+  const pendingMetadataRef = useRef(false);
+
+  // Auto-skip intro tracking (2D)
+  const autoSkipIntroRef = useRef(false);
+
+  // Prefetch tracking (2C)
+  const prefetchedRef = useRef<string | null>(null);
+
+  // Stall detection (4B)
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Wake lock (4C)
+  const wakeLockRef = useRef<any>(null);
+
+  // Error recovery (4A)
+  const [showReconnecting, setShowReconnecting] = useState(false);
+
+  // Episode transition fade (2B)
+  const [transitioning2, setTransitioning2] = useState(false);
+
   // Hover tooltip state
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState(0);
 
   const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+  // ── Settings persistence (3A) ──
+  useEffect(() => {
+    try {
+      const savedVol = localStorage.getItem("ossflix_volume");
+      const savedMuted = localStorage.getItem("ossflix_muted");
+      const savedRate = localStorage.getItem("ossflix_playbackRate");
+      const savedCc = localStorage.getItem("ossflix_cc");
+      const savedCcTrack = localStorage.getItem("ossflix_cc_track");
+      if (savedVol !== null) { const v = parseFloat(savedVol); if (isFinite(v)) setVolume(v); }
+      if (savedMuted !== null) setMuted(savedMuted === "true");
+      if (savedRate !== null) { const r = parseFloat(savedRate); if (isFinite(r) && speeds.includes(r)) setPlaybackRate(r); }
+      if (savedCc !== null) setCcEnabled(savedCc === "true");
+      if (savedCcTrack !== null) { const t = parseInt(savedCcTrack); if (isFinite(t)) setActiveTrackIndex(t); }
+    } catch {}
+  }, []);
+
+  useEffect(() => { try { localStorage.setItem("ossflix_volume", String(volume)); } catch {} }, [volume]);
+  useEffect(() => { try { localStorage.setItem("ossflix_muted", String(muted)); } catch {} }, [muted]);
+  useEffect(() => { try { localStorage.setItem("ossflix_playbackRate", String(playbackRate)); } catch {} }, [playbackRate]);
+  useEffect(() => { try { localStorage.setItem("ossflix_cc", String(ccEnabled)); } catch {} }, [ccEnabled]);
+  useEffect(() => { try { localStorage.setItem("ossflix_cc_track", String(activeTrackIndex)); } catch {} }, [activeTrackIndex]);
 
   // ── Progress saving refs ──
   const saveProgressRef = useRef<(force?: boolean) => void>(() => {});
@@ -340,6 +385,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     // Reset cache mode for new source
     isCachedRef.current = false;
     setCachedMode(false);
+    // Source ready gate (2A) — block metadata handling until cache check resolves
+    sourceReadyRef.current = false;
+    pendingMetadataRef.current = false;
+    // Reset prefetch tracking for new source
+    prefetchedRef.current = null;
+    // Apply transition fade (2B)
+    setTransitioning2(true);
     // For streamed files, check if already cached and apply initialTime
     if (isStreamed && initialTime && initialTime > 0) {
       // Check cache status to decide how to apply initialTime
@@ -358,12 +410,16 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setStreamOffset(initialTime);
             initialTimeAppliedRef.current = true;
           }
+          sourceReadyRef.current = true;
+          if (pendingMetadataRef.current) handleLoadedMetadata();
         })
         .catch(() => {
           // Fallback to stream offset
           streamOffsetRef.current = initialTime;
           setStreamOffset(initialTime);
           initialTimeAppliedRef.current = true;
+          sourceReadyRef.current = true;
+          if (pendingMetadataRef.current) handleLoadedMetadata();
         });
     } else if (isStreamed) {
       // No initial time — still check if cached for instant playback
@@ -374,8 +430,16 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             isCachedRef.current = true;
             setCachedMode(true);
           }
+          sourceReadyRef.current = true;
+          if (pendingMetadataRef.current) handleLoadedMetadata();
         })
-        .catch(() => {});
+        .catch(() => {
+          sourceReadyRef.current = true;
+          if (pendingMetadataRef.current) handleLoadedMetadata();
+        });
+    } else {
+      // Non-streamed: source is immediately ready
+      sourceReadyRef.current = true;
     }
     // Clear countdown when src changes
     if (countdownRef.current) {
@@ -442,6 +506,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     isCachedRef.current = false;
     setCachedMode(false);
     if (cachePollingRef.current) { clearInterval(cachePollingRef.current); cachePollingRef.current = null; }
+    setShowReconnecting(false);
+    setTransitioning2(false);
+    sourceReadyRef.current = true;
+    pendingMetadataRef.current = false;
+    prefetchedRef.current = null;
+    if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
   }, []);
 
   const seekStream = useCallback((absoluteTime: number) => {
@@ -495,6 +565,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   // ── Show / hide lifecycle ──
   useEffect(() => {
     if (!show) {
+      // Reset auto-skip intro on player hide (2D)
+      autoSkipIntroRef.current = false;
+      // Release wake lock (4C)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+      // Clear stall timer (4B)
+      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
       const video = videoRef.current;
       if (video && currentSrcRef.current) {
         const ct = video.currentTime + streamOffsetRef.current;
@@ -593,6 +672,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const video = videoRef.current;
     const t = timingsRef.current;
     if (!video || !t?.intro_end) return;
+    // Mark for auto-skip on subsequent episodes (2D)
+    autoSkipIntroRef.current = true;
     if (isStreamed) {
       seekStream(t.intro_end);
     } else {
@@ -705,27 +786,42 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const hasOutroTiming = t?.outro_start != null && t?.outro_end != null;
     const hasIntroTiming = t?.intro_start != null && t?.intro_end != null;
 
-    // Skip intro button
+    // Skip intro button + auto-skip (2D)
     if (hasIntroTiming) {
-      setShowSkipIntro(ct >= t!.intro_start! && ct < t!.intro_end!);
+      const inIntro = ct >= t!.intro_start! && ct < t!.intro_end!;
+      setShowSkipIntro(inIntro);
+      // Auto-skip intro on subsequent episodes if user manually skipped before
+      if (inIntro && autoSkipIntroRef.current) {
+        if (isStreamed) {
+          seekStream(t!.intro_end!);
+        } else {
+          video.currentTime = t!.intro_end!;
+          setCurrentTime(t!.intro_end!);
+        }
+      }
     } else {
       setShowSkipIntro(false);
     }
 
-    // Determine countdown trigger point
+    // Prefetch next episode at 75% (2C)
+    if (nextSrc && dur > 0 && ct >= dur * 0.75 && prefetchedRef.current !== nextSrc) {
+      prefetchedRef.current = nextSrc;
+      fetch(`/api/stream/prefetch?src=${encodeURIComponent(nextSrc)}`).catch(() => {});
+    }
+
+    // Determine countdown trigger point (3C)
     let countdownTrigger = -1;
     if (hasOutroTiming) {
-      // Start countdown 10s before outro starts
-      countdownTrigger = t!.outro_start! - 10;
-      if (countdownTrigger < 0) countdownTrigger = t!.outro_start!;
+      // Start countdown at outro_start (not 10s before it)
+      countdownTrigger = t!.outro_start!;
 
       // Show skip outro button when in outro region
       setShowSkipOutro(ct >= t!.outro_start! && ct < t!.outro_end!);
     } else {
       setShowSkipOutro(false);
-      // No outro set: trigger 10s before video ends
-      if (dur > 10) {
-        countdownTrigger = dur - 10;
+      // No outro set: trigger 15s before video ends
+      if (dur > 15) {
+        countdownTrigger = dur - 15;
       }
     }
 
@@ -844,6 +940,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
+    // Source ready gate (2A): defer if cache check hasn't resolved yet
+    if (!sourceReadyRef.current) {
+      pendingMetadataRef.current = true;
+      return;
+    }
+    pendingMetadataRef.current = false;
     const dur = video.duration;
     // For streamed files, only update duration if the browser reports a valid one
     if (!isStreamed || (isFinite(dur) && dur > 60)) {
@@ -1121,6 +1223,55 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     };
   }, []);
 
+  // ── Wake Lock (4C) ──
+  useEffect(() => {
+    if (!show) return;
+    const requestWakeLock = async () => {
+      if (playing && "wakeLock" in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+        } catch {}
+      } else if (!playing && wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    };
+    requestWakeLock();
+    // Re-acquire on visibility change (browser releases on tab switch)
+    const onVisChange = () => {
+      if (document.visibilityState === "visible" && playing) requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
+  }, [show, playing]);
+
+  // ── Stall detection (4B) ──
+  useEffect(() => {
+    if (!show || !playing) {
+      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+      return;
+    }
+    if (isLoading) {
+      if (!stallTimerRef.current) {
+        stallTimerRef.current = setTimeout(() => {
+          stallTimerRef.current = null;
+          const video = videoRef.current;
+          if (!video || !isLoading) return;
+          if (isStreamed) {
+            seekStream(video.currentTime + streamOffsetRef.current);
+          } else {
+            // Nudge currentTime to trigger re-buffer
+            video.currentTime = video.currentTime;
+          }
+        }, 10000);
+      }
+    } else {
+      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+    }
+  }, [show, playing, isLoading]);
+
   // ── Keyboard ──
   useEffect(() => {
     if (!show) return;
@@ -1312,8 +1463,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           if ((e.target as HTMLElement).closest("[data-controls]")) return;
           const touch = e.touches[0];
           const deltaY = volumeGestureRef.current.startY - touch.clientY;
-          // Require 15px of vertical movement to activate
-          if (!volumeGestureRef.current.active && Math.abs(deltaY) < 15) return;
+          // Require 20px of vertical movement to activate (5B)
+          if (!volumeGestureRef.current.active && Math.abs(deltaY) < 20) return;
           // touch-action: none on the container already prevents scrolling, so no preventDefault needed
           volumeGestureRef.current.active = true;
           const rect = containerRef.current?.getBoundingClientRect();
@@ -1346,11 +1497,34 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           src={videoSrc}
           autoPlay
           crossOrigin="anonymous"
-          style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+          style={{
+            width: "100%", height: "100%", objectFit: "contain", background: "#000",
+            opacity: transitioning2 ? 0 : 1,
+            transition: "opacity 200ms ease",
+          }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onWaiting={() => setIsLoading(true)}
-          onCanPlay={() => setIsLoading(false)}
+          onCanPlay={() => { setIsLoading(false); setTransitioning2(false); }}
+          onError={() => {
+            // Error recovery (4A): wait 2s then reload from current position
+            const video = videoRef.current;
+            if (!video) return;
+            setShowReconnecting(true);
+            setTimeout(() => {
+              setShowReconnecting(false);
+              if (isStreamed) {
+                seekStream(video.currentTime + streamOffsetRef.current);
+              } else {
+                const pos = video.currentTime;
+                video.load();
+                video.addEventListener("loadedmetadata", () => {
+                  video.currentTime = pos;
+                  safePlay(video);
+                }, { once: true });
+              }
+            }, 2000);
+          }}
           onEnded={() => {
             setPlaying(false);
             setShowControls(true);
@@ -1383,6 +1557,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Loading spinner */}
         {isLoading && playing && <LoadingSpinner />}
+
+        {/* Reconnecting indicator (4A) */}
+        {showReconnecting && (
+          <div style={{
+            position: "absolute", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(20,20,28,0.9)", backdropFilter: "blur(12px)",
+            color: "#fff", padding: "12px 24px", borderRadius: "8px",
+            fontSize: "0.9rem", fontWeight: 600, zIndex: 15,
+            border: "1px solid rgba(255,255,255,0.1)",
+          }}>
+            Reconnecting...
+          </div>
+        )}
 
         {/* Skip feedback */}
         {skipFeedback && <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={skipFeedback.seconds} />}
@@ -1481,7 +1669,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             animation: "vpSlideUp 0.3s ease",
           }}>
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", fontWeight: 500 }}>
-              Next episode in
+              {nextSrc ? `Up Next: ${parseEpisodeFromSrc(nextSrc) || "Next Episode"}` : "Next episode in"}
             </div>
             <div style={{
               color: "#fff", fontSize: "2.5rem", fontWeight: 800,
@@ -1592,7 +1780,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             onMouseEnter={() => setProgressHovered(true)}
             style={{
               width: "100%",
-              padding: "14px 0",
+              padding: "20px 0",
               marginBottom: "0px",
               cursor: "pointer",
               position: "relative",
