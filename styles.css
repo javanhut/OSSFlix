@@ -975,20 +975,33 @@ body.modal-open #root {
 /* ── Skip to content (D3) ── */
 .skip-link {
   position: absolute;
-  top: -50px;
-  left: 0;
-  padding: 8px 16px;
-  background: var(--oss-accent);
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
   color: #fff;
   text-decoration: none;
   font-weight: 600;
   font-size: 0.85rem;
   z-index: 9999;
-  border-radius: 0 0 8px 0;
-  transition: top 0.2s ease;
 }
 .skip-link:focus {
+  position: fixed;
   top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  padding: 8px 16px;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  background: var(--oss-accent);
+  border-radius: 0 0 8px 0;
 }
 
 /* ── Filter bar (C5) ── */

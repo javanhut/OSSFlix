@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type FilterBarProps = {
   type: string;
@@ -10,6 +10,7 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
   const [genreFilter, setGenreFilter] = useState("");
   const [availableGenres, setAvailableGenres] = useState<string[]>([]);
   const [active, setActive] = useState(false);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/genres/all")
@@ -19,7 +20,12 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
   }, []);
 
   useEffect(() => {
-    if (!active && sort === "name" && !genreFilter) return;
+    // Skip the initial render — only fetch when user actually interacts
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    if (!active) return;
 
     const params = new URLSearchParams({ sort, type });
     if (genreFilter) params.set("genre", genreFilter);
@@ -34,7 +40,7 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
         }
       })
       .catch(() => {});
-  }, [sort, genreFilter, type]);
+  }, [sort, genreFilter, active]);
 
   const handleSortChange = (newSort: string) => {
     setSort(newSort);

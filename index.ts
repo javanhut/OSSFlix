@@ -953,12 +953,6 @@ Bun.serve({
         }
       },
     },
-    "/api/media/titles": {
-      GET() {
-        const titles = listAllTitles();
-        return Response.json(titles);
-      },
-    },
     "/api/migrator/add": {
       async POST(req) {
         try {
@@ -1191,22 +1185,29 @@ Bun.serve({
         const sort = url.searchParams.get("sort") || "name";
         const genre = url.searchParams.get("genre");
 
-        let query = `
-          SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at
-          FROM titles t
-        `;
+        // Anime is a genre tag, not a type in the DB
+        const isAnimeFilter = type && type.toLowerCase() === "anime";
+
+        let joins = "";
         const conditions: string[] = [];
         const params: any[] = [];
 
+        if (genre || isAnimeFilter) {
+          joins += ` JOIN title_genres tg ON tg.title_id = t.id JOIN genres g ON g.id = tg.genre_id`;
+        }
         if (genre) {
-          query += ` JOIN title_genres tg ON tg.title_id = t.id JOIN genres g ON g.id = tg.genre_id`;
           conditions.push("LOWER(g.name) = ?");
           params.push(genre.toLowerCase());
         }
-        if (type) {
+        if (isAnimeFilter) {
+          // Match titles tagged with Anime or Animation
+          conditions.push("LOWER(g.name) IN ('anime', 'animation')");
+        } else if (type) {
           conditions.push("LOWER(t.type) = ?");
           params.push(type.toLowerCase());
         }
+
+        let query = `SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at FROM titles t${joins}`;
         if (conditions.length > 0) {
           query += ` WHERE ${conditions.join(" AND ")}`;
         }
