@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useProfile } from "../context/ProfileContext";
 import Card from "../components/Card";
 import { SkeletonRow } from "../components/SkeletonCard";
 
@@ -13,14 +12,12 @@ type Recommendation = {
 };
 
 export default function ForYou() {
-  const { profileHeaders } = useProfile();
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDir, setSelectedDir] = useState("");
 
   useEffect(() => {
-    const pHeaders = profileHeaders();
-    fetch("/api/recommendations?limit=20", { headers: pHeaders })
+    fetch("/api/recommendations?limit=20", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: Recommendation[]) => setRecs(data))
       .catch(() => {})
@@ -29,8 +26,7 @@ export default function ForYou() {
 
   useEffect(() => {
     const handler = () => {
-      const pHeaders = profileHeaders();
-      fetch("/api/recommendations?limit=20", { headers: pHeaders })
+      fetch("/api/recommendations?limit=20", { credentials: "same-origin" })
         .then((r) => r.json())
         .then((data: Recommendation[]) => setRecs(data))
         .catch(() => {});

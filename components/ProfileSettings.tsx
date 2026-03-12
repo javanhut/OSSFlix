@@ -1355,9 +1355,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
     }
   }, [show, profile]);
 
-  const pHeaders: Record<string, string> = ctxProfile?.id
-    ? { "Content-Type": "application/json", "x-profile-id": String(ctxProfile.id) }
-    : { "Content-Type": "application/json" };
+  const pHeaders: Record<string, string> = { "Content-Type": "application/json" };
 
   const handleSave = () => {
     setSaving(true);
@@ -1735,7 +1733,7 @@ function BrowseItem({ onClick, children, style: extraStyle }: {
 
 // ── Profile Dropdown ──
 export function Profile() {
-  const { profile: ctxProfile, setProfile: setCtxProfile, signOut, switchProfile } = useProfile();
+  const { profile: ctxProfile, setProfile: setCtxProfile, logout } = useProfile();
   const navigate = useNavigate();
   const [profile, setProfileLocal] = useState<ProfileData | null>(null);
   const [showProfile, setShowProfile] = useState(false);
@@ -1751,7 +1749,7 @@ export function Profile() {
 
   useEffect(() => {
     if (!ctxProfile?.id) return;
-    fetch("/api/profile", { headers: { "x-profile-id": String(ctxProfile.id) } })
+    fetch("/api/profile", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data) => setProfileLocal(data))
       .catch((err) => console.error("Failed to load profile:", err));
@@ -1861,10 +1859,10 @@ export function Profile() {
               <IconRescan spinning={rescanning} /> {rescanning ? "Scanning..." : "Rescan Library"}
             </DropdownItem>
             <div className="oss-profile-dropdown-divider" style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
-            <DropdownItem onClick={() => { setDropdownOpen(false); switchProfile(); navigate("/profiles"); }}>
+            <DropdownItem onClick={() => { setDropdownOpen(false); logout(); navigate("/profiles"); }}>
               <IconUser /> Switch Profile
             </DropdownItem>
-            <DropdownItem onClick={() => { setDropdownOpen(false); signOut(); navigate("/"); }} style={{ color: "#ef4444" }}>
+            <DropdownItem onClick={() => { setDropdownOpen(false); logout(); navigate("/"); }} style={{ color: "#ef4444" }}>
               <IconLogout /> Sign Out
             </DropdownItem>
           </div>

@@ -35,7 +35,7 @@ type VideoPlayerProps = {
   onProgress?: (currentTime: number, duration: number) => void;
   timings?: EpisodeTiming;
   hasNext?: boolean;
-  profileId?: number;
+  profileId?: number; // deprecated: auth now uses cookies
   subtitles?: SubtitleTrack[];
   nextSrc?: string;
 };
@@ -358,11 +358,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     if (!force && Math.abs(ct - lastSavedTimeRef.current) < 3) return;
     lastSavedTimeRef.current = ct;
     onProgress?.(ct, dur);
-    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-    if (profileId) hdrs["x-profile-id"] = String(profileId);
     fetch("/api/playback/progress", {
       method: "PUT",
-      headers: hdrs,
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({
         video_src: videoSrcToSave,
         dir_path: currentDirRef.current || "",
@@ -579,11 +578,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         const ct = video.currentTime + streamOffsetRef.current;
         const dur = isStreamed ? durationRef.current : video.duration;
         if (isFinite(ct) && ct > 0) {
-          const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-          if (profileId) hdrs["x-profile-id"] = String(profileId);
           fetch("/api/playback/progress", {
             method: "PUT",
-            headers: hdrs,
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
             body: JSON.stringify({
               video_src: currentSrcRef.current,
               dir_path: currentDirRef.current || "",

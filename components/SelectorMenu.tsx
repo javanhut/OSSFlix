@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Card } from "./Card";
-import { useProfile } from "../context/ProfileContext";
 
 type TitleInfo = {
   name: string;
@@ -19,7 +18,6 @@ type SelectorMenuProps = {
 };
 
 function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick: () => void; showQuickAdd?: boolean }) {
-  const { profileHeaders } = useProfile();
   const [hovered, setHovered] = useState(false);
   const [description, setDescription] = useState<string | null>(null);
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -37,11 +35,11 @@ function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick
 
   const handleWatchlistToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const pHeaders = profileHeaders();
     const method = inWatchlist ? "DELETE" : "POST";
     fetch("/api/watchlist", {
       method,
-      headers: { "Content-Type": "application/json", ...pHeaders },
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ dir_path: title.pathToDir }),
     })
       .then(() => setInWatchlist(!inWatchlist))

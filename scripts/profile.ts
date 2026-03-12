@@ -24,9 +24,26 @@ export function getAllProfiles(): ProfileData[] {
   return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id").all() as ProfileData[];
 }
 
-export function createProfile(name: string): ProfileData {
+export function createProfile(name: string, passwordHash?: string): ProfileData {
+  if (passwordHash) {
+    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash) VALUES (?, 1, ?)", [name, passwordHash]);
+    return getProfile(Number(result.lastInsertRowid))!;
+  }
   const result = db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", [name]);
   return getProfile(Number(result.lastInsertRowid))!;
+}
+
+export function getProfileWithHash(id: number): (ProfileData & { password_hash: string | null }) | null {
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs, password_hash FROM profiles WHERE id = ?").get(id) as (ProfileData & { password_hash: string | null }) | null;
+}
+
+export function setProfilePassword(id: number, hash: string): void {
+  db.run("UPDATE profiles SET password_hash = ? WHERE id = ?", [hash, id]);
+}
+
+export function profileHasPassword(id: number): boolean {
+  const row = db.prepare("SELECT password_hash FROM profiles WHERE id = ?").get(id) as { password_hash: string | null } | null;
+  return !!row?.password_hash;
 }
 
 export function deleteProfile(id: number): void {

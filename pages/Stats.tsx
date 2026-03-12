@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useProfile } from "../context/ProfileContext";
 
 type StatsData = {
   totalHours: number;
@@ -18,13 +17,11 @@ type StatsData = {
 };
 
 export default function Stats() {
-  const { profileHeaders } = useProfile();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const pHeaders = profileHeaders();
-    fetch("/api/stats", { headers: pHeaders })
+    fetch("/api/stats", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: StatsData) => setStats(data))
       .catch(() => {})

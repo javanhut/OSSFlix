@@ -15,23 +15,31 @@ import ForYou from "./pages/ForYou";
 import Stats from "./pages/Stats";
 
 function AppRoutes() {
-  const { authenticated, profile } = useProfile();
+  const { authenticated, profile, loading } = useProfile();
+
+  // Show spinner while checking session
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+      }}>
+        <div style={{
+          width: "48px", height: "48px",
+          border: "3px solid rgba(255,255,255,0.1)",
+          borderTopColor: "#3b82f6", borderRadius: "50%",
+          animation: "appSpin 0.8s linear infinite",
+        }} />
+        <style>{`@keyframes appSpin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    );
+  }
 
   // Not authenticated → Login page
   if (!authenticated) {
     return (
       <Routes>
         <Route path="*" element={<Login />} />
-      </Routes>
-    );
-  }
-
-  // Authenticated but no active profile → Profile select
-  if (!profile?.id) {
-    return (
-      <Routes>
-        <Route path="/profiles" element={<ProfileSelect />} />
-        <Route path="*" element={<Navigate to="/profiles" replace />} />
       </Routes>
     );
   }

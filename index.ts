@@ -6,15 +6,21 @@ import { createHash } from "node:crypto";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
 import { copyFile, mkdir } from "node:fs/promises";
-import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs } from "./scripts/profile";
+import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs, getProfileWithHash, setProfilePassword, profileHasPassword } from "./scripts/profile";
 import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
 import { updateTomlFile } from "./scripts/tomlwriter";
 import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
 import { getRecommendations } from "./scripts/recommend";
 import db from "./scripts/db";
+import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
+import type { ProfileData } from "./scripts/profile";
 
-function getProfileFromReq(req: Request) {
+function getProfileFromReq(req: Request): ProfileData {
+  // Try session-based auth first
+  const auth = authenticateRequest(req);
+  if (auth) return auth.profile;
+  // Fallback to header-based auth for backward compatibility during migration
   const id = req.headers.get("x-profile-id");
   if (id) {
     const profile = getProfile(parseInt(id, 10));
@@ -22,6 +28,17 @@ function getProfileFromReq(req: Request) {
   }
   return getOrCreateDefaultProfile();
 }
+
+function requireAuth(handler: (req: Request, profile: ProfileData) => Response | Promise<Response>) {
+  return async (req: Request) => {
+    const auth = authenticateRequest(req);
+    if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return handler(req, auth.profile);
+  };
+}
+
+// Hourly session cleanup
+setInterval(() => cleanExpiredSessions(), 3600_000);
 
 const IMAGES_BASE = resolve("./images");
 const AVATARS_BASE = resolve("./data/avatars");
@@ -256,6 +273,119 @@ Bun.serve({
     "/explore": index,
     "/foryou": index,
     "/stats": index,
+    "/api/auth/login": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId, password } = body;
+          if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
+          const profileWithHash = getProfileWithHash(profileId);
+          if (!profileWithHash) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (!profileWithHash.password_hash) {
+            return Response.json({ error: "password_not_set" }, { status: 200 });
+          }
+          if (!password) return Response.json({ error: "Missing password" }, { status: 400 });
+          const valid = await verifyPassword(password, profileWithHash.password_hash);
+          if (!valid) return Response.json({ error: "Invalid password" }, { status: 401 });
+          const token = createSession(profileWithHash.id);
+          const profile = getProfile(profileWithHash.id)!;
+          return Response.json({ profile }, {
+            headers: { "Set-Cookie": sessionCookie(token) },
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/auth/register": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { name, password } = body;
+          if (!name || name.trim().length < 1 || name.trim().length > 25) {
+            return Response.json({ error: "Name must be between 1 and 25 characters" }, { status: 400 });
+          }
+          if (!password || password.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          const hash = await hashPassword(password);
+          const profile = createProfile(name.trim(), hash);
+          const token = createSession(profile.id);
+          return Response.json({ profile }, {
+            headers: { "Set-Cookie": sessionCookie(token) },
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/auth/set-password": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId, password } = body;
+          if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
+          if (!password || password.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          const profileWithHash = getProfileWithHash(profileId);
+          if (!profileWithHash) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (profileWithHash.password_hash) {
+            return Response.json({ error: "Password already set. Use change-password instead." }, { status: 400 });
+          }
+          const hash = await hashPassword(password);
+          setProfilePassword(profileId, hash);
+          const token = createSession(profileId);
+          const profile = getProfile(profileId)!;
+          return Response.json({ profile }, {
+            headers: { "Set-Cookie": sessionCookie(token) },
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/auth/logout": {
+      async POST(req) {
+        const auth = authenticateRequest(req);
+        if (auth) deleteSession(auth.sessionId);
+        return Response.json({ ok: true }, {
+          headers: { "Set-Cookie": clearSessionCookie() },
+        });
+      },
+    },
+    "/api/auth/me": {
+      GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        return Response.json({ profile: auth.profile });
+      },
+    },
+    "/api/auth/change-password": {
+      async POST(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        try {
+          const body = await req.json();
+          const { currentPassword, newPassword } = body;
+          if (!newPassword || newPassword.length < 4) {
+            return Response.json({ error: "New password must be at least 4 characters" }, { status: 400 });
+          }
+          const profileWithHash = getProfileWithHash(auth.profile.id);
+          if (!profileWithHash) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (profileWithHash.password_hash) {
+            if (!currentPassword) return Response.json({ error: "Current password required" }, { status: 400 });
+            const valid = await verifyPassword(currentPassword, profileWithHash.password_hash);
+            if (!valid) return Response.json({ error: "Current password is incorrect" }, { status: 401 });
+          }
+          const hash = await hashPassword(newPassword);
+          setProfilePassword(auth.profile.id, hash);
+          return Response.json({ ok: true });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
     "/api/stream": {
       async GET(req) {
         const url = new URL(req.url);
@@ -621,7 +751,12 @@ Bun.serve({
     },
     "/api/profiles": {
       GET() {
-        const profiles = getAllProfiles();
+        const profiles = getAllProfiles().map(p => ({
+          id: p.id,
+          name: p.name,
+          image_path: p.image_path,
+          has_password: profileHasPassword(p.id),
+        }));
         return Response.json(profiles);
       },
       async POST(req) {

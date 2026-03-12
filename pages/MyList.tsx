@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
-import { useProfile } from "../context/ProfileContext";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
@@ -15,14 +14,12 @@ type MenuRow = {
 };
 
 export default function MyList() {
-  const { profileHeaders } = useProfile();
   const [row, setRow] = useState<MenuRow | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
-      const pHeaders = profileHeaders();
-      const res = await fetch("/api/watchlist", { headers: pHeaders });
+      const res = await fetch("/api/watchlist", { credentials: "same-origin" });
       const data = (await res.json()) as MenuRow;
       setRow(data.titles.length > 0 ? data : null);
     } catch (err) {

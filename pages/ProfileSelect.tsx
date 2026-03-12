@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useProfile, ProfileData } from "../context/ProfileContext";
+import { useProfile, type PublicProfile } from "../context/ProfileContext";
 
 export default function ProfileSelect() {
-  const { setProfile, signOut } = useProfile();
+  const { login, setPassword, logout } = useProfile();
   const navigate = useNavigate();
-  const [profiles, setProfiles] = useState<ProfileData[]>([]);
+  const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
+
+  // Password prompt state
+  const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
+  const [password, setPasswordVal] = useState("");
+  const [needsSetPassword, setNeedsSetPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [nameConfirm, setNameConfirm] = useState("");
+  const [nameVerified, setNameVerified] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadProfiles = () => {
     fetch("/api/profiles")
@@ -20,31 +30,77 @@ export default function ProfileSelect() {
 
   useEffect(() => { loadProfiles(); }, []);
 
-  const handleSelect = (p: ProfileData) => {
-    setProfile(p);
+  const handleSelect = (p: PublicProfile) => {
+    setSelectedProfile(p);
+    setPasswordVal("");
+    setConfirmPassword("");
+    setNameConfirm("");
+    setNameVerified(false);
+    setError("");
+    // If profile has no password, go straight to set-password flow
+    setNeedsSetPassword(!p.has_password);
+  };
+
+  const handleVerifyName = () => {
+    if (!selectedProfile) return;
+    if (nameConfirm.trim().toLowerCase() !== selectedProfile.name.toLowerCase()) {
+      setError("Name does not match this profile");
+      return;
+    }
+    setError("");
+    setNameVerified(true);
+  };
+
+  const handleLogin = async () => {
+    if (!selectedProfile) return;
+    if (!password) { setError("Please enter your password"); return; }
+    setSubmitting(true);
+    setError("");
+    const result = await login(selectedProfile.id, password);
+    setSubmitting(false);
+    if (result.error) { setError(result.error); return; }
     navigate("/home");
   };
 
-  const handleCreate = () => {
+  const handleSetPw = async () => {
+    if (!selectedProfile) return;
+    if (!password || password.length < 4) { setError("Password must be at least 4 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    setSubmitting(true);
+    setError("");
+    const result = await setPassword(selectedProfile.id, password);
+    setSubmitting(false);
+    if (result.error) { setError(result.error); return; }
+    navigate("/home");
+  };
+
+  const handleCreate = async () => {
     const name = newName.trim();
     if (name.length < 1 || name.length > 25) {
       setError("Name must be between 1 and 25 characters");
       return;
     }
+    if (!newPassword || newPassword.length < 4) {
+      setError("Password must be at least 4 characters");
+      return;
+    }
     setError("");
-    fetch("/api/profiles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) { setError(data.error); return; }
-        setCreating(false);
-        setNewName("");
-        loadProfiles();
-      })
-      .catch(() => setError("Failed to create profile"));
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ name, password: newPassword }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); return; }
+      setCreating(false);
+      setNewName("");
+      setNewPassword("");
+      loadProfiles();
+    } catch {
+      setError("Failed to create profile");
+    }
   };
 
   const handleDelete = (id: number, e: React.MouseEvent) => {
@@ -53,8 +109,17 @@ export default function ProfileSelect() {
     fetch("/api/profiles/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ id }),
     }).then(() => loadProfiles()).catch(() => {});
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)", color: "#fff",
+    fontSize: "0.9rem", outline: "none",
+    boxSizing: "border-box" as const,
   };
 
   return (
@@ -225,21 +290,23 @@ export default function ProfileSelect() {
                 placeholder="Profile name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                 autoFocus
-                style={{
-                  width: "100%", padding: "10px 14px", borderRadius: "8px",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.06)", color: "#fff",
-                  fontSize: "0.9rem", outline: "none",
-                }}
+                style={inputStyle}
+              />
+              <input
+                type="password"
+                placeholder="Password (min 4 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                style={inputStyle}
               />
               {error && (
                 <p style={{ margin: 0, color: "#ef4444", fontSize: "0.8rem" }}>{error}</p>
               )}
               <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => { setCreating(false); setNewName(""); setError(""); }}
+                  onClick={() => { setCreating(false); setNewName(""); setNewPassword(""); setError(""); }}
                   style={{
                     padding: "8px 20px", borderRadius: "8px",
                     border: "1px solid rgba(255,255,255,0.12)",
@@ -263,12 +330,136 @@ export default function ProfileSelect() {
               </div>
             </div>
           )}
+
+          {/* Password prompt modal */}
+          {selectedProfile && (
+            <div style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 9999,
+            }}
+              onClick={() => { setSelectedProfile(null); setError(""); setNameConfirm(""); setNameVerified(false); }}
+            >
+              <div style={{
+                background: "#1a1a2e", borderRadius: "16px", padding: "28px",
+                width: "100%", maxWidth: "380px",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "20px" }}>
+                  <img
+                    src={selectedProfile.image_path || "/images/profileicon.png"}
+                    alt={selectedProfile.name}
+                    style={{
+                      width: "48px", height: "48px", borderRadius: "50%",
+                      objectFit: "cover", border: "2px solid rgba(255,255,255,0.1)",
+                    }}
+                  />
+                  <span style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 600 }}>
+                    {selectedProfile.name}
+                  </span>
+                </div>
+
+                {needsSetPassword ? (
+                  nameVerified ? (
+                    <>
+                      <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.85rem", margin: "0 0 14px" }}>
+                        Identity verified. Set a password for this profile.
+                      </p>
+                      <input
+                        type="password"
+                        placeholder="New password (min 4 characters)"
+                        value={password}
+                        onChange={(e) => setPasswordVal(e.target.value)}
+                        autoFocus
+                        style={{ ...inputStyle, marginBottom: "10px" }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Confirm password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSetPw(); }}
+                        style={{ ...inputStyle, marginBottom: "14px" }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.85rem", margin: "0 0 14px" }}>
+                        This profile has no password. Type the profile name to verify your identity.
+                      </p>
+                      <input
+                        type="text"
+                        placeholder={`Type "${selectedProfile.name}" to confirm`}
+                        value={nameConfirm}
+                        onChange={(e) => setNameConfirm(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleVerifyName(); }}
+                        autoFocus
+                        style={{ ...inputStyle, marginBottom: "14px" }}
+                      />
+                    </>
+                  )
+                ) : (
+                  <input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPasswordVal(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
+                    autoFocus
+                    style={{ ...inputStyle, marginBottom: "14px" }}
+                  />
+                )}
+
+                {error && (
+                  <p style={{ margin: "0 0 12px", color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>
+                )}
+
+                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => { setSelectedProfile(null); setError(""); setNameConfirm(""); setNameVerified(false); }}
+                    style={{
+                      padding: "8px 20px", borderRadius: "8px",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "transparent", color: "rgba(255,255,255,0.6)",
+                      fontSize: "0.85rem", cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={
+                      needsSetPassword
+                        ? (nameVerified ? handleSetPw : handleVerifyName)
+                        : handleLogin
+                    }
+                    disabled={submitting}
+                    style={{
+                      padding: "8px 24px", borderRadius: "8px",
+                      border: "none", background: "#3b82f6",
+                      color: "#fff", fontSize: "0.85rem", fontWeight: 600,
+                      cursor: submitting ? "wait" : "pointer",
+                      opacity: submitting ? 0.7 : 1,
+                    }}
+                  >
+                    {submitting
+                      ? "..."
+                      : needsSetPassword
+                        ? (nameVerified ? "Set Password" : "Verify")
+                        : "Continue"
+                    }
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {/* Sign out link */}
       <button
-        onClick={() => { signOut(); navigate("/"); }}
+        onClick={() => { logout(); navigate("/"); }}
         style={{
           marginTop: "40px", background: "none", border: "none",
           color: "rgba(255,255,255,0.3)", fontSize: "0.82rem",

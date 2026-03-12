@@ -480,7 +480,6 @@ function groupVideosBySeason(videos: string[]): Map<number, string[]> {
 export function Card({ show, onHide, dirPath }: CardProps) {
   const { profile } = useProfile();
   const pid = profile?.id;
-  const pHeaders = pid ? { "x-profile-id": String(pid) } : {};
   const [information, setInformation] = useState<MediaInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [playerSrc, setPlayerSrc] = useState<string | null>(null);
@@ -520,7 +519,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
   const fetchProgress = () => {
     if (!dirPath) return;
-    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
+    fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
       .then((res) => res.json())
       .then((entries: ProgressEntry[]) => {
         const map: Record<string, ProgressEntry> = {};
@@ -567,7 +566,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
   const fetchWatchlistStatus = () => {
     if (!dirPath) return;
-    fetch(`/api/watchlist/check?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders as Record<string, string> })
+    fetch(`/api/watchlist/check?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
       .then((res) => res.json())
       .then((data: { inList: boolean }) => setInWatchlist(data.inList))
       .catch(() => {});
@@ -575,11 +574,10 @@ export function Card({ show, onHide, dirPath }: CardProps) {
 
   const toggleWatchlist = () => {
     const method = inWatchlist ? "DELETE" : "POST";
-    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-    if (pid) hdrs["x-profile-id"] = String(pid);
     fetch("/api/watchlist", {
       method,
-      headers: hdrs,
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ dir_path: dirPath }),
     })
       .then(() => setInWatchlist(!inWatchlist))

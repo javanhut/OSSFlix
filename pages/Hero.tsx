@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
-import { useProfile } from "../context/ProfileContext";
 import { SkeletonRow, SkeletonHero } from "../components/SkeletonCard";
 
 type MediaItem = {
@@ -30,7 +29,6 @@ const BASIC_GENRES = new Set([
 ]);
 
 export default function Home() {
-  const { profileHeaders } = useProfile();
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,11 +37,10 @@ export default function Home() {
 
   const loadData = useCallback(async () => {
     try {
-      const pHeaders = profileHeaders();
       const [catRes, cwRes, wlRes] = await Promise.all([
         fetch("/api/media/categories"),
-        fetch("/api/playback/continue-watching", { headers: pHeaders }),
-        fetch("/api/watchlist", { headers: pHeaders }),
+        fetch("/api/playback/continue-watching", { credentials: "same-origin" }),
+        fetch("/api/watchlist", { credentials: "same-origin" }),
       ]);
       const categories = (await catRes.json()) as MenuRow[];
       const cw = (await cwRes.json()) as MenuRow;

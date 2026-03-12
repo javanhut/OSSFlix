@@ -150,6 +150,25 @@ try {
   // column already exists
 }
 
+// Migration: add password_hash to profiles
+try {
+  db.run("ALTER TABLE profiles ADD COLUMN password_hash TEXT");
+} catch {
+  // column already exists
+}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    profile_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  )
+`);
+
+db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`);
+
 db.run(`
   CREATE TABLE IF NOT EXISTS background_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

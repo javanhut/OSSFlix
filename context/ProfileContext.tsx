@@ -10,99 +10,151 @@ export interface ProfileData {
   use_global_dirs: number;
 }
 
+export interface PublicProfile {
+  id: number;
+  name: string;
+  image_path: string | null;
+  has_password: boolean;
+}
+
 interface ProfileContextType {
   authenticated: boolean;
   profile: ProfileData | null;
-  signIn: () => void;
+  loading: boolean;
+  login: (profileId: number, password: string) => Promise<{ error?: string }>;
+  register: (name: string, password: string) => Promise<{ error?: string }>;
+  setPassword: (profileId: number, password: string) => Promise<{ error?: string }>;
+  logout: () => Promise<void>;
   setProfile: (p: ProfileData | null) => void;
-  signOut: () => void;
-  switchProfile: () => void;
   fetchProfile: () => void;
-  profileHeaders: () => Record<string, string>;
 }
 
 const ProfileContext = createContext<ProfileContextType>({
   authenticated: false,
   profile: null,
-  signIn: () => {},
+  loading: true,
+  login: async () => ({}),
+  register: async () => ({}),
+  setPassword: async () => ({}),
+  logout: async () => {},
   setProfile: () => {},
-  signOut: () => {},
-  switchProfile: () => {},
   fetchProfile: () => {},
-  profileHeaders: () => ({}),
 });
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const [authenticated, setAuthenticated] = useState<boolean>(
-    () => !!localStorage.getItem("ossflix-authenticated")
-  );
-  const [profile, setProfileState] = useState<ProfileData | null>(() => {
-    const saved = localStorage.getItem("ossflix-profile-id");
-    return saved ? { id: parseInt(saved, 10) } as any : null;
-  });
+  const [authenticated, setAuthenticated] = useState(false);
+  const [profile, setProfileState] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const profileHeaders = useCallback((): Record<string, string> => {
-    if (!profile) return {};
-    return { "x-profile-id": String(profile.id) };
-  }, [profile]);
-
-  const fetchProfile = useCallback(() => {
-    if (!profile?.id) return;
-    fetch("/api/profile", { headers: { "x-profile-id": String(profile.id) } })
-      .then((r) => r.json())
-      .then((data) => { if (data?.id) setProfileState(data); })
-      .catch(() => {});
-  }, [profile?.id]);
-
-  // Load full profile data on mount if we have a saved ID
+  // Check session on mount
   useEffect(() => {
-    const savedId = localStorage.getItem("ossflix-profile-id");
-    if (savedId) {
-      fetch("/api/profile", { headers: { "x-profile-id": savedId } })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.id) {
-            setProfileState(data);
-            setAuthenticated(true);
-            localStorage.setItem("ossflix-authenticated", "1");
-          } else {
-            setProfileState(null);
-          }
-        })
-        .catch(() => setProfileState(null));
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then((r) => {
+        if (!r.ok) throw new Error("Not authenticated");
+        return r.json();
+      })
+      .then((data) => {
+        if (data.profile?.id) {
+          setProfileState(data.profile);
+          setAuthenticated(true);
+        }
+      })
+      .catch(() => {
+        setAuthenticated(false);
+        setProfileState(null);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = useCallback(async (profileId: number, password: string): Promise<{ error?: string }> => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ profileId, password }),
+      });
+      const data = await res.json();
+      if (data.error === "password_not_set") {
+        return { error: "password_not_set" };
+      }
+      if (data.error) return { error: data.error };
+      if (data.profile) {
+        setProfileState(data.profile);
+        setAuthenticated(true);
+      }
+      return {};
+    } catch {
+      return { error: "Login failed" };
     }
   }, []);
 
-  const signIn = () => {
-    localStorage.setItem("ossflix-authenticated", "1");
-    setAuthenticated(true);
-  };
+  const register = useCallback(async (name: string, password: string): Promise<{ error?: string }> => {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ name, password }),
+      });
+      const data = await res.json();
+      if (data.error) return { error: data.error };
+      if (data.profile) {
+        setProfileState(data.profile);
+        setAuthenticated(true);
+      }
+      return {};
+    } catch {
+      return { error: "Registration failed" };
+    }
+  }, []);
+
+  const setPassword = useCallback(async (profileId: number, password: string): Promise<{ error?: string }> => {
+    try {
+      const res = await fetch("/api/auth/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ profileId, password }),
+      });
+      const data = await res.json();
+      if (data.error) return { error: data.error };
+      if (data.profile) {
+        setProfileState(data.profile);
+        setAuthenticated(true);
+      }
+      return {};
+    } catch {
+      return { error: "Failed to set password" };
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    }).catch(() => {});
+    setAuthenticated(false);
+    setProfileState(null);
+  }, []);
 
   const setProfile = (p: ProfileData | null) => {
     setProfileState(p);
-    if (p) {
-      localStorage.setItem("ossflix-profile-id", String(p.id));
-    } else {
-      localStorage.removeItem("ossflix-profile-id");
-    }
   };
 
-  const signOut = () => {
-    localStorage.removeItem("ossflix-authenticated");
-    localStorage.removeItem("ossflix-profile-id");
-    setAuthenticated(false);
-    setProfileState(null);
-  };
-
-  const switchProfile = () => {
-    localStorage.removeItem("ossflix-profile-id");
-    setProfileState(null);
-  };
+  const fetchProfile = useCallback(() => {
+    if (!authenticated) return;
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((data) => { if (data.profile?.id) setProfileState(data.profile); })
+      .catch(() => {});
+  }, [authenticated]);
 
   return (
     <ProfileContext.Provider value={{
-      authenticated, profile, signIn, setProfile,
-      signOut, switchProfile, fetchProfile, profileHeaders,
+      authenticated, profile, loading,
+      login, register, setPassword, logout,
+      setProfile, fetchProfile,
     }}>
       {children}
     </ProfileContext.Provider>
@@ -113,8 +165,8 @@ export function useProfile() {
   return useContext(ProfileContext);
 }
 
-export function profileFetch(url: string, profileId: number, options: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(options.headers);
-  headers.set("x-profile-id", String(profileId));
-  return fetch(url, { ...options, headers });
+export async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { ...opts, credentials: "same-origin" });
+  if (res.status === 401) window.location.href = "/";
+  return res;
 }

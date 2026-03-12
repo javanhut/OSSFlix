@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useProfile } from "../context/ProfileContext";
 import Card from "../components/Card";
 
 type HistoryEntry = {
@@ -39,14 +38,12 @@ function formatTime(secs: number): string {
 }
 
 export default function History() {
-  const { profileHeaders } = useProfile();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDir, setSelectedDir] = useState("");
 
   const loadHistory = () => {
-    const pHeaders = profileHeaders();
-    fetch("/api/playback/history", { headers: pHeaders })
+    fetch("/api/playback/history", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: HistoryEntry[]) => setEntries(data))
       .catch(() => {})
@@ -56,10 +53,10 @@ export default function History() {
   useEffect(() => { loadHistory(); }, []);
 
   const removeEntry = (videoSrc: string) => {
-    const pHeaders = profileHeaders();
     fetch("/api/playback/history", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", ...pHeaders },
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ video_src: videoSrc }),
     }).then(() => {
       setEntries((prev) => prev.filter((e) => e.video_src !== videoSrc));
@@ -67,10 +64,10 @@ export default function History() {
   };
 
   const clearAll = () => {
-    const pHeaders = profileHeaders();
     fetch("/api/playback/history", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", ...pHeaders },
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ clear_all: true }),
     }).then(() => setEntries([])).catch(() => {});
   };
