@@ -605,7 +605,7 @@ export function Card({ show, onHide, dirPath }: CardProps) {
       setSleepDismissed(false);
       setSleepInfo(null);
       // Check sleep pattern
-      fetch(`/api/playback/sleep-detect?dir=${encodeURIComponent(dirPath)}`, { headers: pHeaders })
+      fetch(`/api/playback/sleep-detect?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
         .then((r) => r.json())
         .then((data) => setSleepInfo(data))
         .catch(() => {});
