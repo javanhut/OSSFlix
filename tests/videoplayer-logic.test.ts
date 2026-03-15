@@ -48,7 +48,7 @@ function shouldPrefetch(
   duration: number,
   alreadyPrefetched: string | null
 ): boolean {
-  return !!(nextSrc && duration > 0 && currentTime >= duration * 0.75 && alreadyPrefetched !== nextSrc);
+  return !!(nextSrc && duration > 0 && currentTime >= duration * 0.5 && alreadyPrefetched !== nextSrc);
 }
 
 describe("formatTime", () => {
@@ -197,20 +197,20 @@ describe("Countdown trigger logic (3C)", () => {
 });
 
 describe("Prefetch trigger logic (2C)", () => {
-  test("triggers at 75% of duration", () => {
-    expect(shouldPrefetch("/next.mkv", 900, 1200, null)).toBe(true);
+  test("triggers at 50% of duration", () => {
+    expect(shouldPrefetch("/next.mkv", 600, 1200, null)).toBe(true);
   });
 
-  test("does not trigger before 75%", () => {
-    expect(shouldPrefetch("/next.mkv", 899, 1200, null)).toBe(false);
+  test("does not trigger before 50%", () => {
+    expect(shouldPrefetch("/next.mkv", 599, 1200, null)).toBe(false);
   });
 
   test("does not trigger without nextSrc", () => {
-    expect(shouldPrefetch(undefined, 900, 1200, null)).toBe(false);
+    expect(shouldPrefetch(undefined, 600, 1200, null)).toBe(false);
   });
 
   test("does not trigger if already prefetched", () => {
-    expect(shouldPrefetch("/next.mkv", 900, 1200, "/next.mkv")).toBe(false);
+    expect(shouldPrefetch("/next.mkv", 600, 1200, "/next.mkv")).toBe(false);
   });
 
   test("does not trigger with zero duration", () => {
@@ -218,7 +218,7 @@ describe("Prefetch trigger logic (2C)", () => {
   });
 
   test("triggers again for a different nextSrc", () => {
-    expect(shouldPrefetch("/next2.mkv", 900, 1200, "/next1.mkv")).toBe(true);
+    expect(shouldPrefetch("/next2.mkv", 600, 1200, "/next1.mkv")).toBe(true);
   });
 });
 

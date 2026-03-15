@@ -14,7 +14,7 @@ import { getRecommendations } from "./scripts/recommend";
 import db from "./scripts/db";
 import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
 import type { ProfileData } from "./scripts/profile";
-import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream } from "./scripts/streamingProfile";
+import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream } from "./scripts/streamingProfile";
 
 function getProfileFromReq(req: Request): ProfileData {
   // Try session-based auth first
@@ -88,14 +88,15 @@ const activeTranscodes = new Map<string, {
 }>();
 
 const MAX_CONCURRENT_CACHE_JOBS = 1;
-const CACHE_PREWARM_DELAY_MS = 20_000;
-const CACHE_QUEUE_POLL_MS = 3_000;
+const CACHE_PREWARM_DELAY_MS = 8_000;
+const CACHE_QUEUE_POLL_MS = 2_000;
 const CACHE_RETRY_DELAY_MS = 20_000;
 const MAX_CACHE_JOB_RETRIES = 2;
 
 type PendingCacheJob = {
   sourcePath: string;
   audioIndex: number;
+  reason: string;
   timer: ReturnType<typeof setTimeout>;
   readyAt: number;
 };
@@ -156,7 +157,10 @@ function scheduleCacheRetry(sourcePath: string, audioIndex: number, cacheKey: st
     return;
   }
   cacheRetryCounts.set(cacheKey, attempts + 1);
-  queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, `retry-${attempts + 1}`);
+  const retryReason = reason.startsWith("prefetch")
+    ? `prefetch-retry-${attempts + 1}`
+    : `retry-${attempts + 1}`;
+  queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, retryReason);
 }
 
 function queueCacheTranscode(
@@ -179,7 +183,13 @@ function queueCacheTranscode(
     const queued = pendingCacheJobs.get(cacheKey);
     if (!queued) return;
 
-    if (activeLiveStreams.size > 0 || getActiveCacheTranscodeCount() >= MAX_CONCURRENT_CACHE_JOBS) {
+    const liveStreams = activeLiveStreams.size;
+    const cacheBusy = getActiveCacheTranscodeCount() >= MAX_CONCURRENT_CACHE_JOBS;
+    const allowDuringPlayback = queued.reason.startsWith("prefetch");
+    const sameSourceLive = activeLiveStreams.has(getLiveStreamKey(queued.sourcePath, queued.audioIndex));
+    const shouldDeferForPlayback = (!allowDuringPlayback && liveStreams > 0) || (allowDuringPlayback && (liveStreams > 1 || sameSourceLive));
+
+    if (cacheBusy || shouldDeferForPlayback) {
       queued.readyAt = Date.now() + CACHE_QUEUE_POLL_MS;
       queued.timer = setTimeout(() => { void runQueuedJob(); }, CACHE_QUEUE_POLL_MS);
       return;
@@ -199,6 +209,7 @@ function queueCacheTranscode(
   const entry: PendingCacheJob = {
     sourcePath,
     audioIndex,
+    reason,
     timer: setTimeout(() => { void runQueuedJob(); }, delayMs),
     readyAt: Date.now() + delayMs,
   };
@@ -588,7 +599,7 @@ Bun.serve({
 
         // No cache — live transcode using a strict web-safe profile.
         const probe = runFfprobe(sourcePath, [
-          "stream=index,codec_type,channels",
+          "stream=index,codec_type,codec_name,channels,pix_fmt",
           "format=duration",
         ]);
         if (!probe.ok) {
@@ -597,10 +608,11 @@ Bun.serve({
         const probeData = probe.data;
         const probeDuration = probeData.format?.duration || "";
         const selectedAudio = selectAudioStream(probeData.streams || [], audioIndex);
+        const selectedVideo = selectVideoStream(probeData.streams || []);
 
         const queuedCacheKey = queueCacheTranscode(sourcePath, audioIndex, CACHE_PREWARM_DELAY_MS, "stream-start");
 
-        const args = buildLiveTranscodeArgs(sourcePath, selectedAudio, startTime);
+        const args = buildLiveTranscodeArgs(sourcePath, selectedAudio, selectedVideo, startTime);
 
         registerLiveStream(sourcePath, audioIndex);
         const ffmpeg = Bun.spawn(args, {

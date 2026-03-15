@@ -324,7 +324,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const MAX_STREAM_RECOVERY_ATTEMPTS = 3;
   const SOURCE_READY_FALLBACK_MS = 3000;
   const CACHE_SWITCH_FALLBACK_MS = 2500;
-  const STALL_RECOVERY_TIMEOUT_MS = 8000;
+  const STALL_RECOVERY_TIMEOUT_MS = 4500;
+  const PREFETCH_TRIGGER_RATIO = 0.5;
 
   // ── Settings persistence (3A) ──
   useEffect(() => {
@@ -878,7 +879,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     }
 
     // Prefetch next episode at 75% (2C)
-    if (nextSrc && dur > 0 && ct >= dur * 0.75 && prefetchedRef.current !== nextSrc) {
+    if (nextSrc && dur > 0 && ct >= dur * PREFETCH_TRIGGER_RATIO && prefetchedRef.current !== nextSrc) {
       prefetchedRef.current = nextSrc;
       fetch(`/api/stream/prefetch?src=${encodeURIComponent(nextSrc)}`).catch(() => {});
     }
@@ -1611,7 +1612,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setIsLoading(true);
           }}
           onSuspend={() => {
-            if (playing) {
+            if (!playing) return;
+            const video = videoRef.current;
+            if (!video) return;
+            const current = video.currentTime + streamOffsetRef.current;
+            const bufferedAhead = buffered - current;
+            // suspend can fire during normal buffering strategy; only treat it as loading when headroom is low
+            if (bufferedAhead <= 1.5) {
               if (loadingStartedAtRef.current === null) loadingStartedAtRef.current = Date.now();
               setIsLoading(true);
             }

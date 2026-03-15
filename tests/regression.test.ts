@@ -31,8 +31,8 @@ describe("1B: Audio bitrate increase", () => {
 });
 
 describe("1C: Cache transcode quality — no zerolatency in cache", () => {
-  test("cache transcode uses preset medium", () => {
-    expect(TRANSCODE_SRC).toContain('"medium"');
+  test("cache transcode uses preset fast", () => {
+    expect(TRANSCODE_SRC).toContain('"fast"');
   });
 
   test("cache transcode uses CRF 22", () => {
@@ -40,8 +40,8 @@ describe("1C: Cache transcode quality — no zerolatency in cache", () => {
     expect(TRANSCODE_SRC).toContain('"22"');
   });
 
-  test("live transcode uses veryfast (not ultrafast)", () => {
-    expect(TRANSCODE_SRC).toContain('"veryfast"');
+  test("live transcode uses superfast (not ultrafast)", () => {
+    expect(TRANSCODE_SRC).toContain('"superfast"');
     expect(TRANSCODE_SRC).not.toContain('"ultrafast"');
   });
 
@@ -107,8 +107,9 @@ describe("2C: Prefetch next episode", () => {
     expect(CARD_TSX).toContain("nextSrc=");
   });
 
-  test("VideoPlayer fires prefetch at 75%", () => {
-    expect(VIDEOPLAYER_TSX).toContain("dur * 0.75");
+  test("VideoPlayer fires prefetch at 50%", () => {
+    expect(VIDEOPLAYER_TSX).toContain("dur * PREFETCH_TRIGGER_RATIO");
+    expect(VIDEOPLAYER_TSX).toContain("const PREFETCH_TRIGGER_RATIO = 0.5;");
     expect(VIDEOPLAYER_TSX).toContain("/api/stream/prefetch");
   });
 
@@ -185,7 +186,7 @@ describe("4B: Stall detection", () => {
 
   test("stall timeout is explicitly configured", () => {
     expect(VIDEOPLAYER_TSX).toContain("STALL_RECOVERY_TIMEOUT_MS");
-    expect(VIDEOPLAYER_TSX).toContain("const STALL_RECOVERY_TIMEOUT_MS = 8000;");
+    expect(VIDEOPLAYER_TSX).toContain("const STALL_RECOVERY_TIMEOUT_MS = 4500;");
   });
 });
 
