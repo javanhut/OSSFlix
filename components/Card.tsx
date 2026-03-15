@@ -420,20 +420,17 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
       </ModalBody>
       <ModalFooter style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-          <button className="oss-btn oss-btn-sm" onClick={handleImport} disabled={importing}
-            style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.3)" }}>
+          <button className="oss-btn oss-btn-info-soft oss-btn-sm" onClick={handleImport} disabled={importing}>
             {importing ? "Importing..." : "Import timing.toml"}
           </button>
           {dirPath && (
-            <button className="oss-btn oss-btn-sm" onClick={handleAutoDetect} disabled={autoDetecting}
-              style={{ background: "rgba(168,85,247,0.12)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.25)" }}
+            <button className="oss-btn oss-btn-info-soft oss-btn-sm" onClick={handleAutoDetect} disabled={autoDetecting}
               title="Auto-detect intro/outro using audio fingerprinting (requires fpcalc)"
             >
               {autoDetecting ? autoDetectProgress || "Detecting..." : "Auto-detect"}
             </button>
           )}
-          <button className="oss-btn oss-btn-sm" onClick={handleClearAll}
-            style={{ background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }}>
+          <button className="oss-btn oss-btn-danger-soft oss-btn-sm" onClick={handleClearAll}>
             Clear All
           </button>
         </div>
@@ -779,16 +776,14 @@ export function Card({ show, onHide, dirPath }: CardProps) {
                   </div>
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button
-                      className="oss-btn oss-btn-sm"
+                      className="oss-btn oss-btn-primary oss-btn-sm"
                       onClick={() => { if (sleepInfo.resumeEpisode) handlePlay(sleepInfo.resumeEpisode, false); }}
-                      style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", fontWeight: 600, fontSize: "0.78rem" }}
                     >
                       Resume from there
                     </button>
                     <button
-                      className="oss-btn oss-btn-sm"
+                      className="oss-btn oss-btn-secondary oss-btn-sm"
                       onClick={() => setSleepDismissed(true)}
-                      style={{ background: "rgba(255,255,255,0.08)", color: "var(--oss-text-muted)", border: "1px solid var(--oss-border)", fontSize: "0.78rem" }}
                     >
                       Dismiss
                     </button>
@@ -958,21 +953,16 @@ export function Card({ show, onHide, dirPath }: CardProps) {
               <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>
               {tmdbApiKey && (
                 <button
-                  className="oss-btn oss-btn-sm"
+                  className="oss-btn oss-btn-success-soft oss-btn-sm"
                   onClick={() => { setTmdbQuery(information.name); setShowTmdbModal(true); }}
-                  style={{ background: "rgba(16,185,129,0.12)", color: "#10b981", border: "1px solid rgba(16,185,129,0.25)" }}
                 >
                   Fetch from TMDB
                 </button>
               )}
               {information.videos?.length > 1 && (
                 <button
-                  className="oss-btn oss-btn-sm"
+                  className="oss-btn oss-btn-info-soft oss-btn-sm"
                   onClick={() => setShowTimingsModal(true)}
-                  style={{
-                    background: "rgba(59,130,246,0.12)", color: "#60a5fa",
-                    border: "1px solid rgba(59,130,246,0.25)",
-                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: "-2px", marginRight: "4px" }}><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291a1.873 1.873 0 0 0-1.116-2.693l-.318-.094c-.835-.246-.835-1.428 0-1.674l.319-.094a1.873 1.873 0 0 0 1.115-2.693l-.16-.291c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116z"/></svg>Timings
                 </button>

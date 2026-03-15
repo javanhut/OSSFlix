@@ -433,6 +433,12 @@ html, body, #root {
   transition: all var(--oss-transition);
   text-decoration: none;
 }
+.oss-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
 .oss-btn-primary {
   background: var(--oss-accent);
   color: #fff;
@@ -462,6 +468,36 @@ html, body, #root {
 .oss-btn-sm {
   padding: 6px 14px;
   font-size: 0.8rem;
+}
+.oss-btn-info-soft {
+  background: rgba(59,130,246,0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(59,130,246,0.3);
+}
+.oss-btn-info-soft:hover {
+  background: rgba(59,130,246,0.2);
+  border-color: rgba(96,165,250,0.45);
+  color: #bfdbfe;
+}
+.oss-btn-success-soft {
+  background: rgba(34,197,94,0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34,197,94,0.3);
+}
+.oss-btn-success-soft:hover {
+  background: rgba(34,197,94,0.2);
+  border-color: rgba(74,222,128,0.45);
+  color: #86efac;
+}
+.oss-btn-danger-soft {
+  background: rgba(239,68,68,0.12);
+  color: #f87171;
+  border: 1px solid rgba(239,68,68,0.28);
+}
+.oss-btn-danger-soft:hover {
+  background: rgba(239,68,68,0.18);
+  border-color: rgba(248,113,113,0.4);
+  color: #fca5a5;
 }
 
 /* ── Section / Category rows ── */

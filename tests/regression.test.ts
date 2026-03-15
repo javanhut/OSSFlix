@@ -7,67 +7,66 @@ import { resolve } from "node:path";
 // remain in place. They read source files directly and check for the expected patterns.
 
 const INDEX_TS = readFileSync(resolve("./index.ts"), "utf-8");
+const STREAM_PROFILE_TS = readFileSync(resolve("./scripts/streamingProfile.ts"), "utf-8");
+const TRANSCODE_SRC = `${INDEX_TS}\n${STREAM_PROFILE_TS}`;
 const VIDEOPLAYER_TSX = readFileSync(resolve("./components/VideoPlayer.tsx"), "utf-8");
 const CARD_TSX = readFileSync(resolve("./components/Card.tsx"), "utf-8");
 const STYLES_CSS = readFileSync(resolve("./styles.css"), "utf-8");
 
 describe("1A: aresample fix — no aggressive async correction", () => {
-  test("index.ts does not contain async=1000", () => {
-    expect(INDEX_TS).not.toContain("async=1000");
+  test("transcode source does not contain async=1000", () => {
+    expect(TRANSCODE_SRC).not.toContain("async=1000");
   });
 
-  test("index.ts uses async=1:first_pts=0", () => {
-    expect(INDEX_TS).toContain("aresample=async=1:first_pts=0");
+  test("transcode source uses async=1:first_pts=0", () => {
+    expect(TRANSCODE_SRC).toContain("aresample=async=1:first_pts=0");
   });
 });
 
 describe("1B: Audio bitrate increase", () => {
-  test("stereo bitrate is 256k (not 192k)", () => {
-    // Check that the old 192k is gone
-    expect(INDEX_TS).not.toMatch(/audioChannels > 2 \? "384k" : "192k"/);
-    // Check new bitrates are present
-    expect(INDEX_TS).toContain('"448k"');
-    expect(INDEX_TS).toContain('"256k"');
+  test("audio is normalized to fixed stereo bitrate", () => {
+    expect(TRANSCODE_SRC).toContain('"192k"');
+    expect(TRANSCODE_SRC).not.toContain('"448k"');
   });
 });
 
 describe("1C: Cache transcode quality — no zerolatency in cache", () => {
   test("cache transcode uses preset medium", () => {
-    // Cache transcode should have -preset medium
-    expect(INDEX_TS).toContain('"medium"');
+    expect(TRANSCODE_SRC).toContain('"medium"');
   });
 
-  test("cache transcode uses CRF 20", () => {
-    expect(INDEX_TS).toContain('"-crf", "20"');
+  test("cache transcode uses CRF 22", () => {
+    expect(TRANSCODE_SRC).toContain('"-crf"');
+    expect(TRANSCODE_SRC).toContain('"22"');
   });
 
   test("live transcode uses veryfast (not ultrafast)", () => {
-    expect(INDEX_TS).toContain('"veryfast"');
-    expect(INDEX_TS).not.toContain('"ultrafast"');
+    expect(TRANSCODE_SRC).toContain('"veryfast"');
+    expect(TRANSCODE_SRC).not.toContain('"ultrafast"');
   });
 
   test("live transcode still has zerolatency", () => {
-    expect(INDEX_TS).toContain('"zerolatency"');
+    expect(TRANSCODE_SRC).toContain('"zerolatency"');
   });
 });
 
 describe("1D: 5.1→stereo downmix filter", () => {
-  test("index.ts has pan=stereo downmix filter", () => {
-    expect(INDEX_TS).toContain("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
+  test("transcode source has pan=stereo downmix filter", () => {
+    expect(TRANSCODE_SRC).toContain("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
   });
 
   test("downmix preserves center channel (dialog)", () => {
-    expect(INDEX_TS).toContain("0.5*FC");
+    expect(TRANSCODE_SRC).toContain("0.5*FC");
   });
 
   test("downmix includes LFE (bass)", () => {
-    expect(INDEX_TS).toContain("0.5*LFE");
+    expect(TRANSCODE_SRC).toContain("0.5*LFE");
   });
 });
 
 describe("1E: Audio normalization in cache transcode", () => {
-  test("index.ts has loudnorm filter", () => {
-    expect(INDEX_TS).toContain("loudnorm=I=-16:TP=-1.5:LRA=11");
+  test("transcode source has loudnorm filter", () => {
+    expect(TRANSCODE_SRC).toContain("loudnorm=I=-16:TP=-1.5:LRA=11");
   });
 });
 
@@ -184,8 +183,9 @@ describe("4B: Stall detection", () => {
     expect(VIDEOPLAYER_TSX).toContain("stallTimerRef");
   });
 
-  test("stall timeout is 10 seconds", () => {
-    expect(VIDEOPLAYER_TSX).toContain("10000");
+  test("stall timeout is explicitly configured", () => {
+    expect(VIDEOPLAYER_TSX).toContain("STALL_RECOVERY_TIMEOUT_MS");
+    expect(VIDEOPLAYER_TSX).toContain("const STALL_RECOVERY_TIMEOUT_MS = 8000;");
   });
 });
 

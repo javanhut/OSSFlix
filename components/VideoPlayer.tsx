@@ -304,6 +304,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   // Error recovery (4A)
   const [showReconnecting, setShowReconnecting] = useState(false);
+  const [recoveringFromStall, setRecoveringFromStall] = useState(false);
+
+  // Stream recovery guards
+  const loadingStartedAtRef = useRef<number | null>(null);
+  const recoveryAttemptsRef = useRef(0);
+  const sourceReadyFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cacheSwitchFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCacheResumeRef = useRef<{ absoluteTime: number; wasPlaying: boolean } | null>(null);
 
   // Episode transition fade (2B)
   const [transitioning2, setTransitioning2] = useState(false);
@@ -313,6 +321,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [hoverX, setHoverX] = useState(0);
 
   const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const MAX_STREAM_RECOVERY_ATTEMPTS = 3;
+  const SOURCE_READY_FALLBACK_MS = 3000;
+  const CACHE_SWITCH_FALLBACK_MS = 2500;
+  const STALL_RECOVERY_TIMEOUT_MS = 8000;
 
   // ── Settings persistence (3A) ──
   useEffect(() => {
@@ -387,6 +399,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     // Source ready gate (2A) — block metadata handling until cache check resolves
     sourceReadyRef.current = false;
     pendingMetadataRef.current = false;
+    if (sourceReadyFallbackRef.current) clearTimeout(sourceReadyFallbackRef.current);
+    sourceReadyFallbackRef.current = setTimeout(() => {
+      sourceReadyFallbackRef.current = null;
+      if (sourceReadyRef.current) return;
+      sourceReadyRef.current = true;
+      if (pendingMetadataRef.current) handleLoadedMetadata();
+    }, SOURCE_READY_FALLBACK_MS);
     // Reset prefetch tracking for new source
     prefetchedRef.current = null;
     // Apply transition fade (2B)
@@ -410,6 +429,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             initialTimeAppliedRef.current = true;
           }
           sourceReadyRef.current = true;
+          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         })
         .catch(() => {
@@ -418,6 +438,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           setStreamOffset(initialTime);
           initialTimeAppliedRef.current = true;
           sourceReadyRef.current = true;
+          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         });
     } else if (isStreamed) {
@@ -430,15 +451,18 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setCachedMode(true);
           }
           sourceReadyRef.current = true;
+          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         })
         .catch(() => {
           sourceReadyRef.current = true;
+          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         });
     } else {
       // Non-streamed: source is immediately ready
       sourceReadyRef.current = true;
+      if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
     }
     // Clear countdown when src changes
     if (countdownRef.current) {
@@ -506,11 +530,24 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setCachedMode(false);
     if (cachePollingRef.current) { clearInterval(cachePollingRef.current); cachePollingRef.current = null; }
     setShowReconnecting(false);
+    setRecoveringFromStall(false);
     setTransitioning2(false);
+    loadingStartedAtRef.current = null;
+    recoveryAttemptsRef.current = 0;
+    pendingCacheResumeRef.current = null;
+    if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+    if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
     sourceReadyRef.current = true;
     pendingMetadataRef.current = false;
     prefetchedRef.current = null;
     if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+      if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
+    };
   }, []);
 
   const seekStream = useCallback((absoluteTime: number) => {
@@ -536,6 +573,45 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setCurrentTime(seekTo);
     setIsLoading(true);
   }, []);
+
+  const attemptStreamRecovery = useCallback((reason: string) => {
+    const video = videoRef.current;
+    if (!video || !show || !playing) return;
+    if (recoveryAttemptsRef.current >= MAX_STREAM_RECOVERY_ATTEMPTS) return;
+
+    recoveryAttemptsRef.current += 1;
+    setRecoveringFromStall(true);
+    setShowReconnecting(true);
+    setIsLoading(true);
+
+    if (isStreamed) {
+      const absoluteCurrent = video.currentTime + streamOffsetRef.current;
+      if (isCachedRef.current) {
+        // Cached mode should recover with a native seek nudge.
+        const cachedDur = isFinite(video.duration) ? video.duration : durationRef.current;
+        const target = cachedDur > 1
+          ? Math.max(0, Math.min(absoluteCurrent, cachedDur - 1))
+          : Math.max(0, absoluteCurrent);
+        video.currentTime = target;
+        setCurrentTime(target);
+        safePlay(video);
+      } else {
+        seekStream(absoluteCurrent);
+      }
+      return;
+    }
+
+    // Non-streamed fallback: reload and resume from current position.
+    const pos = video.currentTime;
+    video.load();
+    video.addEventListener("loadedmetadata", () => {
+      if (!videoRef.current) return;
+      video.currentTime = pos;
+      setCurrentTime(pos);
+      safePlay(video);
+    }, { once: true });
+    console.error(`[player] recovery attempt ${recoveryAttemptsRef.current} triggered (${reason})`);
+  }, [isStreamed, playing, seekStream, show, MAX_STREAM_RECOVERY_ATTEMPTS]);
 
   const selectAudioTrack = useCallback((trackIndex: number) => {
     if (trackIndex === activeAudioTrackRef.current) {
@@ -912,27 +988,39 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     // Record current playback position and state
     const absoluteTime = video.currentTime + streamOffsetRef.current;
     const wasPlaying = !video.paused;
+    pendingCacheResumeRef.current = { absoluteTime, wasPlaying };
+    if (cacheSwitchFallbackRef.current) clearTimeout(cacheSwitchFallbackRef.current);
 
     // Switch to cached mode
     isCachedRef.current = true;
     setCachedMode(true);
+    setIsLoading(true);
 
     // After the videoSrc updates (no &start= param), the video element will reload.
     // We need to seek to the correct position once loaded.
     streamOffsetRef.current = 0;
     setStreamOffset(0);
-
-    const onCachedLoaded = () => {
-      video.removeEventListener("loadedmetadata", onCachedLoaded);
-      video.currentTime = absoluteTime;
-      setCurrentTime(absoluteTime);
-      if (wasPlaying) {
-        safePlay(video);
+    cacheSwitchFallbackRef.current = setTimeout(() => {
+      cacheSwitchFallbackRef.current = null;
+      const pending = pendingCacheResumeRef.current;
+      if (!pending) return;
+      pendingCacheResumeRef.current = null;
+      const currentVideo = videoRef.current;
+      if (!currentVideo) return;
+      const dur = isFinite(currentVideo.duration) ? currentVideo.duration : durationRef.current;
+      const target = dur > 1
+        ? Math.max(0, Math.min(pending.absoluteTime, dur - 1))
+        : Math.max(0, pending.absoluteTime);
+      currentVideo.currentTime = target;
+      setCurrentTime(target);
+      if (pending.wasPlaying) {
+        safePlay(currentVideo);
         setPlaying(true);
       }
       setIsLoading(false);
-    };
-    video.addEventListener("loadedmetadata", onCachedLoaded);
+      setShowReconnecting(false);
+      setRecoveringFromStall(false);
+    }, CACHE_SWITCH_FALLBACK_MS);
   }, [cacheStatus?.cached, isStreamed, show]);
 
   const handleLoadedMetadata = () => {
@@ -951,7 +1039,25 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       durationRef.current = dur;
     }
     setBuffered(0);
+    if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
+    const pendingCacheResume = pendingCacheResumeRef.current;
+    if (pendingCacheResume) {
+      pendingCacheResumeRef.current = null;
+      const target = isFinite(dur) && dur > 1
+        ? Math.max(0, Math.min(pendingCacheResume.absoluteTime, dur - 1))
+        : Math.max(0, pendingCacheResume.absoluteTime);
+      video.currentTime = target;
+      setCurrentTime(target);
+      if (pendingCacheResume.wasPlaying) {
+        safePlay(video);
+        setPlaying(true);
+      }
+    }
     setIsLoading(false);
+    setShowReconnecting(false);
+    setRecoveringFromStall(false);
+    loadingStartedAtRef.current = null;
+    recoveryAttemptsRef.current = 0;
     // Reapply playback rate after source change
     video.playbackRate = playbackRate;
     // Check for text tracks (CC) - from <track> elements or subtitles prop
@@ -1255,20 +1361,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       if (!stallTimerRef.current) {
         stallTimerRef.current = setTimeout(() => {
           stallTimerRef.current = null;
-          const video = videoRef.current;
-          if (!video || !isLoading) return;
-          if (isStreamed) {
-            seekStream(video.currentTime + streamOffsetRef.current);
-          } else {
-            // Nudge currentTime to trigger re-buffer
-            video.currentTime = video.currentTime;
-          }
-        }, 10000);
+          if (!isLoading) return;
+          attemptStreamRecovery("stall-timeout");
+        }, STALL_RECOVERY_TIMEOUT_MS);
       }
     } else {
       if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
     }
-  }, [show, playing, isLoading]);
+  }, [show, playing, isLoading, attemptStreamRecovery, STALL_RECOVERY_TIMEOUT_MS]);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -1502,26 +1602,30 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onWaiting={() => setIsLoading(true)}
-          onCanPlay={() => { setIsLoading(false); setTransitioning2(false); }}
+          onWaiting={() => {
+            if (loadingStartedAtRef.current === null) loadingStartedAtRef.current = Date.now();
+            setIsLoading(true);
+          }}
+          onStalled={() => {
+            if (loadingStartedAtRef.current === null) loadingStartedAtRef.current = Date.now();
+            setIsLoading(true);
+          }}
+          onSuspend={() => {
+            if (playing) {
+              if (loadingStartedAtRef.current === null) loadingStartedAtRef.current = Date.now();
+              setIsLoading(true);
+            }
+          }}
+          onCanPlay={() => {
+            loadingStartedAtRef.current = null;
+            recoveryAttemptsRef.current = 0;
+            setRecoveringFromStall(false);
+            setShowReconnecting(false);
+            setIsLoading(false);
+            setTransitioning2(false);
+          }}
           onError={() => {
-            // Error recovery (4A): wait 2s then reload from current position
-            const video = videoRef.current;
-            if (!video) return;
-            setShowReconnecting(true);
-            setTimeout(() => {
-              setShowReconnecting(false);
-              if (isStreamed) {
-                seekStream(video.currentTime + streamOffsetRef.current);
-              } else {
-                const pos = video.currentTime;
-                video.load();
-                video.addEventListener("loadedmetadata", () => {
-                  video.currentTime = pos;
-                  safePlay(video);
-                }, { once: true });
-              }
-            }, 2000);
+            setTimeout(() => attemptStreamRecovery("video-error"), 1200);
           }}
           onEnded={() => {
             setPlaying(false);
@@ -1535,7 +1639,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             transitioningRef.current = true;
             next();
           }}
-          onPlay={() => { transitioningRef.current = false; setPlaying(true); }}
+          onPlay={() => {
+            transitioningRef.current = false;
+            loadingStartedAtRef.current = null;
+            recoveryAttemptsRef.current = 0;
+            setRecoveringFromStall(false);
+            setShowReconnecting(false);
+            setIsLoading(false);
+            setPlaying(true);
+          }}
           onPause={() => { if (!transitioningRef.current) setPlaying(false); }}
         >
           {subtitles?.map((sub, i) => (

@@ -1,7 +1,6 @@
 import index from "./index.html";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, extname, basename } from "node:path";
 import { readdir, stat } from "node:fs/promises";
-import { extname } from "node:path";
 import { createHash } from "node:crypto";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
@@ -15,6 +14,7 @@ import { getRecommendations } from "./scripts/recommend";
 import db from "./scripts/db";
 import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
 import type { ProfileData } from "./scripts/profile";
+import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream } from "./scripts/streamingProfile";
 
 function getProfileFromReq(req: Request): ProfileData {
   // Try session-based auth first
@@ -87,6 +87,23 @@ const activeTranscodes = new Map<string, {
   error: boolean;
 }>();
 
+const MAX_CONCURRENT_CACHE_JOBS = 1;
+const CACHE_PREWARM_DELAY_MS = 20_000;
+const CACHE_QUEUE_POLL_MS = 3_000;
+const CACHE_RETRY_DELAY_MS = 20_000;
+const MAX_CACHE_JOB_RETRIES = 2;
+
+type PendingCacheJob = {
+  sourcePath: string;
+  audioIndex: number;
+  timer: ReturnType<typeof setTimeout>;
+  readyAt: number;
+};
+
+const pendingCacheJobs = new Map<string, PendingCacheJob>();
+const cacheRetryCounts = new Map<string, number>();
+const activeLiveStreams = new Map<string, number>();
+
 function getCacheKey(sourcePath: string, audioIndex: number): string {
   const hash = createHash("sha256").update(`${sourcePath}:audio=${audioIndex}`).digest("hex").slice(0, 16);
   const baseName = sourcePath.split("/").pop()?.replace(/\.[^.]+$/, "") || "video";
@@ -95,6 +112,98 @@ function getCacheKey(sourcePath: string, audioIndex: number): string {
 
 function getCachePath(cacheKey: string): string {
   return join(CACHE_DIR, `${cacheKey}.mp4`);
+}
+
+function getLiveStreamKey(sourcePath: string, audioIndex: number): string {
+  return `${sourcePath}:audio=${audioIndex}`;
+}
+
+function registerLiveStream(sourcePath: string, audioIndex: number): void {
+  const key = getLiveStreamKey(sourcePath, audioIndex);
+  activeLiveStreams.set(key, (activeLiveStreams.get(key) ?? 0) + 1);
+}
+
+function unregisterLiveStream(sourcePath: string, audioIndex: number): void {
+  const key = getLiveStreamKey(sourcePath, audioIndex);
+  const current = activeLiveStreams.get(key) ?? 0;
+  if (current <= 1) {
+    activeLiveStreams.delete(key);
+    return;
+  }
+  activeLiveStreams.set(key, current - 1);
+}
+
+function getActiveCacheTranscodeCount(): number {
+  let count = 0;
+  for (const job of activeTranscodes.values()) {
+    if (!job.done && !job.error) count += 1;
+  }
+  return count;
+}
+
+function clearPendingCacheJob(cacheKey: string): void {
+  const pending = pendingCacheJobs.get(cacheKey);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingCacheJobs.delete(cacheKey);
+}
+
+function scheduleCacheRetry(sourcePath: string, audioIndex: number, cacheKey: string, reason: string): void {
+  const attempts = cacheRetryCounts.get(cacheKey) ?? 0;
+  if (attempts >= MAX_CACHE_JOB_RETRIES) {
+    cacheRetryCounts.delete(cacheKey);
+    console.error(`[stream] cache transcode retries exhausted for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason})`);
+    return;
+  }
+  cacheRetryCounts.set(cacheKey, attempts + 1);
+  queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, `retry-${attempts + 1}`);
+}
+
+function queueCacheTranscode(
+  sourcePath: string,
+  audioIndex: number,
+  delayMs = CACHE_PREWARM_DELAY_MS,
+  reason = "stream"
+): string {
+  const cacheKey = getCacheKey(sourcePath, audioIndex);
+  if (activeTranscodes.has(cacheKey)) return cacheKey;
+
+  const existing = pendingCacheJobs.get(cacheKey);
+  if (existing) {
+    const remaining = Math.max(0, existing.readyAt - Date.now());
+    if (remaining <= delayMs) return cacheKey;
+    clearPendingCacheJob(cacheKey);
+  }
+
+  const runQueuedJob = async () => {
+    const queued = pendingCacheJobs.get(cacheKey);
+    if (!queued) return;
+
+    if (activeLiveStreams.size > 0 || getActiveCacheTranscodeCount() >= MAX_CONCURRENT_CACHE_JOBS) {
+      queued.readyAt = Date.now() + CACHE_QUEUE_POLL_MS;
+      queued.timer = setTimeout(() => { void runQueuedJob(); }, CACHE_QUEUE_POLL_MS);
+      return;
+    }
+
+    pendingCacheJobs.delete(cacheKey);
+
+    try {
+      await startCacheTranscode(sourcePath, audioIndex);
+      cacheRetryCounts.delete(cacheKey);
+    } catch (err) {
+      console.error(`[stream] queued cache start failed for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason}): ${String(err)}`);
+      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, "start-failed");
+    }
+  };
+
+  const entry: PendingCacheJob = {
+    sourcePath,
+    audioIndex,
+    timer: setTimeout(() => { void runQueuedJob(); }, delayMs),
+    readyAt: Date.now() + delayMs,
+  };
+  pendingCacheJobs.set(cacheKey, entry);
+  return cacheKey;
 }
 
 async function getCacheStatus(sourcePath: string, audioIndex: number): Promise<{
@@ -124,71 +233,102 @@ async function getCacheStatus(sourcePath: string, audioIndex: number): Promise<{
   };
 }
 
+type FfprobeResult =
+  | { ok: true; data: any }
+  | { ok: false; error: string };
+
+function parseJsonSafe(raw: string): any | null {
+  try {
+    return JSON.parse(raw || "{}");
+  } catch {
+    return null;
+  }
+}
+
+function runFfprobe(sourcePath: string, showEntries: string[]): FfprobeResult {
+  const args = ["ffprobe", "-v", "quiet"] as string[];
+  for (const entry of showEntries) {
+    args.push("-show_entries", entry);
+  }
+  args.push("-of", "json", sourcePath);
+
+  const probe = Bun.spawnSync(args, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  if (probe.exitCode !== 0) {
+    const stderrText = probe.stderr.toString().trim();
+    console.error(`[stream] ffprobe failed for ${basename(sourcePath)}: ${stderrText || `exit code ${probe.exitCode}`}`);
+    return { ok: false, error: "Unable to inspect media file" };
+  }
+
+  const parsed = parseJsonSafe(probe.stdout.toString());
+  if (!parsed) {
+    console.error(`[stream] ffprobe returned invalid JSON for ${basename(sourcePath)}`);
+    return { ok: false, error: "Unable to inspect media file" };
+  }
+
+  return { ok: true, data: parsed };
+}
+
+function drainFfmpegStderr(process: ReturnType<typeof Bun.spawn>, maxChars = 4000): () => string {
+  let stderrTail = "";
+  const decoder = new TextDecoder();
+
+  (async () => {
+    try {
+      const reader = process.stderr?.getReader();
+      if (!reader) return;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          stderrTail += decoder.decode(value, { stream: true });
+          if (stderrTail.length > maxChars) {
+            stderrTail = stderrTail.slice(-maxChars);
+          }
+        }
+      }
+      stderrTail += decoder.decode();
+      if (stderrTail.length > maxChars) {
+        stderrTail = stderrTail.slice(-maxChars);
+      }
+    } catch {}
+  })();
+
+  return () => stderrTail.trim();
+}
+
 // Start a background full-file transcode and save to cache
 async function startCacheTranscode(sourcePath: string, audioIndex: number): Promise<string> {
   const cacheKey = getCacheKey(sourcePath, audioIndex);
   const cachePath = getCachePath(cacheKey);
+  clearPendingCacheJob(cacheKey);
 
   // Already cached or in-progress
   if (activeTranscodes.has(cacheKey)) return cacheKey;
   const file = Bun.file(cachePath);
   if (await file.exists()) return cacheKey;
 
-  // Probe for codec info
-  const probe = Bun.spawnSync([
-    "ffprobe", "-v", "quiet",
-    "-show_entries", "stream=index,codec_name,codec_type,channels",
-    "-show_entries", "format=duration",
-    "-of", "json",
-    sourcePath,
+  const probe = runFfprobe(sourcePath, [
+    "stream=index,codec_type,channels",
+    "format=duration",
   ]);
-  const probeData = JSON.parse(probe.stdout.toString() || "{}");
-  const videoStream = probeData.streams?.find((s: any) => s.codec_type === "video");
-  const videoCodec = videoStream?.codec_name || "";
-  const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
-  const audioStreams = probeData.streams?.filter((s: any) => s.codec_type === "audio") || [];
-  const selectedAudio = audioStreams[audioIndex] || audioStreams[0];
-  const audioCodec = selectedAudio?.codec_name || "";
-  const audioChannels = selectedAudio?.channels || 2;
-  const canCopyAudio = audioCodec === "aac";
-  const audioBitrate = audioChannels > 2 ? "448k" : "256k";
-  const duration = parseFloat(probeData.format?.duration || "0");
-
-  // Build audio filter chain for cache transcode
-  const cacheAudioFilters: string[] = [];
-  if (!canCopyAudio && audioChannels > 2) {
-    cacheAudioFilters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
+  if (!probe.ok) {
+    throw new Error(probe.error);
   }
-  if (!canCopyAudio) {
-    cacheAudioFilters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
-    cacheAudioFilters.push("aresample=async=1:first_pts=0");
-  }
+  const selectedAudio = selectAudioStream(probe.data.streams || [], audioIndex);
+  const duration = parseFloat(probe.data.format?.duration || "0");
 
   const tmpPath = cachePath + ".tmp";
-
-  const args = [
-    "ffmpeg", "-y",
-    "-i", sourcePath,
-    "-fflags", "+genpts",
-    "-map", "0:v:0",
-    ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
-    ...(canCopyVideo
-      ? ["-c:v", "copy"]
-      : ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]),
-    ...(canCopyAudio
-      ? ["-c:a", "copy"]
-      : ["-c:a", "aac", "-b:a", audioBitrate,
-         "-af", cacheAudioFilters.join(",")]),
-    "-avoid_negative_ts", "make_zero",
-    "-max_muxing_queue_size", "9999",
-    "-movflags", "+faststart",
-    "-f", "mp4", tmpPath,
-  ];
+  const args = buildCacheTranscodeArgs(sourcePath, selectedAudio, tmpPath);
 
   const ffmpeg = Bun.spawn(args, {
     stdout: "ignore",
     stderr: "pipe",
   });
+  const getStderrTail = drainFfmpegStderr(ffmpeg);
 
   const job = {
     process: ffmpeg,
@@ -209,17 +349,6 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
     } catch {}
   }, 1000);
 
-  // Drain stderr to prevent pipe blocking
-  (async () => {
-    try {
-      const reader = ffmpeg.stderr.getReader();
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-    } catch {}
-  })();
-
   // Wait for completion
   ffmpeg.exited.then(async (code) => {
     clearInterval(progressInterval);
@@ -235,9 +364,15 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
         enforceCacheLimit();
       } catch {
         job.error = true;
+        console.error(`[stream] cache finalize failed for ${basename(sourcePath)} (audio=${audioIndex})`);
       }
     } else {
       job.error = true;
+      console.error(
+        `[stream] ffmpeg cache transcode failed for ${basename(sourcePath)} (audio=${audioIndex}, code=${code})` +
+        (getStderrTail() ? `: ${getStderrTail()}` : "")
+      );
+      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, `ffmpeg-exit-${code}`);
       // Clean up tmp file
       try {
         const { unlink } = await import("node:fs/promises");
@@ -411,18 +546,7 @@ Bun.serve({
           // Serve from cache with range request support for instant seeking
           const cachedFile = Bun.file(cache.cachePath);
           const fileSize = cachedFile.size;
-
-          // Start background cache for this file (no-op if already cached)
-          // This ensures future plays are also instant
-          const probeDuration = await (async () => {
-            const p = Bun.spawnSync([
-              "ffprobe", "-v", "quiet",
-              "-show_entries", "format=duration",
-              "-of", "json",
-              sourcePath,
-            ]);
-            return JSON.parse(p.stdout.toString() || "{}").format?.duration || "";
-          })();
+          const probeDuration = "";
 
           const rangeHeader = req.headers.get("range");
           if (rangeHeader) {
@@ -440,6 +564,9 @@ Bun.serve({
                   "Content-Type": "video/mp4",
                   ...(probeDuration ? { "X-Duration": probeDuration } : {}),
                   "X-Cache": "hit",
+                  "X-Transcode-Profile": "web-safe-v1",
+                  "X-Cache-Policy": "playback-first",
+                  "X-Cache-Queued": "false",
                 },
               });
             }
@@ -452,79 +579,56 @@ Bun.serve({
               "Content-Type": "video/mp4",
               ...(probeDuration ? { "X-Duration": probeDuration } : {}),
               "X-Cache": "hit",
+              "X-Transcode-Profile": "web-safe-v1",
+              "X-Cache-Policy": "playback-first",
+              "X-Cache-Queued": "false",
             },
           });
         }
 
-        // No cache — live transcode (and start background full-file cache)
-        const probe = Bun.spawnSync([
-          "ffprobe", "-v", "quiet",
-          "-show_entries", "stream=index,codec_name,codec_type,channels",
-          "-show_entries", "format=duration",
-          "-of", "json",
-          sourcePath,
+        // No cache — live transcode using a strict web-safe profile.
+        const probe = runFfprobe(sourcePath, [
+          "stream=index,codec_type,channels",
+          "format=duration",
         ]);
-        const probeData = JSON.parse(probe.stdout.toString() || "{}");
-        const videoStream = probeData.streams?.find((s: any) => s.codec_type === "video");
-        const videoCodec = videoStream?.codec_name || "";
+        if (!probe.ok) {
+          return Response.json({ error: probe.error }, { status: 500 });
+        }
+        const probeData = probe.data;
         const probeDuration = probeData.format?.duration || "";
-        const canCopyVideo = ["h264", "h265", "hevc"].includes(videoCodec);
+        const selectedAudio = selectAudioStream(probeData.streams || [], audioIndex);
 
-        const audioStreams = probeData.streams?.filter((s: any) => s.codec_type === "audio") || [];
-        const selectedAudio = audioStreams[audioIndex] || audioStreams[0];
-        const audioCodec = selectedAudio?.codec_name || "";
-        const audioChannels = selectedAudio?.channels || 2;
-        const canCopyAudio = audioCodec === "aac";
-        const audioBitrate = audioChannels > 2 ? "448k" : "256k";
+        const queuedCacheKey = queueCacheTranscode(sourcePath, audioIndex, CACHE_PREWARM_DELAY_MS, "stream-start");
 
-        // Build audio filter chain for live transcode
-        const liveAudioFilters: string[] = [];
-        if (!canCopyAudio && audioChannels > 2) {
-          liveAudioFilters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
-        }
-        if (!canCopyAudio) {
-          liveAudioFilters.push("aresample=async=1:first_pts=0");
-        }
+        const args = buildLiveTranscodeArgs(sourcePath, selectedAudio, startTime);
 
-        // Start background full-file cache transcode (no seek, full file)
-        startCacheTranscode(sourcePath, audioIndex).catch(() => {});
-
-        // Hybrid seek: fast-seek to ~30s before target, then accurate-seek the rest
-        const seekWindow = 30;
-        const preSeek = startTime > 0 ? Math.max(0, startTime - seekWindow) : 0;
-        const postSeek = startTime > 0 ? startTime - preSeek : 0;
-
-        // Remux when possible (near-instant), transcode only when needed
-        const args = [
-          "ffmpeg",
-          ...(preSeek > 0 ? ["-ss", String(preSeek)] : []),
-          "-i", sourcePath,
-          ...(postSeek > 0 ? ["-ss", String(postSeek), "-accurate_seek"] : []),
-          "-fflags", "+genpts",
-          "-map", "0:v:0",
-          ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
-          ...(canCopyVideo
-            ? ["-c:v", "copy"]
-            : ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-crf", "23"]),
-          ...(canCopyAudio
-            ? ["-c:a", "copy"]
-            : ["-c:a", "aac", "-b:a", audioBitrate,
-               "-af", liveAudioFilters.join(",")]),
-          "-avoid_negative_ts", "make_zero",
-          "-max_muxing_queue_size", "9999",
-          "-movflags", "frag_keyframe+empty_moov+faststart",
-          "-f", "mp4", "-",
-        ];
-
+        registerLiveStream(sourcePath, audioIndex);
         const ffmpeg = Bun.spawn(args, {
           stdout: "pipe",
-          stderr: "ignore",
+          stderr: "pipe",
+        });
+        const getStderrTail = drainFfmpegStderr(ffmpeg);
+        let liveStreamReleased = false;
+        const releaseLiveStream = () => {
+          if (liveStreamReleased) return;
+          liveStreamReleased = true;
+          unregisterLiveStream(sourcePath, audioIndex);
+        };
+        ffmpeg.exited.then((code) => {
+          releaseLiveStream();
+          if (code !== 0) {
+            console.error(
+              `[stream] ffmpeg live transcode failed for ${basename(sourcePath)} (audio=${audioIndex}, code=${code})` +
+              (getStderrTail() ? `: ${getStderrTail()}` : "")
+            );
+          }
         });
 
         // Kill live transcode FFmpeg when client disconnects
         if (req.signal) {
           req.signal.addEventListener("abort", () => {
             try { ffmpeg.kill(); } catch {}
+            releaseLiveStream();
           });
         }
 
@@ -532,6 +636,10 @@ Bun.serve({
           "Content-Type": "video/mp4",
           "Transfer-Encoding": "chunked",
           "X-Cache": "miss",
+          "X-Transcode-Profile": "web-safe-v1",
+          "X-Cache-Policy": "playback-first",
+          "X-Cache-Queued": "true",
+          "X-Cache-Key": queuedCacheKey,
         };
         if (probeDuration) {
           headers["X-Duration"] = probeDuration;
@@ -574,8 +682,8 @@ Bun.serve({
           return Response.json({ error: "Not found" }, { status: 404 });
         }
         const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
-        startCacheTranscode(sourcePath, audioIndex).catch(() => {});
-        return Response.json({ prefetching: true });
+        const cacheKey = queueCacheTranscode(sourcePath, audioIndex, 0, "prefetch");
+        return Response.json({ prefetching: true, queued: true, cacheKey });
       },
     },
     "/api/stream/cache/clear": {
@@ -591,6 +699,8 @@ Bun.serve({
           const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
           const cacheKey = getCacheKey(sourcePath, audioIndex);
           const cachePath = getCachePath(cacheKey);
+          clearPendingCacheJob(cacheKey);
+          cacheRetryCounts.delete(cacheKey);
           const active = activeTranscodes.get(cacheKey);
           if (active && !active.done) {
             active.process.kill();
@@ -609,6 +719,11 @@ Bun.serve({
           if (!job.done) job.process.kill();
         }
         activeTranscodes.clear();
+        for (const pending of pendingCacheJobs.values()) {
+          clearTimeout(pending.timer);
+        }
+        pendingCacheJobs.clear();
+        cacheRetryCounts.clear();
         try {
           const files = await rd(CACHE_DIR);
           for (const f of files) {
@@ -629,15 +744,15 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
-        const probe = Bun.spawnSync([
-          "ffprobe", "-v", "quiet",
-          "-show_entries", "format=duration",
-          "-show_entries", "stream=index,codec_name,codec_type,channels,channel_layout",
-          "-show_entries", "stream_tags=language,title",
-          "-of", "json",
-          sourcePath,
+        const probe = runFfprobe(sourcePath, [
+          "format=duration",
+          "stream=index,codec_name,codec_type,channels,channel_layout",
+          "stream_tags=language,title",
         ]);
-        const data = JSON.parse(probe.stdout.toString() || "{}");
+        if (!probe.ok) {
+          return Response.json({ error: probe.error }, { status: 500 });
+        }
+        const data = probe.data;
         const duration = parseFloat(data.format?.duration || "0");
         const audioTracks = (data.streams || [])
           .filter((s: any) => s.codec_type === "audio")
