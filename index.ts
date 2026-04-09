@@ -545,12 +545,40 @@ Bun.serve({
         if (!sourcePath) {
           return new Response("Not found", { status: 404 });
         }
+
+        const isRemoteSource = sourcePath.startsWith("kaidadb:");
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+
+        // Check KaidaDB first (handles both remote-only and locally-ingested content)
+        const kaidadbKey = getKaidadbKey(srcParam);
+        if (kaidadbKey) {
+          try {
+            const rangeHeader = req.headers.get("range");
+            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+            if (kaidaRes.ok || kaidaRes.status === 206) {
+              const headers: Record<string, string> = {
+                "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
+                "Accept-Ranges": "bytes",
+                "X-Cache": "kaidadb",
+              };
+              if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
+              if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+              return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
+            }
+          } catch {
+            // KaidaDB unreachable, fall through to local/transcode
+          }
+        }
+
+        // Remote-only content with no KaidaDB key — nothing more we can do
+        if (isRemoteSource) {
+          return new Response("Remote media not available", { status: 404 });
+        }
+
         const file = Bun.file(sourcePath);
         if (!(await file.exists())) {
           return new Response("Not found", { status: 404 });
         }
-
-        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
 
         // Check if we have a completed cache for this file
         const cache = await getCacheStatus(sourcePath, audioIndex);
@@ -596,27 +624,6 @@ Bun.serve({
               "X-Cache-Queued": "false",
             },
           });
-        }
-
-        // Check KaidaDB for a pre-stored version
-        const kaidadbKey = getKaidadbKey(srcParam);
-        if (kaidadbKey) {
-          try {
-            const rangeHeader = req.headers.get("range");
-            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
-            if (kaidaRes.ok || kaidaRes.status === 206) {
-              const headers: Record<string, string> = {
-                "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
-                "Accept-Ranges": "bytes",
-                "X-Cache": "kaidadb",
-              };
-              if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
-              if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
-              return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
-            }
-          } catch {
-            // KaidaDB unreachable, fall through to live transcode
-          }
         }
 
         // No cache — live transcode using a strict web-safe profile.
@@ -693,6 +700,20 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
+
+        // For remote sources, check KaidaDB directly
+        if (sourcePath.startsWith("kaidadb:")) {
+          const kaidadbKey = getKaidadbKey(srcParam);
+          return Response.json({
+            cached: !!kaidadbKey,
+            transcoding: false,
+            bytesWritten: 0,
+            duration: "",
+            fileSize: 0,
+            kaidadb: !!kaidadbKey,
+          });
+        }
+
         const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
         const status = await getCacheStatus(sourcePath, audioIndex);
 
@@ -1022,8 +1043,10 @@ Bun.serve({
           const body = await req.json();
           const updated = updateGlobalSettings(body);
 
-          // Re-scan if directories changed
-          if (body.movies_directory !== undefined || body.tvshows_directory !== undefined) {
+          // Re-scan if directories or KaidaDB prefixes changed
+          if (body.movies_directory !== undefined || body.tvshows_directory !== undefined ||
+              body.kaidadb_movies_prefix !== undefined || body.kaidadb_tvshows_prefix !== undefined ||
+              body.kaidadb_root_prefix !== undefined) {
             await resolveToDb();
           }
 
@@ -1171,9 +1194,24 @@ Bun.serve({
         if (!srcParam) return Response.json({ error: "Missing src parameter" }, { status: 400 });
         const sourcePath = resolveSourcePath(srcParam);
         if (!sourcePath) return new Response("Not found", { status: 404 });
-        const file = Bun.file(sourcePath);
-        if (!(await file.exists())) return new Response("Not found", { status: 404 });
-        let content = await file.text();
+
+        let content: string;
+        if (sourcePath.startsWith("kaidadb:")) {
+          // Serve subtitle from KaidaDB
+          const kaidadbKey = getKaidadbKey(srcParam);
+          if (!kaidadbKey) return new Response("Not found", { status: 404 });
+          try {
+            const { kaidadbFetchText } = await import("./scripts/kaidadb");
+            content = await kaidadbFetchText(kaidadbKey);
+          } catch {
+            return new Response("KaidaDB unreachable", { status: 502 });
+          }
+        } else {
+          const file = Bun.file(sourcePath);
+          if (!(await file.exists())) return new Response("Not found", { status: 404 });
+          content = await file.text();
+        }
+
         const ext = srcParam.split(".").pop()?.toLowerCase();
         // Convert SRT to WebVTT on-the-fly
         if (ext === "srt") {
@@ -1906,6 +1944,34 @@ Bun.serve({
         if (!sourcePath) {
           return new Response("Not found", { status: 404 });
         }
+
+        // Remote content — serve ALL file types from KaidaDB
+        if (sourcePath.startsWith("kaidadb:")) {
+          const kaidadbKey = getKaidadbKey(servePath);
+          if (!kaidadbKey) return new Response("Not found", { status: 404 });
+          try {
+            const rangeHeader = req.headers.get("range");
+            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+            if (!kaidaRes.ok && kaidaRes.status !== 206) {
+              return new Response("Not found", { status: 404 });
+            }
+            const headers: Record<string, string> = {
+              "Content-Type": kaidaRes.headers.get("content-type") || "application/octet-stream",
+              "Accept-Ranges": "bytes",
+              "X-Source": "kaidadb",
+            };
+            const fileExt = extname(servePath).toLowerCase();
+            if (IMAGE_EXTS.has(fileExt)) {
+              headers["Cache-Control"] = "public, max-age=86400";
+            }
+            if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
+            if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+            return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
+          } catch {
+            return new Response("KaidaDB unreachable", { status: 502 });
+          }
+        }
+
         const file = Bun.file(sourcePath);
         if (!(await file.exists())) {
           return new Response("Not found", { status: 404 });
@@ -1914,7 +1980,7 @@ Bun.serve({
         const fileExt = extname(sourcePath).toLowerCase();
         const isImage = IMAGE_EXTS.has(fileExt);
 
-        // Check KaidaDB for non-image files
+        // Check KaidaDB for non-image files (local titles with remote video cache)
         if (!isImage) {
           const kaidadbKey = getKaidadbKey(servePath);
           if (kaidadbKey) {

@@ -49,6 +49,41 @@ export async function kaidadbUpload(
   return res.json();
 }
 
+// ── List & fetch functions ──
+
+export interface KaidaDBListItem {
+  key: string;
+  total_size: number;
+  content_type: string;
+  checksum: string;
+  created_at: number;
+}
+
+export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) throw new Error("KaidaDB URL not configured");
+  const allItems: KaidaDBListItem[] = [];
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams({ prefix, limit: "200" });
+    if (cursor) params.set("cursor", cursor);
+    const res = await fetch(`${baseUrl}/v1/media?${params}`);
+    if (!res.ok) throw new Error(`KaidaDB list failed: ${res.status}`);
+    const data = await res.json() as { items: KaidaDBListItem[]; next_cursor: string | null };
+    allItems.push(...data.items);
+    cursor = data.next_cursor;
+  } while (cursor);
+  return allItems;
+}
+
+export async function kaidadbFetchText(key: string): Promise<string> {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) throw new Error("KaidaDB URL not configured");
+  const res = await fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error(`KaidaDB fetch failed for ${key}: ${res.status}`);
+  return res.text();
+}
+
 // ── DB mapping functions ──
 
 export function getKaidadbKey(videoSrc: string): string | null {

@@ -157,6 +157,23 @@ try {
   // column already exists
 }
 
+// Migration: add kaidadb prefix columns to global_settings
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN kaidadb_movies_prefix TEXT");
+} catch {
+  // column already exists
+}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN kaidadb_tvshows_prefix TEXT");
+} catch {
+  // column already exists
+}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN kaidadb_root_prefix TEXT");
+} catch {
+  // column already exists
+}
+
 db.run(`
   CREATE TABLE IF NOT EXISTS kaidadb_media (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { scanDirectory, type ScannedMedia } from "./mediascanner";
+import { scanKaidaDBPrefix, scanKaidaDBRoot } from "./remotescanner";
 import { getOrCreateDefaultProfile, getGlobalSettings } from "./profile";
 import db from "./db";
 
@@ -40,6 +41,31 @@ export async function resolveToDb(): Promise<void> {
     scanDirectory(moviesDir, "/media/movies"),
     scanDirectory(tvshowsDir, "/media/tvshows"),
   ]);
+
+  // Remote media discovery from KaidaDB
+  const settings = getGlobalSettings();
+  if (settings.kaidadb_url) {
+    try {
+      if (settings.kaidadb_root_prefix != null) {
+        // Root prefix mode — auto-discover categories by type field
+        const { movies: remoteMovies, tvshows: remoteTv } = await scanKaidaDBRoot(settings.kaidadb_root_prefix);
+        movies.push(...remoteMovies);
+        tvShows.push(...remoteTv);
+      } else {
+        // Explicit prefix mode
+        if (settings.kaidadb_movies_prefix) {
+          const remoteMovies = await scanKaidaDBPrefix(settings.kaidadb_movies_prefix, "/media/movies");
+          movies.push(...remoteMovies);
+        }
+        if (settings.kaidadb_tvshows_prefix) {
+          const remoteTv = await scanKaidaDBPrefix(settings.kaidadb_tvshows_prefix, "/media/tvshows");
+          tvShows.push(...remoteTv);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to scan remote media from KaidaDB:", err);
+    }
+  }
 
   const allMedia = [...movies, ...tvShows];
 

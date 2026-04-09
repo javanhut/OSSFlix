@@ -1335,6 +1335,9 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   const [kaidadbFocused, setKaidadbFocused] = useState(false);
   const [kaidadbTesting, setKaidadbTesting] = useState(false);
   const [kaidadbTestResult, setKaidadbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [kaidadbRootPrefix, setKaidadbRootPrefix] = useState("");
+  const [kaidadbMoviesPrefix, setKaidadbMoviesPrefix] = useState("");
+  const [kaidadbTvshowsPrefix, setKaidadbTvshowsPrefix] = useState("");
 
   useEffect(() => {
     if (show) {
@@ -1347,6 +1350,9 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
         .then((data) => {
           setTmdbKey(data.tmdb_api_key ?? "");
           setKaidadbUrl(data.kaidadb_url ?? "");
+          setKaidadbRootPrefix(data.kaidadb_root_prefix ?? "");
+          setKaidadbMoviesPrefix(data.kaidadb_movies_prefix ?? "");
+          setKaidadbTvshowsPrefix(data.kaidadb_tvshows_prefix ?? "");
           setKaidadbTestResult(null);
           if (isGlobal) {
             setMoviesDir(data.movies_directory ?? "");
@@ -1366,7 +1372,13 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   const handleSave = () => {
     setSaving(true);
     // Always save TMDB key to global settings
-    const globalPayload: Record<string, any> = { tmdb_api_key: tmdbKey || null, kaidadb_url: kaidadbUrl || null };
+    const globalPayload: Record<string, any> = {
+      tmdb_api_key: tmdbKey || null,
+      kaidadb_url: kaidadbUrl || null,
+      kaidadb_root_prefix: kaidadbRootPrefix || null,
+      kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
+      kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
+    };
     if (useGlobal) {
       globalPayload.movies_directory = moviesDir || null;
       globalPayload.tvshows_directory = tvshowsDir || null;
@@ -1395,7 +1407,13 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
         fetch("/api/global-settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tmdb_api_key: tmdbKey || null, kaidadb_url: kaidadbUrl || null }),
+          body: JSON.stringify({
+            tmdb_api_key: tmdbKey || null,
+            kaidadb_url: kaidadbUrl || null,
+            kaidadb_root_prefix: kaidadbRootPrefix || null,
+            kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
+            kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
+          }),
         }),
         fetch("/api/profile", {
           method: "PUT",
@@ -1706,6 +1724,46 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                     }}>
                       {kaidadbTestResult.message}
                     </p>
+                  )}
+
+                  {/* KaidaDB Remote Prefixes */}
+                  {kaidadbUrl.trim() && (
+                    <div style={{ marginTop: "16px" }}>
+                      <p style={{ margin: "0 0 4px", fontSize: "0.78rem", color: "var(--oss-text-muted)" }}>
+                        Remote media prefixes — use root prefix for auto-discovery, or set explicit movie/TV prefixes.
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+                        <div>
+                          <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>Root Prefix</label>
+                          <input
+                            type="text" value={kaidadbRootPrefix}
+                            onChange={(e) => setKaidadbRootPrefix(e.target.value)}
+                            placeholder="leave empty to scan all"
+                            style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
+                          />
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>Movies Prefix</label>
+                            <input
+                              type="text" value={kaidadbMoviesPrefix}
+                              onChange={(e) => setKaidadbMoviesPrefix(e.target.value)}
+                              placeholder="movies/"
+                              style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>TV Shows Prefix</label>
+                            <input
+                              type="text" value={kaidadbTvshowsPrefix}
+                              onChange={(e) => setKaidadbTvshowsPrefix(e.target.value)}
+                              placeholder="tv/"
+                              style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </>

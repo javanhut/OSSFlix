@@ -15,16 +15,11 @@ interface TvShowInfo extends MediaInfo {
 interface MovieInfo extends MediaInfo{};
 
 
-export async function readTomlFile(filePath: string) {
-  const file = Bun.file(filePath);
-  let fileInformation: any;
-  if (!(await file.exists())) {
-    console.error(`File not found: ${filePath}`);
-    return null;
-  }
-  const fileContents = await file.text();
-  const parsed = toml.parse(fileContents);
+export function parseTomlString(content: string): MediaInfo | TvShowInfo | null {
+  let fileInformation: any = null;
+  const parsed = toml.parse(content);
   const series = parsed.series;
+  if (!series) return null;
   const mediaName: string = series.name;
   const description: string = series.description;
   const genre: Array<string> = series.genre;
@@ -38,7 +33,6 @@ export async function readTomlFile(filePath: string) {
       season: series.season,
       episodes: series.episodes,
     };
-    console.log(show);
     fileInformation = show;
   } else if (type.toLowerCase() === "movie") {
     const movie: MovieInfo = {
@@ -48,11 +42,21 @@ export async function readTomlFile(filePath: string) {
       type: type,
       cast: series.cast,
     };
-    console.log(movie);
     fileInformation = movie;
   }
-
   return fileInformation;
+}
+
+export async function readTomlFile(filePath: string) {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) {
+    console.error(`File not found: ${filePath}`);
+    return null;
+  }
+  const fileContents = await file.text();
+  const result = parseTomlString(fileContents);
+  if (result) console.log(result);
+  return result;
 }
 
 

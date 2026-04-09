@@ -2,9 +2,9 @@ import { readdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { readTomlFile } from "./tomlreader";
 
-const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
-const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv"]);
-const SUBTITLE_EXTS = new Set([".srt", ".vtt", ".ass", ".ssa"]);
+export const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
+export const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv"]);
+export const SUBTITLE_EXTS = new Set([".srt", ".vtt", ".ass", ".ssa"]);
 
 export interface SubtitleTrack {
   label: string;
@@ -42,7 +42,7 @@ const LANG_NAMES: Record<string, string> = {
   ar: "Arabic", hi: "Hindi", nl: "Dutch", sv: "Swedish", pl: "Polish",
 };
 
-function parseSubtitleFilename(filename: string, servePath: string): SubtitleTrack {
+export function parseSubtitleFilename(filename: string, servePath: string): SubtitleTrack {
   const ext = extname(filename).toLowerCase().slice(1); // "srt", "vtt", etc.
   const base = filename.replace(/\.[^.]+$/, ""); // remove extension
   // Try to extract language code from patterns like "video.en.srt" or "video_en.srt"
