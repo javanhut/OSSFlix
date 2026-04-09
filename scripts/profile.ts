@@ -14,6 +14,7 @@ export interface GlobalSettings {
   movies_directory: string | null;
   tvshows_directory: string | null;
   tmdb_api_key: string | null;
+  kaidadb_url: string | null;
 }
 
 export function getProfile(id: number): ProfileData | null {
@@ -108,7 +109,7 @@ export function updateProfile(id: number, updates: {
 }
 
 export function getGlobalSettings(): GlobalSettings {
-  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key FROM global_settings WHERE id = 1").get() as GlobalSettings;
+  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url FROM global_settings WHERE id = 1").get() as GlobalSettings;
 }
 
 export function updateGlobalSettings(updates: {
@@ -129,6 +130,10 @@ export function updateGlobalSettings(updates: {
   if ((updates as any).tmdb_api_key !== undefined) {
     fields.push("tmdb_api_key = ?");
     values.push((updates as any).tmdb_api_key || null);
+  }
+  if ((updates as any).kaidadb_url !== undefined) {
+    fields.push("kaidadb_url = ?");
+    values.push((updates as any).kaidadb_url || null);
   }
 
   if (fields.length > 0) {

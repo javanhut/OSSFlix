@@ -13,6 +13,7 @@ import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/intr
 import { getRecommendations } from "./scripts/recommend";
 import db from "./scripts/db";
 import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
+import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
 import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream } from "./scripts/streamingProfile";
 
@@ -597,6 +598,27 @@ Bun.serve({
           });
         }
 
+        // Check KaidaDB for a pre-stored version
+        const kaidadbKey = getKaidadbKey(srcParam);
+        if (kaidadbKey) {
+          try {
+            const rangeHeader = req.headers.get("range");
+            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+            if (kaidaRes.ok || kaidaRes.status === 206) {
+              const headers: Record<string, string> = {
+                "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
+                "Accept-Ranges": "bytes",
+                "X-Cache": "kaidadb",
+              };
+              if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
+              if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+              return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
+            }
+          } catch {
+            // KaidaDB unreachable, fall through to live transcode
+          }
+        }
+
         // No cache — live transcode using a strict web-safe profile.
         const probe = runFfprobe(sourcePath, [
           "stream=index,codec_type,codec_name,channels,pix_fmt",
@@ -673,6 +695,22 @@ Bun.serve({
         }
         const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
         const status = await getCacheStatus(sourcePath, audioIndex);
+
+        // If not locally cached, check KaidaDB
+        if (!status.cached && !status.transcoding) {
+          const kaidadbKey = getKaidadbKey(srcParam);
+          if (kaidadbKey) {
+            return Response.json({
+              cached: true,
+              transcoding: false,
+              bytesWritten: 0,
+              duration: status.duration,
+              fileSize: status.fileSize,
+              kaidadb: true,
+            });
+          }
+        }
+
         return Response.json({
           cached: status.cached,
           transcoding: status.transcoding,
@@ -912,6 +950,65 @@ Bun.serve({
           return Response.json({ ok: true });
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/kaidadb/health": {
+      async GET() {
+        const result = await kaidadbHealthCheck();
+        return Response.json(result);
+      },
+    },
+    "/api/kaidadb/status": {
+      GET(req) {
+        const url = new URL(req.url);
+        const src = url.searchParams.get("src");
+        if (!src) return Response.json({ error: "Missing src" }, { status: 400 });
+        const status = getKaidadbStatus(src);
+        return Response.json(status);
+      },
+    },
+    "/api/kaidadb/ingest": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { src } = body;
+          if (!src) return Response.json({ error: "Missing src" }, { status: 400 });
+
+          const sourcePath = resolveSourcePath(src);
+          if (!sourcePath) return Response.json({ error: "Source not found" }, { status: 404 });
+
+          const ext = src.split(".").pop()?.toLowerCase();
+          let filePath = sourcePath;
+          let contentType = "video/mp4";
+
+          if (ext !== "mp4") {
+            const audioIndex = parseInt(body.audio || "0") || 0;
+            const cache = await getCacheStatus(sourcePath, audioIndex);
+            if (!cache.cached) {
+              return Response.json({
+                error: "No cached transcode available. Play the file first to generate a transcode, then try again.",
+              }, { status: 400 });
+            }
+            filePath = cache.cachePath;
+          }
+
+          const file = Bun.file(filePath);
+          if (!(await file.exists())) return Response.json({ error: "File not found" }, { status: 404 });
+
+          const kaidadbKey = videoSrcToKaidadbKey(src).replace(/\.[^.]+$/, ".mp4");
+          const data = new Uint8Array(await file.arrayBuffer());
+
+          const result = await kaidadbUpload(kaidadbKey, data, contentType, {
+            source: src,
+            "original-ext": ext || "mp4",
+          });
+
+          setKaidadbMapping(src, kaidadbKey, contentType, result.total_size, result.checksum);
+
+          return Response.json({ ok: true, key: kaidadbKey, total_size: result.total_size });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
         }
       },
     },
@@ -1816,6 +1913,29 @@ Bun.serve({
         const fileSize = file.size;
         const fileExt = extname(sourcePath).toLowerCase();
         const isImage = IMAGE_EXTS.has(fileExt);
+
+        // Check KaidaDB for non-image files
+        if (!isImage) {
+          const kaidadbKey = getKaidadbKey(servePath);
+          if (kaidadbKey) {
+            try {
+              const rangeHeader = req.headers.get("range");
+              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+              if (kaidaRes.ok || kaidaRes.status === 206) {
+                const headers: Record<string, string> = {
+                  "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
+                  "Accept-Ranges": "bytes",
+                  "X-Source": "kaidadb",
+                };
+                if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
+                if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+                return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
+              }
+            } catch {
+              // KaidaDB unreachable, fall through to filesystem
+            }
+          }
+        }
 
         // Cache headers for image files (posters, thumbnails)
         if (isImage) {

@@ -8,6 +8,7 @@ Browse your local movie and TV show library through a Streaming-Service like int
 
 - [Bun](https://bun.sh/) (v1.0+)
 - [FFmpeg](https://ffmpeg.org/) (for transcoding non-MP4 formats like MKV, AVI, WMV)
+- [KaidaDB](../KaidaDB/) (optional — for remote media storage and streaming)
 
 ## Quick Start
 
@@ -185,6 +186,51 @@ To change these:
 
 Directory paths are stored in the SQLite database and persist across restarts.
 
+## KaidaDB Integration
+
+Reelscape can optionally use [KaidaDB](../KaidaDB/) as a media storage backend. KaidaDB is a content-addressed media database with built-in HTTP Range support, enabling efficient streaming with instant seeking — no local file or transcode cache required.
+
+### Setup
+
+1. Start a KaidaDB server (default: `http://localhost:8080`)
+2. In Reelscape, go to **Settings** and enter the KaidaDB URL under **KaidaDB Storage**
+3. Click **Test** to verify connectivity, then **Save**
+
+### Ingesting Media
+
+Upload media to KaidaDB via the ingest API:
+
+```bash
+# Ingest an MP4 file directly
+curl -X POST http://localhost:3000/api/kaidadb/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"src": "/media/movies/your_movie/movie.mp4"}'
+
+# For non-MP4 files (MKV, AVI, etc.), play the file first to generate
+# a transcode cache, then ingest the cached version
+curl -X POST http://localhost:3000/api/kaidadb/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"src": "/media/tvshows/your_show/episode_s1_ep1.mkv"}'
+```
+
+### How It Works
+
+When KaidaDB is configured and a video has been ingested, Reelscape uses the following resolution order:
+
+1. **Local transcode cache** (fastest, already on disk)
+2. **KaidaDB** (remote, range-seekable — enables instant seeking)
+3. **Live FFmpeg transcode** (fallback for non-ingested files)
+
+If KaidaDB is unreachable, playback falls back to local files transparently. The video player automatically enters "cached mode" when streaming from KaidaDB, providing native seeking without waiting for a transcode to complete.
+
+### KaidaDB API Endpoints
+
+| Method | Endpoint                   | Description                                    |
+|--------|----------------------------|------------------------------------------------|
+| GET    | `/api/kaidadb/health`      | Check KaidaDB connectivity                     |
+| GET    | `/api/kaidadb/status?src=` | Check if a video has a KaidaDB mapping         |
+| POST   | `/api/kaidadb/ingest`      | Upload a local file (or its transcode) to KaidaDB |
+
 ## Features
 
 ### Navigation
@@ -216,6 +262,8 @@ Directory paths are stored in the SQLite database and persist across restarts.
 ### Profile
 - Set display name and email
 - Upload or browse for a profile picture
+- Configure TMDB API key for metadata fetching
+- Configure KaidaDB URL for remote media storage
 - Stored in SQLite, persists across sessions
 
 ## Adding a New Title (Step by Step)
@@ -281,6 +329,7 @@ OSSFlix/
     mediascanner.ts      # Filesystem scanner
     tomlreader.ts        # TOML parser
     profile.ts           # Profile CRUD
+    kaidadb.ts           # KaidaDB HTTP client + DB mappings
   constants/
     Genres.ts            # Genre list for navbar dropdown
   data/                  # SQLite DB + avatars (gitignored)
@@ -294,15 +343,18 @@ OSSFlix/
 | GET    | `/api/media/categories`      | Get all categories with titles           |
 | GET    | `/api/media/resolve`         | Rescan directories and return categories |
 | GET    | `/api/media/info?dir=`       | Get detailed info for a title            |
-| GET    | `/api/stream?src=`           | FFmpeg transcode stream                  |
+| GET    | `/api/stream?src=`           | Stream video (cache → KaidaDB → transcode) |
 | GET    | `/api/browse?path=&mode=`    | Browse filesystem directories/images     |
 | GET    | `/api/profile`               | Get current profile                      |
 | PUT    | `/api/profile`               | Update profile fields                    |
 | POST   | `/api/profile/avatar`        | Upload avatar image (FormData)           |
 | POST   | `/api/profile/avatar/browse` | Set avatar from filesystem path          |
-| GET    | `/media/*`                   | Serve media files (with Range support)   |
+| GET    | `/media/*`                   | Serve media files (KaidaDB → filesystem) |
 | GET    | `/images/*`                  | Serve static images                      |
 | GET    | `/avatars/*`                 | Serve avatar images                      |
+| GET    | `/api/kaidadb/health`        | Check KaidaDB connectivity               |
+| GET    | `/api/kaidadb/status?src=`   | Check KaidaDB mapping for a video        |
+| POST   | `/api/kaidadb/ingest`        | Upload media to KaidaDB                  |
 
 ## License
 

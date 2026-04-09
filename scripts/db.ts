@@ -150,6 +150,25 @@ try {
   // column already exists
 }
 
+// Migration: add kaidadb_url to global_settings
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN kaidadb_url TEXT");
+} catch {
+  // column already exists
+}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS kaidadb_media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_src TEXT NOT NULL UNIQUE,
+    kaidadb_key TEXT NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'video/mp4',
+    total_size INTEGER,
+    checksum TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`);
+
 // Migration: add password_hash to profiles
 try {
   db.run("ALTER TABLE profiles ADD COLUMN password_hash TEXT");

@@ -1331,6 +1331,10 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   const [tmdbFocused, setTmdbFocused] = useState(false);
   const [tmdbTesting, setTmdbTesting] = useState(false);
   const [tmdbTestResult, setTmdbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [kaidadbUrl, setKaidadbUrl] = useState("");
+  const [kaidadbFocused, setKaidadbFocused] = useState(false);
+  const [kaidadbTesting, setKaidadbTesting] = useState(false);
+  const [kaidadbTestResult, setKaidadbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (show) {
@@ -1342,6 +1346,8 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
         .then((r) => r.json())
         .then((data) => {
           setTmdbKey(data.tmdb_api_key ?? "");
+          setKaidadbUrl(data.kaidadb_url ?? "");
+          setKaidadbTestResult(null);
           if (isGlobal) {
             setMoviesDir(data.movies_directory ?? "");
             setTvshowsDir(data.tvshows_directory ?? "");
@@ -1360,7 +1366,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   const handleSave = () => {
     setSaving(true);
     // Always save TMDB key to global settings
-    const globalPayload: Record<string, any> = { tmdb_api_key: tmdbKey || null };
+    const globalPayload: Record<string, any> = { tmdb_api_key: tmdbKey || null, kaidadb_url: kaidadbUrl || null };
     if (useGlobal) {
       globalPayload.movies_directory = moviesDir || null;
       globalPayload.tvshows_directory = tvshowsDir || null;
@@ -1389,7 +1395,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
         fetch("/api/global-settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tmdb_api_key: tmdbKey || null }),
+          body: JSON.stringify({ tmdb_api_key: tmdbKey || null, kaidadb_url: kaidadbUrl || null }),
         }),
         fetch("/api/profile", {
           method: "PUT",
@@ -1636,6 +1642,69 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
                       color: tmdbTestResult.ok ? "#22c55e" : "#ef4444",
                     }}>
                       {tmdbTestResult.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* KaidaDB Storage */}
+                <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid var(--oss-border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{
+                      width: "36px", height: "36px", borderRadius: "10px",
+                      background: "rgba(59,130,246,0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#3b82f6",
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>KaidaDB Storage</p>
+                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Optional. Stream media from a KaidaDB server.</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      type="text" value={kaidadbUrl}
+                      onChange={(e) => { setKaidadbUrl(e.target.value); setKaidadbTestResult(null); }}
+                      onFocus={() => setKaidadbFocused(true)}
+                      onBlur={() => setKaidadbFocused(false)}
+                      placeholder="http://localhost:8080"
+                      style={{
+                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
+                        ...(kaidadbFocused ? css.inputFocus : {}),
+                      }}
+                    />
+                    <button
+                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0, opacity: !kaidadbUrl.trim() ? 0.5 : 1 }}
+                      disabled={!kaidadbUrl.trim() || kaidadbTesting}
+                      onClick={() => {
+                        setKaidadbTesting(true);
+                        setKaidadbTestResult(null);
+                        fetch(`${kaidadbUrl.replace(/\/+$/, "")}/v1/health`)
+                          .then((r) => {
+                            if (r.ok) {
+                              setKaidadbTestResult({ ok: true, message: "Connected to KaidaDB!" });
+                            } else {
+                              setKaidadbTestResult({ ok: false, message: `HTTP ${r.status}` });
+                            }
+                          })
+                          .catch(() => setKaidadbTestResult({ ok: false, message: "Connection failed" }))
+                          .finally(() => setKaidadbTesting(false));
+                      }}
+                    >
+                      {kaidadbTesting ? "Testing..." : "Test"}
+                    </button>
+                  </div>
+                  {kaidadbTestResult && (
+                    <p style={{
+                      marginTop: "6px", fontSize: "0.78rem", fontWeight: 500,
+                      color: kaidadbTestResult.ok ? "#22c55e" : "#ef4444",
+                    }}>
+                      {kaidadbTestResult.message}
                     </p>
                   )}
                 </div>
