@@ -148,7 +148,7 @@ export function updateGlobalSettings(updates: {
   }
   if ((updates as any).kaidadb_root_prefix !== undefined) {
     fields.push("kaidadb_root_prefix = ?");
-    values.push((updates as any).kaidadb_root_prefix || null);
+    values.push((updates as any).kaidadb_root_prefix ?? null);
   }
 
   if (fields.length > 0) {

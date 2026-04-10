@@ -1375,7 +1375,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
     const globalPayload: Record<string, any> = {
       tmdb_api_key: tmdbKey || null,
       kaidadb_url: kaidadbUrl || null,
-      kaidadb_root_prefix: kaidadbRootPrefix || null,
+      kaidadb_root_prefix: kaidadbUrl.trim() ? kaidadbRootPrefix : null,
       kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
       kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
     };
@@ -1410,7 +1410,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
           body: JSON.stringify({
             tmdb_api_key: tmdbKey || null,
             kaidadb_url: kaidadbUrl || null,
-            kaidadb_root_prefix: kaidadbRootPrefix || null,
+            kaidadb_root_prefix: kaidadbUrl.trim() ? kaidadbRootPrefix : null,
             kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
             kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
           }),
