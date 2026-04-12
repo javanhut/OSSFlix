@@ -1,0 +1,162 @@
+introduce os
+introduce strings
+
+fun is_installed(package_name <str>) {
+    check_package <str> := "which {package_name}"
+    execute := os.exec(check_package)
+    out, err, code := execute["stdout"], execute["stderr"], execute["code"]
+    option {
+        code == 1 -> {
+            False
+        }
+        code > 1 -> {
+            <log<debug>>("System Error: {err}")
+            <fail>("Execution failed with code: {code}")
+        }
+        {
+            <log<debug>>("Package found at path: {out}")
+            True
+        }
+    }
+}
+
+fun check_for_docker_or_podman() {
+    containers <array> := ["docker", "podman"]
+    docker_installed <bool>
+    podman_installed <bool>
+    each container in containers {
+        option {
+            container == "podman" -> {
+                podman_installed := is_installed(container)
+            }
+            container == "docker" -> {
+                docker_installed := is_installed(container)
+            }
+        }
+    }
+    <log<debug>>("Is Docker installed?: {docker_installed}, Is Podman installed?: {podman_installed}")
+    (docker_installed, podman_installed)
+}
+
+fun check_for_container(container_name <str>, container_management <str> = "docker") {
+    option {
+        is_installed(container_management) == False -> {
+            <log<debug>>("Container management tool not installed: {container_management}. Skipping..")
+        }
+        {
+            container_list_cmd := os.exec("{container_management} ps")
+            out, err, code := container_list_cmd["stdout"], container_list_cmd["stderr"], container_list_cmd["code"]
+            is_container_running <bool>
+            option {
+                code != 0 -> {
+                    <fail>("Error occured on sys call: {err}. Code: {code}")
+                }
+                {
+                    is_container_running := strings.contains_str(out, container_name)
+                    <log<debug>>("Is container {container_name} running? {is_container_running}")
+                }
+            }
+            is_container_running
+        }
+    }
+}
+
+fun kill_ossflix() {
+    docker, podman := check_for_docker_or_podman()
+    is_reelscape_running := check_for_container("reelscape", "docker") unless docker == False then check_for_container("reelscape", "podman")
+    option {
+        is_reelscape_running == False -> {
+            <log<debug>>("Container is not runnning.")
+        }
+        {
+            kill_reelscape := "docker kill reelscape" unless docker == False then "podman kill reelscape"
+            <log<debug>>("Runnning command: {kill_reelscape}")
+            kill_cmd := os.exec(kill_reelscape)
+            cmd_out, cmd_err, cmd_code := kill_cmd["stdout"], kill_cmd["stderr"], kill_cmd["code"]
+            option {
+                cmd_code != 0 -> {
+                    <fail>("Failed sys call with error: {cmd_err}, with code: {cmd_code}")
+                }
+                {
+                    <log<debug>>(cmd_out)
+                    <log<debug>>("Checking if container is still runnning")
+                    container_string := "reelscape"
+                    check_container := "docker ps" unless docker == False then "podman ps"
+                    cmd_run := os.exec(check_container)
+                    out, err, code := cmd_run["stdout"], cmd_run["stderr"], cmd_run["code"]
+                    option {
+                        code != 0 -> {
+                            <fail>("Failed to run sys call.\nError:{err}\nCode:{code}")
+                        }
+                        {
+                            is_still_running := strings.contains_str(out, container_string)
+                            println("Container was killed!") unless is_still_running then println("Container failed to be killed: {out}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun rebuild_image() {
+    docker, podman := check_for_docker_or_podman()
+    build_command := "docker build -t localhost/reelscape:1.0.0 ." unless docker == False then "podman build -t localhost/reelscape:1.0.0 ."
+    build_output := os.exec(build_command)
+    out, err, code := build_output["stdout"], build_output["stderr"], build_output["code"]
+    option {
+        code != 0 -> {
+            <log<debug>>("Error: {err}")
+            <fail>("Syscall failed with error code: {code}")
+        }
+        {
+            <log<debug>>("Running command...")
+            <log<debug>>(out)
+        }
+    }
+}
+
+fun start_container() {
+    docker, podman := check_for_docker_or_podman()
+    run_command := "docker run -d --name=reelscape --network=host --replace localhost/reelscape:1.0.0" unless docker == False then "podman run -d --name=reelscape --network=host --replace localhost/reelscape:1.0.0"
+    <log<debug>>("Starting container: {run_command}")
+    run_output := os.exec(run_command)
+    out, err, code := run_output["stdout"], run_output["stderr"], run_output["code"]
+    option {
+        code != 0 -> {
+            <fail>("Failed to start container with error: {err}, with code: {code}")
+        }
+        {
+            <log<debug>>("Container started successfully.")
+            <log<debug>>(out)
+        }
+    }
+}
+
+main {
+    container_management := ["podman", "docker"]
+    container <str> := "reelscape"
+    podman <bool>
+    docker <bool>
+    each platform in container_management {
+        option {
+            platform == "podman" -> {
+                podman := check_for_container(container, platform)
+            }
+            platform == "docker" -> {
+                docker := check_for_container(container, platform)
+            }
+        }
+    }
+    option {
+        (podman or docker) == True -> {
+            kill_ossflix()
+            rebuild_image()
+            start_container()
+        }
+        {
+            rebuild_image()
+            start_container()
+        }
+    }
+}

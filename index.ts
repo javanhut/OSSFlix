@@ -4,14 +4,14 @@ import { readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, unlink } from "node:fs/promises";
 import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs, getProfileWithHash, setProfilePassword, profileHasPassword } from "./scripts/profile";
 import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
 import { updateTomlFile } from "./scripts/tomlwriter";
 import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
 import { getRecommendations } from "./scripts/recommend";
-import db from "./scripts/db";
+import db, { DATA_DIR } from "./scripts/db";
 import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
 import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
@@ -41,12 +41,25 @@ function requireAuth(handler: (req: Request, profile: ProfileData) => Response |
 // Hourly session cleanup
 setInterval(() => cleanExpiredSessions(), 3600_000);
 
+// Graceful shutdown — flush WAL to main database file
+function gracefulShutdown(signal: string) {
+  console.log(`[ossflix] received ${signal}, checkpointing database...`);
+  try {
+    db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch (e) {
+    console.error("[ossflix] WAL checkpoint failed:", e);
+  }
+  process.exit(0);
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 const IMAGES_BASE = resolve("./images");
-const AVATARS_BASE = resolve("./data/avatars");
+const AVATARS_BASE = join(DATA_DIR, "avatars");
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
 
 // ── Transcode cache ──
-const CACHE_DIR = resolve("./data/cache");
+const CACHE_DIR = join(DATA_DIR, "cache");
 await mkdir(CACHE_DIR, { recursive: true });
 const MAX_CACHE_SIZE = 50 * 1024 * 1024 * 1024; // 50GB
 
@@ -434,7 +447,7 @@ Bun.serve({
           if (!password) return Response.json({ error: "Missing password" }, { status: 400 });
           const valid = await verifyPassword(password, profileWithHash.password_hash);
           if (!valid) return Response.json({ error: "Invalid password" }, { status: 401 });
-          const token = createSession(profileWithHash.id);
+          const token = createSession(profileWithHash.id, req.headers.get("user-agent") || undefined);
           const profile = getProfile(profileWithHash.id)!;
           return Response.json({ profile }, {
             headers: { "Set-Cookie": sessionCookie(token) },
@@ -457,7 +470,7 @@ Bun.serve({
           }
           const hash = await hashPassword(password);
           const profile = createProfile(name.trim(), hash);
-          const token = createSession(profile.id);
+          const token = createSession(profile.id, req.headers.get("user-agent") || undefined);
           return Response.json({ profile }, {
             headers: { "Set-Cookie": sessionCookie(token) },
           });
@@ -482,7 +495,7 @@ Bun.serve({
           }
           const hash = await hashPassword(password);
           setProfilePassword(profileId, hash);
-          const token = createSession(profileId);
+          const token = createSession(profileId, req.headers.get("user-agent") || undefined);
           const profile = getProfile(profileId)!;
           return Response.json({ profile }, {
             headers: { "Set-Cookie": sessionCookie(token) },
@@ -506,6 +519,46 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         return Response.json({ profile: auth.profile });
+      },
+    },
+    "/api/auth/sessions": {
+      GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const sessions = db.query(
+          "SELECT id, user_agent, created_at, last_active FROM sessions WHERE profile_id = ? AND expires_at > datetime('now') ORDER BY last_active DESC"
+        ).all(auth.profile.id) as { id: string; user_agent: string | null; created_at: string; last_active: string | null }[];
+        return Response.json({
+          sessions: sessions.map((s) => ({
+            id: s.id,
+            userAgent: s.user_agent,
+            createdAt: s.created_at,
+            lastActive: s.last_active,
+            isCurrent: s.id === auth.sessionId,
+          })),
+          count: sessions.length,
+          maxSessions: 6,
+        });
+      },
+      async DELETE(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const body = await req.json();
+        const { sessionId } = body;
+        if (!sessionId) return Response.json({ error: "Missing sessionId" }, { status: 400 });
+        // Don't allow revoking current session via this endpoint
+        if (sessionId === auth.sessionId) {
+          return Response.json({ error: "Use logout to end your current session" }, { status: 400 });
+        }
+        // Ensure the session belongs to this profile
+        const session = db.prepare(
+          "SELECT profile_id FROM sessions WHERE id = ?"
+        ).get(sessionId) as { profile_id: number } | null;
+        if (!session || session.profile_id !== auth.profile.id) {
+          return Response.json({ error: "Session not found" }, { status: 404 });
+        }
+        deleteSession(sessionId);
+        return Response.json({ ok: true });
       },
     },
     "/api/auth/change-password": {
@@ -565,8 +618,30 @@ Bun.serve({
               if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
               return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
             }
+            // Range not satisfiable — retry without range header
+            if (kaidaRes.status === 416 && rangeHeader) {
+              const retryRes = await kaidadbStream(kaidadbKey, null);
+              if (retryRes.ok) {
+                const headers: Record<string, string> = {
+                  "Content-Type": retryRes.headers.get("content-type") || "video/mp4",
+                  "Accept-Ranges": "bytes",
+                  "X-Cache": "kaidadb",
+                };
+                if (retryRes.headers.has("content-length")) headers["Content-Length"] = retryRes.headers.get("content-length")!;
+                return new Response(retryRes.body, { status: 200, headers });
+              }
+            }
+            // KaidaDB returned an error — for remote-only sources, report transient failure
+            if (isRemoteSource) {
+              return new Response("KaidaDB stream error", { status: 502 });
+            }
+            // For locally-available content, fall through to local/transcode
           } catch {
-            // KaidaDB unreachable, fall through to local/transcode
+            // KaidaDB unreachable
+            if (isRemoteSource) {
+              return new Response("KaidaDB unreachable", { status: 502 });
+            }
+            // Fall through to local/transcode for content with local copies
           }
         }
 
@@ -815,11 +890,36 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
-        const probe = runFfprobe(sourcePath, [
+        const showEntries = [
           "format=duration",
           "stream=index,codec_name,codec_type,channels,channel_layout",
           "stream_tags=language,title",
-        ]);
+        ];
+
+        // For KaidaDB sources, download partial content to probe
+        let probe: FfprobeResult;
+        if (sourcePath.startsWith("kaidadb:")) {
+          const kaidadbKey = getKaidadbKey(srcParam);
+          if (!kaidadbKey) {
+            return Response.json({ error: "KaidaDB key not found" }, { status: 404 });
+          }
+          const tmpPath = join(CACHE_DIR, `probe_${createHash("md5").update(kaidadbKey).digest("hex")}.tmp`);
+          try {
+            const partial = await kaidadbStream(kaidadbKey, "bytes=0-2097151");
+            if (!partial.ok && partial.status !== 206) {
+              return Response.json({ error: "KaidaDB probe unavailable" }, { status: 502 });
+            }
+            await Bun.write(tmpPath, partial);
+            probe = runFfprobe(tmpPath, showEntries);
+          } catch {
+            return Response.json({ error: "KaidaDB unreachable" }, { status: 502 });
+          } finally {
+            await unlink(tmpPath).catch(() => {});
+          }
+        } else {
+          probe = runFfprobe(sourcePath, showEntries);
+        }
+
         if (!probe.ok) {
           return Response.json({ error: probe.error }, { status: 500 });
         }
@@ -1097,7 +1197,9 @@ Bun.serve({
              ON CONFLICT(profile_id, video_src) DO UPDATE SET
                "current_time" = excluded."current_time",
                duration = excluded.duration,
-               updated_at = datetime('now')`,
+               updated_at = datetime('now')
+             WHERE excluded."current_time" >= playback_progress."current_time"
+               OR (julianday('now') - julianday(playback_progress.updated_at)) * 86400 > 5`,
             [profile.id, video_src, dir_path || "", current_time, duration || 0]
           );
           return Response.json({ ok: true });

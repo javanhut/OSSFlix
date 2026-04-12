@@ -1,9 +1,10 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 
-const DB_PATH = resolve("./data/ossflix.db");
-mkdirSync(dirname(DB_PATH), { recursive: true });
+export const DATA_DIR = resolve(process.env.OSSFLIX_DATA_DIR || "./data");
+const DB_PATH = join(DATA_DIR, "ossflix.db");
+mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH, { create: true });
 
@@ -204,6 +205,14 @@ db.run(`
 `);
 
 db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`);
+
+// Migration: add user_agent and last_active columns to sessions
+try {
+  db.run("ALTER TABLE sessions ADD COLUMN user_agent TEXT");
+} catch {}
+try {
+  db.run("ALTER TABLE sessions ADD COLUMN last_active TEXT DEFAULT (datetime('now'))");
+} catch {}
 
 db.run(`
   CREATE TABLE IF NOT EXISTS background_jobs (

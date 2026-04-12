@@ -321,7 +321,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const [hoverX, setHoverX] = useState(0);
 
   const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-  const MAX_STREAM_RECOVERY_ATTEMPTS = 3;
+  const MAX_STREAM_RECOVERY_ATTEMPTS = 6;
   const SOURCE_READY_FALLBACK_MS = 3000;
   const CACHE_SWITCH_FALLBACK_MS = 2500;
   const STALL_RECOVERY_TIMEOUT_MS = 4500;
@@ -916,7 +916,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   useEffect(() => {
     if (!isStreamed) return;
     fetch(`/api/stream/probe?src=${encodeURIComponent(src)}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`probe failed: ${res.status}`);
+        return res.json();
+      })
       .then((data: { duration?: number; audioTracks?: AudioTrack[] }) => {
         if (data.duration && isFinite(data.duration)) {
           setDuration(data.duration);
@@ -926,7 +929,19 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           setAudioTracks(data.audioTracks);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Probe failed — fall back to HTML5 video element duration
+        const video = videoRef.current;
+        if (!video) return;
+        const checkBrowserDuration = () => {
+          if (video.duration && isFinite(video.duration) && video.duration > 0 && durationRef.current === 0) {
+            setDuration(video.duration);
+            durationRef.current = video.duration;
+          }
+        };
+        checkBrowserDuration();
+        video.addEventListener("durationchange", checkBrowserDuration, { once: true });
+      });
   }, [src, isStreamed]);
 
   // Poll cache/buffer status for streamed content
@@ -1632,7 +1647,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setTransitioning2(false);
           }}
           onError={() => {
-            setTimeout(() => attemptStreamRecovery("video-error"), 1200);
+            // Escalating delay: 1.2s, 2.4s, 4.8s, ... for transient errors
+            const delay = 1200 * Math.pow(2, Math.min(recoveryAttemptsRef.current, 4));
+            setTimeout(() => attemptStreamRecovery("video-error"), delay);
           }}
           onEnded={() => {
             setPlaying(false);

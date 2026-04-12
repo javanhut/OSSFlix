@@ -1,0 +1,16 @@
+services:
+  ossflix:
+    build: .
+    image: reelscape:1.0.0
+    container_name: reelscape
+    ports:
+      - "3001:3000"
+    volumes:
+      - ossflix-data:/usr/src/app/data
+      - /path/to/your/media:/media
+    environment:
+      - OSSFLIX_DATA_DIR=/usr/src/app/data
+    restart: unless-stopped
+
+volumes:
+  ossflix-data:

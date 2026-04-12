@@ -88,6 +88,9 @@ const IconTv = () => (
     <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17,2 12,7 7,2"/>
   </svg>
 );
+const IconDevices = () => (
+  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+);
 const IconInfo = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
@@ -579,6 +582,188 @@ function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: s
 }
 
 // ── Migrator Tab Content ──
+// ── Devices Tab ──
+interface SessionInfo {
+  id: string;
+  userAgent: string | null;
+  createdAt: string;
+  lastActive: string | null;
+  isCurrent: boolean;
+}
+
+function parseUserAgent(ua: string | null): { browser: string; os: string } {
+  if (!ua) return { browser: "Unknown browser", os: "Unknown device" };
+  let browser = "Unknown browser";
+  let os = "Unknown device";
+  if (ua.includes("Firefox/")) browser = "Firefox";
+  else if (ua.includes("Edg/")) browser = "Edge";
+  else if (ua.includes("Chrome/")) browser = "Chrome";
+  else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = "Safari";
+  if (ua.includes("Windows")) os = "Windows";
+  else if (ua.includes("Mac OS")) os = "macOS";
+  else if (ua.includes("Android")) os = "Android";
+  else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+  else if (ua.includes("Linux")) os = "Linux";
+  return { browser, os };
+}
+
+function DevicesTab() {
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [count, setCount] = useState(0);
+  const [maxSessions, setMaxSessions] = useState(6);
+  const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const fetchSessions = () => {
+    fetch("/api/auth/sessions")
+      .then((r) => r.json())
+      .then((data) => {
+        setSessions(data.sessions || []);
+        setCount(data.count || 0);
+        setMaxSessions(data.maxSessions || 6);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchSessions(); }, []);
+
+  const revokeSession = (sessionId: string) => {
+    setRevoking(sessionId);
+    fetch("/api/auth/sessions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    })
+      .then((r) => r.json())
+      .then((data) => { if (data.ok) fetchSessions(); })
+      .catch(() => {})
+      .finally(() => setRevoking(null));
+  };
+
+  const formatTime = (iso: string | null) => {
+    if (!iso) return "Never";
+    const d = new Date(iso + "Z");
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 60_000) return "Just now";
+    if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+    return `${Math.floor(diff / 86400_000)}d ago`;
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--oss-text-muted)" }}>
+        Loading sessions...
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: "16px",
+      }}>
+        <div>
+          <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "var(--oss-text)" }}>
+            Active Sessions
+          </h4>
+          <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--oss-text-muted)" }}>
+            {count} of {maxSessions} sessions in use
+          </p>
+        </div>
+        <div style={{
+          padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 600,
+          background: count >= maxSessions ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)",
+          color: count >= maxSessions ? "#ef4444" : "#3b82f6",
+        }}>
+          {count}/{maxSessions}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{
+        height: "4px", borderRadius: "2px", background: "var(--oss-bg-elevated)",
+        marginBottom: "20px", overflow: "hidden",
+      }}>
+        <div style={{
+          height: "100%", borderRadius: "2px",
+          width: `${(count / maxSessions) * 100}%`,
+          background: count >= maxSessions
+            ? "linear-gradient(90deg, #ef4444, #f87171)"
+            : "linear-gradient(90deg, #3b82f6, #60a5fa)",
+          transition: "width 0.3s ease",
+        }} />
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {sessions.map((s) => {
+          const { browser, os } = parseUserAgent(s.userAgent);
+          return (
+            <div key={s.id} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "12px 14px", borderRadius: "10px",
+              background: s.isCurrent ? "rgba(59,130,246,0.08)" : "var(--oss-bg-elevated)",
+              border: s.isCurrent ? "1px solid rgba(59,130,246,0.25)" : "1px solid var(--oss-border)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
+                <div style={{
+                  width: "36px", height: "36px", borderRadius: "8px",
+                  background: s.isCurrent ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.05)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <IconDevices />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: "0.85rem", fontWeight: 600, color: "var(--oss-text)",
+                    display: "flex", alignItems: "center", gap: "6px",
+                  }}>
+                    {browser} on {os}
+                    {s.isCurrent && (
+                      <span style={{
+                        fontSize: "0.68rem", padding: "1px 6px", borderRadius: "4px",
+                        background: "rgba(59,130,246,0.2)", color: "#60a5fa", fontWeight: 700,
+                      }}>
+                        This device
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginTop: "2px" }}>
+                    Active {formatTime(s.lastActive)}
+                  </div>
+                </div>
+              </div>
+              {!s.isCurrent && (
+                <button
+                  style={{
+                    ...css.btn, ...css.btnSmall,
+                    background: "rgba(239,68,68,0.1)", color: "#ef4444",
+                    opacity: revoking === s.id ? 0.5 : 1,
+                  }}
+                  onClick={() => revokeSession(s.id)}
+                  disabled={revoking === s.id}
+                >
+                  {revoking === s.id ? "..." : "Revoke"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {sessions.length === 0 && (
+        <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--oss-text-muted)", fontSize: "0.85rem" }}>
+          No active sessions found
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MigratorTab() {
   const [step, setStep] = useState(0);
   const [mediaType, setMediaType] = useState<"Movie" | "tv show">("Movie");
@@ -1319,7 +1504,7 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   profile: ProfileData; onProfileUpdate: (p: ProfileData) => void;
 }) {
   const { profile: ctxProfile } = useProfile();
-  const [activeTab, setActiveTab] = useState<"directories" | "addmedia" | "migrator" | "about">("directories");
+  const [activeTab, setActiveTab] = useState<"directories" | "addmedia" | "migrator" | "devices" | "about">("directories");
   const [moviesDir, setMoviesDir] = useState("");
   const [tvshowsDir, setTvshowsDir] = useState("");
   const [useGlobal, setUseGlobal] = useState(true);
@@ -1469,6 +1654,9 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
             </button>
             <button style={tabStyle(activeTab === "migrator")} onClick={() => setActiveTab("migrator")}>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconPlus /> Migrator</span>
+            </button>
+            <button style={tabStyle(activeTab === "devices")} onClick={() => setActiveTab("devices")}>
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconDevices /> Devices</span>
             </button>
             <button style={tabStyle(activeTab === "about")} onClick={() => setActiveTab("about")}>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconInfo /> About</span>
@@ -1772,6 +1960,8 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
             {activeTab === "addmedia" && <AddMediaTab />}
 
             {activeTab === "migrator" && <MigratorTab />}
+
+            {activeTab === "devices" && <DevicesTab />}
 
             {activeTab === "about" && (
               <div style={{ textAlign: "center", padding: "2rem 0" }}>

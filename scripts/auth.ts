@@ -14,13 +14,26 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 // ── Sessions ──
 
 const SESSION_TTL_DAYS = 30;
+const MAX_SESSIONS_PER_PROFILE = 6;
 
-export function createSession(profileId: number): string {
+export function createSession(profileId: number, userAgent?: string): string {
+  // Enforce concurrent session limit — evict oldest if at capacity
+  const countRow = db.prepare(
+    "SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ? AND expires_at > datetime('now')"
+  ).get(profileId) as { cnt: number };
+
+  if (countRow.cnt >= MAX_SESSIONS_PER_PROFILE) {
+    db.run(
+      "DELETE FROM sessions WHERE id = (SELECT id FROM sessions WHERE profile_id = ? ORDER BY created_at ASC LIMIT 1)",
+      [profileId]
+    );
+  }
+
   const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   db.run(
-    "INSERT INTO sessions (id, profile_id, expires_at) VALUES (?, ?, ?)",
-    [token, profileId, expiresAt]
+    "INSERT INTO sessions (id, profile_id, expires_at, user_agent) VALUES (?, ?, ?, ?)",
+    [token, profileId, expiresAt, userAgent || null]
   );
   return token;
 }
@@ -72,6 +85,10 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 
 // ── Request authentication ──
 
+// Debounce last_active updates to once per 5 minutes per session
+const lastActiveTouched = new Map<string, number>();
+const LAST_ACTIVE_DEBOUNCE_MS = 5 * 60 * 1000;
+
 export function authenticateRequest(req: Request): { profile: ProfileData; sessionId: string } | null {
   const cookieHeader = req.headers.get("cookie");
   if (!cookieHeader) return null;
@@ -85,5 +102,14 @@ export function authenticateRequest(req: Request): { profile: ProfileData; sessi
     deleteSession(token);
     return null;
   }
+
+  // Touch last_active (debounced)
+  const now = Date.now();
+  const lastTouched = lastActiveTouched.get(token) || 0;
+  if (now - lastTouched > LAST_ACTIVE_DEBOUNCE_MS) {
+    db.run("UPDATE sessions SET last_active = datetime('now') WHERE id = ?", [token]);
+    lastActiveTouched.set(token, now);
+  }
+
   return { profile, sessionId: session.id };
 }
