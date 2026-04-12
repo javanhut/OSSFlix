@@ -1029,6 +1029,21 @@ export function Card({ show, onHide, dirPath }: CardProps) {
           }
         }}
         hasNext={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)}
+        onPrev={() => {
+          if (!information?.videos || !playerSrc) return;
+          const currentIndex = information.videos.indexOf(playerSrc);
+          if (currentIndex > 0) {
+            const prevSrc = information.videos[currentIndex - 1];
+            if (restartMode) {
+              setPlayerInitialTime(0);
+            } else {
+              const saved = progressMap[prevSrc];
+              setPlayerInitialTime(saved?.current_time || 0);
+            }
+            setPlayerSrc(prevSrc);
+          }
+        }}
+        hasPrev={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) > 0)}
         profileId={pid}
       />
 

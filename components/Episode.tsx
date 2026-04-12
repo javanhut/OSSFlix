@@ -8,9 +8,11 @@ function parseFilename(filename: string) {
   const episodeMatch = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
 
   if (episodeMatch) {
+    // Strip leading "s01_ep01_" folder prefix left by flattenToFilename on nested kaidadb paths
+    const title = episodeMatch[1].replace(/^s\d+_ep\d+_/i, "").replace(/_/g, " ");
     return {
       type: "episode" as const,
-      title: episodeMatch[1].replace(/_/g, " "),
+      title,
       season: Number(episodeMatch[2]),
       episode: Number(episodeMatch[3]),
     };

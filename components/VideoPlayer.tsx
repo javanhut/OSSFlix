@@ -32,9 +32,11 @@ type VideoPlayerProps = {
   dirPath?: string;
   initialTime?: number;
   onNext?: () => void;
+  onPrev?: () => void;
   onProgress?: (currentTime: number, duration: number) => void;
   timings?: EpisodeTiming;
   hasNext?: boolean;
+  hasPrev?: boolean;
   profileId?: number; // deprecated: auth now uses cookies
   subtitles?: SubtitleTrack[];
   nextSrc?: string;
@@ -57,7 +59,9 @@ function parseEpisodeFromSrc(src: string): string | null {
   const filename = src.split("/").pop() || "";
   const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
   if (!match) return null;
-  return `S${Number(match[2])} E${Number(match[3])} - ${match[1].replace(/_/g, " ")}`;
+  // Strip leading "s01_ep01_" folder prefix left by flattenToFilename on nested kaidadb paths
+  const title = match[1].replace(/^s\d+_ep\d+_/i, "").replace(/_/g, " ");
+  return `S${Number(match[2])} E${Number(match[3])}${title ? ` - ${title}` : ""}`;
 }
 
 // ── SVG Icon components ──
@@ -116,6 +120,12 @@ const IconPip = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="2" y="3" width="20" height="14" rx="2"/>
     <rect x="12" y="9" width="8" height="6" rx="1" fill="rgba(255,255,255,0.3)"/>
+  </svg>
+);
+const IconPrev = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+    <polygon points="20,3 8,12 20,21"/>
+    <rect x="4" y="3" width="3" height="18" rx="1"/>
   </svg>
 );
 const IconNext = () => (
@@ -201,7 +211,7 @@ function LoadingSpinner() {
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onProgress, timings, hasNext, profileId, subtitles, nextSrc }: VideoPlayerProps) {
+export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onPrev, onProgress, timings, hasNext, hasPrev, profileId, subtitles, nextSrc }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -1420,6 +1430,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         case "p": togglePip(); break;
         case "Escape": e.preventDefault(); onHide(); break;
         case "n": if (onNext) { e.preventDefault(); onNext(); } break;
+        case "b": if (onPrev) { e.preventDefault(); onPrev(); } break;
         case "r": e.preventDefault(); restartFromBeginning(); break;
         case "c": e.preventDefault(); toggleCC(); break;
         case "a": if (isStreamed && audioTracks.length > 1) { e.preventDefault(); setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); setShowVolumeSlider(false); } break;
@@ -2018,6 +2029,14 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                 <span className="vp-tooltip">+10s (l)</span>
               </button>
 
+              {/* Previous episode */}
+              {onPrev && hasPrev && (
+                <button className="vp-ctrl-btn" onClick={onPrev}>
+                  <IconPrev />
+                  <span className="vp-tooltip">Previous (b)</span>
+                </button>
+              )}
+
               {/* Next episode */}
               {onNext && (
                 <button className="vp-ctrl-btn" onClick={onNext}>
@@ -2111,16 +2130,31 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </span>
             </div>
 
-            {/* Episode info (center) */}
+            {/* Episode navigation (center) */}
             {episodeLabel && (
               <div className="vp-hide-mobile" style={{
-                flex: 1, textAlign: "center", minWidth: 0,
-                color: "rgba(255,255,255,0.7)", fontSize: "0.82rem",
-                fontWeight: 500, overflow: "hidden",
-                textOverflow: "ellipsis", whiteSpace: "nowrap",
-                padding: "0 12px",
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                minWidth: 0, padding: "0 12px", gap: "4px",
               }}>
-                {episodeLabel}
+                {onPrev && hasPrev && (
+                  <button className="vp-ctrl-btn" onClick={onPrev} style={{ padding: "6px" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="15,4 5,12 15,20" /></svg>
+                    <span className="vp-tooltip">Previous (b)</span>
+                  </button>
+                )}
+                <span style={{
+                  color: "rgba(255,255,255,0.7)", fontSize: "0.82rem",
+                  fontWeight: 500, overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {episodeLabel}
+                </span>
+                {onNext && hasNext && (
+                  <button className="vp-ctrl-btn" onClick={onNext} style={{ padding: "6px" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="9,4 19,12 9,20" /></svg>
+                    <span className="vp-tooltip">Next (n)</span>
+                  </button>
+                )}
               </div>
             )}
 
