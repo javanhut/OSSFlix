@@ -27,6 +27,7 @@ COPY images/ images/
 COPY pages/ pages/
 COPY scripts/ scripts/
 
+ENV NODE_ENV=production
 USER bun
 EXPOSE 3000/tcp
 ENTRYPOINT ["bun", "run", "index.ts"]

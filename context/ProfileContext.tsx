@@ -66,6 +66,16 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Listen for auth-expired events from apiFetch (graceful logout instead of hard redirect)
+  useEffect(() => {
+    const handler = () => {
+      setAuthenticated(false);
+      setProfileState(null);
+    };
+    window.addEventListener("ossflix-auth-expired", handler);
+    return () => window.removeEventListener("ossflix-auth-expired", handler);
+  }, []);
+
   const login = useCallback(async (profileId: number, password: string): Promise<{ error?: string }> => {
     try {
       const res = await fetch("/api/auth/login", {
@@ -167,6 +177,8 @@ export function useProfile() {
 
 export async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
   const res = await fetch(url, { ...opts, credentials: "same-origin" });
-  if (res.status === 401) window.location.href = "/";
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent("ossflix-auth-expired"));
+  }
   return res;
 }

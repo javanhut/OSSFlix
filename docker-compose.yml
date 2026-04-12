@@ -10,6 +10,7 @@ services:
       - /path/to/your/media:/media
     environment:
       - OSSFLIX_DATA_DIR=/usr/src/app/data
+      - NODE_ENV=production
     restart: unless-stopped
 
 volumes:
