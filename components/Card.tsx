@@ -29,6 +29,7 @@ type CardProps = {
   show: boolean;
   onHide: () => void;
   dirPath: string;
+  onWatchlistChange?: (dirPath: string, inList: boolean) => void;
 };
 
 type ProgressEntry = {
@@ -474,7 +475,7 @@ function groupVideosBySeason(videos: string[]): Map<number, string[]> {
   return new Map([...seasons.entries()].sort((a, b) => a[0] - b[0]));
 }
 
-export function Card({ show, onHide, dirPath }: CardProps) {
+export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const { profile } = useProfile();
   const pid = profile?.id;
   const [information, setInformation] = useState<MediaInfo | null>(null);
@@ -577,7 +578,11 @@ export function Card({ show, onHide, dirPath }: CardProps) {
       credentials: "same-origin",
       body: JSON.stringify({ dir_path: dirPath }),
     })
-      .then(() => setInWatchlist(!inWatchlist))
+      .then(() => {
+        const newState = !inWatchlist;
+        setInWatchlist(newState);
+        if (onWatchlistChange) onWatchlistChange(dirPath, newState);
+      })
       .catch(() => {});
   };
 

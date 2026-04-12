@@ -13,9 +13,9 @@ import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/intr
 import { getRecommendations } from "./scripts/recommend";
 import db, { DATA_DIR } from "./scripts/db";
 import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
-import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey } from "./scripts/kaidadb";
+import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey, kaidadbMediaUrl } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
-import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream } from "./scripts/streamingProfile";
+import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream, type SelectedAudioStream, type SelectedVideoStream } from "./scripts/streamingProfile";
 
 function getProfileFromReq(req: Request): ProfileData {
   // Try session-based auth first
@@ -103,6 +103,7 @@ const activeTranscodes = new Map<string, {
 
 const MAX_CONCURRENT_CACHE_JOBS = 1;
 const CACHE_PREWARM_DELAY_MS = 8_000;
+const WEB_SAFE_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
 const CACHE_QUEUE_POLL_MS = 2_000;
 const CACHE_RETRY_DELAY_MS = 20_000;
 const MAX_CACHE_JOB_RETRIES = 2;
@@ -605,43 +606,140 @@ Bun.serve({
         // Check KaidaDB first (handles both remote-only and locally-ingested content)
         const kaidadbKey = getKaidadbKey(srcParam);
         if (kaidadbKey) {
-          try {
-            const rangeHeader = req.headers.get("range");
-            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
-            if (kaidaRes.ok || kaidaRes.status === 206) {
-              const headers: Record<string, string> = {
-                "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
-                "Accept-Ranges": "bytes",
-                "X-Cache": "kaidadb",
-              };
-              if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
-              if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
-              return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
-            }
-            // Range not satisfiable — retry without range header
-            if (kaidaRes.status === 416 && rangeHeader) {
-              const retryRes = await kaidadbStream(kaidadbKey, null);
-              if (retryRes.ok) {
+          // Check if the stored content is browser-safe (mp4/webm) — only serve directly if so
+          const kStatus = getKaidadbStatus(srcParam);
+          const isWebSafe = kStatus.content_type ? WEB_SAFE_VIDEO_TYPES.has(kStatus.content_type) : false;
+
+          if (isWebSafe) {
+            try {
+              const rangeHeader = req.headers.get("range");
+              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+              if (kaidaRes.ok || kaidaRes.status === 206) {
                 const headers: Record<string, string> = {
-                  "Content-Type": retryRes.headers.get("content-type") || "video/mp4",
+                  "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
                   "Accept-Ranges": "bytes",
                   "X-Cache": "kaidadb",
                 };
-                if (retryRes.headers.has("content-length")) headers["Content-Length"] = retryRes.headers.get("content-length")!;
-                return new Response(retryRes.body, { status: 200, headers });
+                if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+                if (kaidaRes.status === 200 && kStatus.total_size) {
+                  headers["Content-Length"] = String(kStatus.total_size);
+                }
+                return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
+              }
+              if (kaidaRes.status === 416 && rangeHeader) {
+                const retryRes = await kaidadbStream(kaidadbKey, null);
+                if (retryRes.ok) {
+                  const headers: Record<string, string> = {
+                    "Content-Type": retryRes.headers.get("content-type") || "video/mp4",
+                    "Accept-Ranges": "bytes",
+                    "X-Cache": "kaidadb",
+                  };
+                  if (kStatus.total_size) headers["Content-Length"] = String(kStatus.total_size);
+                  return new Response(retryRes.body, { status: 200, headers });
+                }
+              }
+              if (isRemoteSource) {
+                return new Response("KaidaDB stream error", { status: 502 });
+              }
+            } catch {
+              if (isRemoteSource) {
+                return new Response("KaidaDB unreachable", { status: 502 });
               }
             }
-            // KaidaDB returned an error — for remote-only sources, report transient failure
-            if (isRemoteSource) {
-              return new Response("KaidaDB stream error", { status: 502 });
+          } else if (isRemoteSource) {
+            // Non web-safe remote content (mkv, avi, etc.) — transcode via kaidadb URL
+            const remoteUrl = kaidadbMediaUrl(kaidadbKey);
+            if (!remoteUrl) {
+              return new Response("KaidaDB URL not configured", { status: 502 });
             }
-            // For locally-available content, fall through to local/transcode
-          } catch {
-            // KaidaDB unreachable
-            if (isRemoteSource) {
-              return new Response("KaidaDB unreachable", { status: 502 });
+
+            // Check if we have a completed cache for this remote source
+            const cache = await getCacheStatus(srcParam, audioIndex);
+            if (cache.cached && !cache.transcoding) {
+              const cachedFile = Bun.file(cache.cachePath);
+              const fileSize = cachedFile.size;
+              const rangeHeader = req.headers.get("range");
+              if (rangeHeader) {
+                const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+                if (match) {
+                  const start = parseInt(match[1], 10);
+                  const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+                  const chunkSize = end - start + 1;
+                  return new Response(cachedFile.slice(start, end + 1), {
+                    status: 206,
+                    headers: {
+                      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                      "Accept-Ranges": "bytes",
+                      "Content-Length": String(chunkSize),
+                      "Content-Type": "video/mp4",
+                      "X-Cache": "hit",
+                    },
+                  });
+                }
+              }
+              return new Response(cachedFile, {
+                headers: {
+                  "Accept-Ranges": "bytes",
+                  "Content-Length": String(fileSize),
+                  "Content-Type": "video/mp4",
+                  "X-Cache": "hit",
+                },
+              });
             }
-            // Fall through to local/transcode for content with local copies
+
+            // Live transcode from kaidadb URL — skip ffprobe (saves ~3-5s of sync network I/O).
+            // Always transcode (never codec-copy) since remote MKV is unlikely to be h264+yuv420p,
+            // and the probe would need to read ~10MB over the network to check.
+            // Use stream-relative audio mapping (0:a:N) since we don't know absolute indices.
+            const selectedAudio: SelectedAudioStream = { index: -1, channels: 6, codecName: "unknown" };
+
+            queueCacheTranscode(remoteUrl, audioIndex, 2_000, "stream-start");
+
+            const args = buildLiveTranscodeArgs(remoteUrl, selectedAudio, null, startTime, true);
+            // Fix audio mapping: replace the absolute `-map 0:-1` with stream-relative `-map 0:a:N`
+            for (let i = 0; i < args.length; i++) {
+              if (args[i] === "-map" && args[i + 1] === "0:-1") {
+                args[i + 1] = `0:a:${audioIndex}`;
+                break;
+              }
+            }
+
+            registerLiveStream(srcParam, audioIndex);
+            const ffmpeg = Bun.spawn(args, {
+              stdout: "pipe",
+              stderr: "pipe",
+            });
+            const getStderrTail = drainFfmpegStderr(ffmpeg);
+            let liveStreamReleased = false;
+            const releaseLiveStream = () => {
+              if (liveStreamReleased) return;
+              liveStreamReleased = true;
+              unregisterLiveStream(srcParam, audioIndex);
+            };
+            ffmpeg.exited.then((code) => {
+              releaseLiveStream();
+              if (code !== 0) {
+                console.error(
+                  `[stream] ffmpeg kaidadb transcode failed for ${kaidadbKey} (audio=${audioIndex}, code=${code})` +
+                  (getStderrTail() ? `: ${getStderrTail()}` : "")
+                );
+              }
+            });
+            if (req.signal) {
+              req.signal.addEventListener("abort", () => {
+                try { ffmpeg.kill(); } catch {}
+                releaseLiveStream();
+              });
+            }
+
+            return new Response(ffmpeg.stdout, {
+              headers: {
+                "Content-Type": "video/mp4",
+                "Transfer-Encoding": "chunked",
+                "X-Cache": "miss",
+                "X-Source": "kaidadb-transcode",
+              },
+            });
           }
         }
 
@@ -775,35 +873,65 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
 
-        // For remote sources, check KaidaDB directly
+        // For remote sources, check KaidaDB
         if (sourcePath.startsWith("kaidadb:")) {
           const kaidadbKey = getKaidadbKey(srcParam);
+          if (kaidadbKey) {
+            const kStatus = getKaidadbStatus(srcParam);
+            const isWebSafe = kStatus.content_type ? WEB_SAFE_VIDEO_TYPES.has(kStatus.content_type) : false;
+            if (isWebSafe) {
+              return Response.json({
+                cached: true,
+                transcoding: false,
+                bytesWritten: 0,
+                duration: "",
+                fileSize: 0,
+                kaidadb: true,
+              });
+            }
+            // Non-web-safe remote content — check local transcode cache
+            const remoteUrl = kaidadbMediaUrl(kaidadbKey);
+            if (remoteUrl) {
+              const cache = await getCacheStatus(remoteUrl, audioIndex);
+              return Response.json({
+                cached: cache.cached,
+                transcoding: cache.transcoding,
+                bytesWritten: cache.bytesWritten,
+                duration: cache.duration,
+                fileSize: cache.fileSize,
+                kaidadb: true,
+              });
+            }
+          }
           return Response.json({
-            cached: !!kaidadbKey,
+            cached: false,
             transcoding: false,
             bytesWritten: 0,
             duration: "",
             fileSize: 0,
-            kaidadb: !!kaidadbKey,
           });
         }
 
-        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
         const status = await getCacheStatus(sourcePath, audioIndex);
 
-        // If not locally cached, check KaidaDB
+        // If not locally cached, check KaidaDB (only treat as cached if web-safe)
         if (!status.cached && !status.transcoding) {
           const kaidadbKey = getKaidadbKey(srcParam);
           if (kaidadbKey) {
-            return Response.json({
-              cached: true,
-              transcoding: false,
-              bytesWritten: 0,
-              duration: status.duration,
-              fileSize: status.fileSize,
-              kaidadb: true,
-            });
+            const kStatus = getKaidadbStatus(srcParam);
+            const isWebSafe = kStatus.content_type ? WEB_SAFE_VIDEO_TYPES.has(kStatus.content_type) : false;
+            if (isWebSafe) {
+              return Response.json({
+                cached: true,
+                transcoding: false,
+                bytesWritten: 0,
+                duration: status.duration,
+                fileSize: status.fileSize,
+                kaidadb: true,
+              });
+            }
           }
         }
 
@@ -2053,6 +2181,8 @@ Bun.serve({
           if (!kaidadbKey) return new Response("Not found", { status: 404 });
           try {
             const rangeHeader = req.headers.get("range");
+            // For non-range requests, include total size from DB so the browser knows the file size
+            const kStatus = getKaidadbStatus(servePath);
             const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
             if (!kaidaRes.ok && kaidaRes.status !== 206) {
               return new Response("Not found", { status: 404 });
@@ -2066,8 +2196,16 @@ Bun.serve({
             if (IMAGE_EXTS.has(fileExt)) {
               headers["Cache-Control"] = "public, max-age=86400";
             }
-            if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
-            if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+            if (kaidaRes.headers.has("content-range")) {
+              headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+            }
+            // For non-range 200 responses, set Content-Length from DB metadata so
+            // the browser knows the total file size for seeking. For 206 responses,
+            // the browser uses Content-Range instead. Avoid setting Content-Length
+            // on stream bodies (206) to prevent chunked encoding conflicts.
+            if (kaidaRes.status === 200 && kStatus.total_size) {
+              headers["Content-Length"] = String(kStatus.total_size);
+            }
             return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
           } catch {
             return new Response("KaidaDB unreachable", { status: 502 });
@@ -2095,8 +2233,13 @@ Bun.serve({
                   "Accept-Ranges": "bytes",
                   "X-Source": "kaidadb",
                 };
-                if (kaidaRes.headers.has("content-length")) headers["Content-Length"] = kaidaRes.headers.get("content-length")!;
                 if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+                // For 200 responses, use known file size for Content-Length.
+                // For 206 responses, omit Content-Length to avoid chunked encoding conflicts.
+                if (kaidaRes.status === 200) {
+                  const kStatus = getKaidadbStatus(servePath);
+                  if (kStatus.total_size) headers["Content-Length"] = String(kStatus.total_size);
+                }
                 return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
               }
             } catch {

@@ -26,6 +26,12 @@ export async function kaidadbStream(key: string, rangeHeader?: string | null): P
   return fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers });
 }
 
+export function kaidadbMediaUrl(key: string): string | null {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return null;
+  return `${baseUrl}/v1/media/${encodeURIComponent(key)}`;
+}
+
 export async function kaidadbUpload(
   key: string,
   body: ReadableStream | Uint8Array,

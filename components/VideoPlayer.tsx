@@ -308,6 +308,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
   // Stall detection (4B)
   const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasEverPlayedRef = useRef(false);
 
   // Wake lock (4C)
   const wakeLockRef = useRef<any>(null);
@@ -552,6 +553,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     pendingMetadataRef.current = false;
     prefetchedRef.current = null;
     if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+    hasEverPlayedRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -1378,12 +1380,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   }, [show, playing]);
 
   // ── Stall detection (4B) ──
+  // Only detect stalls after the video has successfully played at least once.
+  // During initial load (especially from kaidadb), the browser needs time to
+  // fetch data and parse the container — firing recovery here is counterproductive.
   useEffect(() => {
     if (!show || !playing) {
       if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
       return;
     }
-    if (isLoading) {
+    if (isLoading && hasEverPlayedRef.current) {
       if (!stallTimerRef.current) {
         stallTimerRef.current = setTimeout(() => {
           stallTimerRef.current = null;
@@ -1650,6 +1655,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             }
           }}
           onCanPlay={() => {
+            hasEverPlayedRef.current = true;
             loadingStartedAtRef.current = null;
             recoveryAttemptsRef.current = 0;
             setRecoveringFromStall(false);

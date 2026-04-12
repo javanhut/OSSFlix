@@ -15,13 +15,24 @@ type MenuRow = {
 type SelectorMenuProps = {
   rows: MenuRow[];
   isContinueWatching?: boolean;
+  onWatchlistChange?: (dirPath: string, inList: boolean) => void;
 };
 
-function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick: () => void; showQuickAdd?: boolean }) {
+function TitleCard({ title, onClick, showQuickAdd, onWatchlistChange }: { title: TitleInfo; onClick: () => void; showQuickAdd?: boolean; onWatchlistChange?: (dirPath: string, inList: boolean) => void }) {
   const [hovered, setHovered] = useState(false);
   const [description, setDescription] = useState<string | null>(null);
   const [inWatchlist, setInWatchlist] = useState(false);
+  const [checkedWatchlist, setCheckedWatchlist] = useState(false);
   const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (showQuickAdd && !checkedWatchlist) {
+      fetch(`/api/watchlist/check?dir=${encodeURIComponent(title.pathToDir)}`, { credentials: "same-origin" })
+        .then((res) => res.json())
+        .then((data: { inList: boolean }) => { setInWatchlist(data.inList); setCheckedWatchlist(true); })
+        .catch(() => {});
+    }
+  }, [showQuickAdd, title.pathToDir, checkedWatchlist]);
 
   useEffect(() => {
     if (hovered && !fetchedRef.current) {
@@ -42,7 +53,11 @@ function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick
       credentials: "same-origin",
       body: JSON.stringify({ dir_path: title.pathToDir }),
     })
-      .then(() => setInWatchlist(!inWatchlist))
+      .then(() => {
+        const newState = !inWatchlist;
+        setInWatchlist(newState);
+        if (onWatchlistChange) onWatchlistChange(title.pathToDir, newState);
+      })
       .catch(() => {});
   };
 
@@ -80,7 +95,7 @@ function TitleCard({ title, onClick, showQuickAdd }: { title: TitleInfo; onClick
   );
 }
 
-export function SelectorMenu({ rows, isContinueWatching }: SelectorMenuProps) {
+export function SelectorMenu({ rows, isContinueWatching, onWatchlistChange }: SelectorMenuProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDir, setSelectedDir] = useState("");
 
@@ -108,6 +123,7 @@ export function SelectorMenu({ rows, isContinueWatching }: SelectorMenuProps) {
                 title={title}
                 onClick={() => handleTitleClick(title.pathToDir)}
                 showQuickAdd={!isContinueWatching}
+                onWatchlistChange={onWatchlistChange}
               />
             ))}
           </div>
@@ -117,6 +133,7 @@ export function SelectorMenu({ rows, isContinueWatching }: SelectorMenuProps) {
         show={modalOpen}
         onHide={() => setModalOpen(false)}
         dirPath={selectedDir}
+        onWatchlistChange={onWatchlistChange}
       />
     </>
   );

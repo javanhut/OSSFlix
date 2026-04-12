@@ -40,10 +40,20 @@ export default function MyList() {
     );
   }
 
+  const handleWatchlistChange = useCallback((dirPath: string, inList: boolean) => {
+    if (!inList) {
+      setRow((prev) => {
+        if (!prev) return prev;
+        const filtered = prev.titles.filter((t) => t.pathToDir !== dirPath);
+        return filtered.length > 0 ? { ...prev, titles: filtered } : null;
+      });
+    }
+  }, []);
+
   return (
     <>
       <h1 className="oss-page-title">My List</h1>
-      {row && <SelectorMenu rows={[row]} />}
+      {row && <SelectorMenu rows={[row]} onWatchlistChange={handleWatchlistChange} />}
       {!row && <p className="oss-empty">Your list is empty. Add titles from their detail page.</p>}
     </>
   );

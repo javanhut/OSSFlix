@@ -112,20 +112,25 @@ export function buildLiveTranscodeArgs(
   sourcePath: string,
   selectedAudio: SelectedAudioStream | null,
   selectedVideo: SelectedVideoStream | null,
-  startTime: number
+  startTime: number,
+  isRemote: boolean = false
 ): string[] {
   const seekWindow = 30;
   const preSeek = startTime > 0 ? Math.max(0, startTime - seekWindow) : 0;
   const postSeek = startTime > 0 ? startTime - preSeek : 0;
-  const canCopyVideo = !!selectedVideo && selectedVideo.codecName === "h264" && selectedVideo.pixFmt === "yuv420p" && startTime <= 0;
-  const canCopyAudio = !!selectedAudio && selectedAudio.codecName === "aac" && selectedAudio.channels <= 2;
+  const canCopyVideo = !isRemote && !!selectedVideo && selectedVideo.codecName === "h264" && selectedVideo.pixFmt === "yuv420p" && startTime <= 0;
+  const canCopyAudio = !isRemote && !!selectedAudio && selectedAudio.codecName === "aac" && selectedAudio.channels <= 2;
+
+  // Remote sources: smaller probe (MKV headers fit in ~1MB) and shorter fragments for faster first frame
+  const probeSize = isRemote ? "2M" : "10M";
+  const fragDuration = isRemote ? "200000" : "1000000";
 
   return [
     "ffmpeg",
     "-probesize",
-    "10M",
+    probeSize,
     "-analyzeduration",
-    "10M",
+    probeSize,
     ...(preSeek > 0 ? ["-ss", String(preSeek)] : []),
     "-i",
     sourcePath,
@@ -167,7 +172,7 @@ export function buildLiveTranscodeArgs(
     "-movflags",
     "frag_keyframe+empty_moov+default_base_moof+faststart",
     "-frag_duration",
-    "1000000",
+    fragDuration,
     "-f",
     "mp4",
     "-",
