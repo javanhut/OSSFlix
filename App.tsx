@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ProfileProvider, useProfile } from "./context/ProfileContext";
 import Layout from "./components/Layout";
 import Home from "./pages/Hero";
@@ -13,9 +13,20 @@ import MyList from "./pages/MyList";
 import Explore from "./pages/Explore";
 import ForYou from "./pages/ForYou";
 import Stats from "./pages/Stats";
+import Admin from "./pages/Admin";
 
 function AppRoutes() {
   const { authenticated, profile, loading } = useProfile();
+  const location = useLocation();
+
+  // Admin route is always accessible
+  if (location.pathname === "/admin") {
+    return (
+      <Routes>
+        <Route path="/admin" element={<Admin />} />
+      </Routes>
+    );
+  }
 
   // Show spinner while checking session
   if (loading) {

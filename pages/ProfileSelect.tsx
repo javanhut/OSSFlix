@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useProfile, type PublicProfile } from "../context/ProfileContext";
 
 export default function ProfileSelect() {
-  const { login, setPassword, logout } = useProfile();
+  const { login, setPassword, logout, profile: currentProfile } = useProfile();
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,6 +11,7 @@ export default function ProfileSelect() {
   const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
+  const userEmail = currentProfile?.email;
 
   // Password prompt state
   const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
@@ -22,13 +23,24 @@ export default function ProfileSelect() {
   const [submitting, setSubmitting] = useState(false);
 
   const loadProfiles = () => {
-    fetch("/api/profiles")
-      .then((r) => r.json())
-      .then((data) => { setProfiles(data); setLoading(false); })
-      .catch(() => setLoading(false));
+    if (userEmail) {
+      fetch("/api/auth/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail }),
+      })
+        .then((r) => r.json())
+        .then((data) => { setProfiles(data.profiles || []); setLoading(false); })
+        .catch(() => setLoading(false));
+    } else {
+      fetch("/api/profiles")
+        .then((r) => r.json())
+        .then((data) => { setProfiles(data); setLoading(false); })
+        .catch(() => setLoading(false));
+    }
   };
 
-  useEffect(() => { loadProfiles(); }, []);
+  useEffect(() => { loadProfiles(); }, [userEmail]);
 
   const handleSelect = (p: PublicProfile) => {
     setSelectedProfile(p);
@@ -90,7 +102,7 @@ export default function ProfileSelect() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ name, password: newPassword }),
+        body: JSON.stringify({ name, password: newPassword, email: userEmail || "" }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); return; }

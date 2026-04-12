@@ -228,4 +228,40 @@ db.run(`
   )
 `);
 
+// Index for email-based profile lookup on login page
+db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_email_lower ON profiles(LOWER(email))`);
+
+// Migration: add SMTP settings to global_settings
+try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_host TEXT"); } catch {}
+try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_port INTEGER"); } catch {}
+try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_user TEXT"); } catch {}
+try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_pass TEXT"); } catch {}
+try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_from TEXT"); } catch {}
+
+// Password reset tokens
+db.run(`
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  )
+`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON password_reset_tokens(token)`);
+
+// Migration: add admin password to global_settings
+try { db.run("ALTER TABLE global_settings ADD COLUMN admin_password_hash TEXT"); } catch {}
+
+// Admin sessions
+db.run(`
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    id TEXT PRIMARY KEY,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  )
+`);
+
 export default db;

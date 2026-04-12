@@ -22,7 +22,7 @@ interface ProfileContextType {
   profile: ProfileData | null;
   loading: boolean;
   login: (profileId: number, password: string) => Promise<{ error?: string }>;
-  register: (name: string, password: string) => Promise<{ error?: string }>;
+  register: (name: string, password: string, email: string) => Promise<{ error?: string }>;
   setPassword: (profileId: number, password: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   setProfile: (p: ProfileData | null) => void;
@@ -99,13 +99,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (name: string, password: string): Promise<{ error?: string }> => {
+  const register = useCallback(async (name: string, password: string, email: string): Promise<{ error?: string }> => {
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ name, password }),
+        body: JSON.stringify({ name, password, email }),
       });
       const data = await res.json();
       if (data.error) return { error: data.error };

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readTomlFile } from "./scripts/tomlreader";
 import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
 import { copyFile, mkdir, unlink } from "node:fs/promises";
-import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs, getProfileWithHash, setProfilePassword, profileHasPassword } from "./scripts/profile";
+import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, getProfilesByEmail, getProfilesWithoutEmail, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs, getProfileWithHash, setProfilePassword, profileHasPassword } from "./scripts/profile";
 import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
 import { updateTomlFile } from "./scripts/tomlwriter";
@@ -16,6 +16,8 @@ import { authenticateRequest, hashPassword, verifyPassword, createSession, delet
 import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey, kaidadbMediaUrl } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
 import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream, type SelectedAudioStream, type SelectedVideoStream } from "./scripts/streamingProfile";
+import { isSmtpConfigured, sendPasswordResetEmail, testSmtpConnection, createResetToken, verifyResetToken, cleanExpiredResetTokens } from "./scripts/email";
+import { isAdminSetup, setupAdmin, verifyAdminPassword, createAdminSession, deleteAdminSession, authenticateAdminRequest, adminSessionCookie, clearAdminSessionCookie } from "./scripts/admin";
 
 function getProfileFromReq(req: Request): ProfileData {
   // Try session-based auth first
@@ -434,6 +436,114 @@ Bun.serve({
     "/explore": index,
     "/foryou": index,
     "/stats": index,
+    "/admin": index,
+    "/api/admin/setup": {
+      async POST(req) {
+        try {
+          if (isAdminSetup()) return Response.json({ error: "Admin already configured" }, { status: 400 });
+          const { password } = await req.json();
+          if (!password || password.length < 4) return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          await setupAdmin(password);
+          const token = createAdminSession();
+          return Response.json({ ok: true }, { headers: { "Set-Cookie": adminSessionCookie(token) } });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/admin/login": {
+      async POST(req) {
+        try {
+          const { password } = await req.json();
+          if (!password) return Response.json({ error: "Password required" }, { status: 400 });
+          const valid = await verifyAdminPassword(password);
+          if (!valid) return Response.json({ error: "Invalid password" }, { status: 401 });
+          const token = createAdminSession();
+          return Response.json({ ok: true }, { headers: { "Set-Cookie": adminSessionCookie(token) } });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/admin/logout": {
+      POST(req) {
+        const cookieHeader = req.headers.get("cookie") || "";
+        const match = cookieHeader.match(/(?:^|;\s*)ossflix_admin=([^;]+)/);
+        if (match) deleteAdminSession(match[1]);
+        return Response.json({ ok: true }, { headers: { "Set-Cookie": clearAdminSessionCookie() } });
+      },
+    },
+    "/api/admin/me": {
+      GET(req) {
+        const isSetup = isAdminSetup();
+        const authenticated = authenticateAdminRequest(req);
+        return Response.json({ setup: isSetup, authenticated });
+      },
+    },
+    "/api/admin/accounts": {
+      GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const all = getAllProfiles();
+        const grouped: Record<string, { email: string; profiles: { id: number; name: string; image_path: string | null; has_password: boolean }[] }> = {};
+        for (const p of all) {
+          const key = p.email?.toLowerCase() || "__no_email__";
+          if (!grouped[key]) grouped[key] = { email: p.email || "", profiles: [] };
+          grouped[key].profiles.push({ id: p.id, name: p.name, image_path: p.image_path, has_password: profileHasPassword(p.id) });
+        }
+        return Response.json({ accounts: Object.values(grouped) });
+      },
+    },
+    "/api/admin/accounts/delete-email": {
+      async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const { email } = await req.json();
+        if (!email) return Response.json({ error: "Missing email" }, { status: 400 });
+        const profiles = getProfilesByEmail(email);
+        for (const p of profiles) deleteProfile(p.id);
+        return Response.json({ ok: true, deleted: profiles.length });
+      },
+    },
+    "/api/admin/accounts/delete-profile": {
+      async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const { id } = await req.json();
+        if (!id) return Response.json({ error: "Missing id" }, { status: 400 });
+        deleteProfile(id);
+        return Response.json({ ok: true });
+      },
+    },
+    "/api/auth/lookup": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { email } = body;
+          if (!email || typeof email !== "string" || !email.trim()) {
+            return Response.json({ error: "Email is required" }, { status: 400 });
+          }
+          const profiles = getProfilesByEmail(email).map(p => ({
+            id: p.id,
+            name: p.name,
+            image_path: p.image_path,
+            has_password: profileHasPassword(p.id),
+          }));
+          const hasUnclaimed = getProfilesWithoutEmail().length > 0;
+          return Response.json({ profiles, hasUnclaimed });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/auth/lookup-unclaimed": {
+      POST() {
+        const profiles = getProfilesWithoutEmail().map(p => ({
+          id: p.id,
+          name: p.name,
+          image_path: p.image_path,
+          has_password: profileHasPassword(p.id),
+        }));
+        return Response.json({ profiles });
+      },
+    },
     "/api/auth/login": {
       async POST(req) {
         try {
@@ -462,7 +572,10 @@ Bun.serve({
       async POST(req) {
         try {
           const body = await req.json();
-          const { name, password } = body;
+          const { name, password, email } = body;
+          if (!email || typeof email !== "string" || !email.trim()) {
+            return Response.json({ error: "Email is required" }, { status: 400 });
+          }
           if (!name || name.trim().length < 1 || name.trim().length > 25) {
             return Response.json({ error: "Name must be between 1 and 25 characters" }, { status: 400 });
           }
@@ -470,7 +583,7 @@ Bun.serve({
             return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
           }
           const hash = await hashPassword(password);
-          const profile = createProfile(name.trim(), hash);
+          const profile = createProfile(name.trim(), hash, email.trim());
           const token = createSession(profile.id, req.headers.get("user-agent") || undefined);
           return Response.json({ profile }, {
             headers: { "Set-Cookie": sessionCookie(token) },
@@ -585,6 +698,62 @@ Bun.serve({
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
+      },
+    },
+    "/api/auth/forgot-password": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId } = body;
+          if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
+          if (!isSmtpConfigured()) {
+            return Response.json({ error: "Email is not configured on this server. Contact the server admin." }, { status: 400 });
+          }
+          const profile = getProfile(profileId);
+          if (!profile) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (!profile.email) {
+            return Response.json({ error: "No email associated with this profile" }, { status: 400 });
+          }
+          const code = createResetToken(profileId);
+          await sendPasswordResetEmail(profile.email, profile.name, code);
+          cleanExpiredResetTokens();
+          return Response.json({ ok: true });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      },
+    },
+    "/api/auth/reset-password": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId, code, newPassword } = body;
+          if (!profileId || !code || !newPassword) {
+            return Response.json({ error: "Missing required fields" }, { status: 400 });
+          }
+          if (newPassword.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          if (!verifyResetToken(profileId, code)) {
+            return Response.json({ error: "Invalid or expired reset code" }, { status: 400 });
+          }
+          const hash = await hashPassword(newPassword);
+          setProfilePassword(profileId, hash);
+          const token = createSession(profileId, req.headers.get("user-agent") || undefined);
+          const profile = getProfile(profileId)!;
+          return Response.json({ profile }, {
+            headers: { "Set-Cookie": sessionCookie(token) },
+          });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/smtp/test": {
+      async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
+        const result = await testSmtpConnection();
+        return Response.json(result);
       },
     },
     "/api/stream": {
@@ -1067,7 +1236,8 @@ Bun.serve({
       },
     },
     "/api/media/resolve": {
-      async GET() {
+      async GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         await resolveToDb();
         const rows = getCategoriesFromDb();
         return Response.json(rows);
@@ -1219,6 +1389,7 @@ Bun.serve({
     },
     "/api/kaidadb/ingest": {
       async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const { src } = body;
@@ -1267,6 +1438,7 @@ Bun.serve({
         return Response.json(settings);
       },
       async PUT(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const updated = updateGlobalSettings(body);
@@ -1582,6 +1754,7 @@ Bun.serve({
     },
     "/api/migrator/add": {
       async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const { sourcePath, files: fileList, updateEpisodeCount } = body;
@@ -1626,6 +1799,7 @@ Bun.serve({
     },
     "/api/migrator/create": {
       async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const { mediaType, toml: tomlData, files: fileList } = body;
@@ -1927,6 +2101,7 @@ Bun.serve({
     },
     "/api/tmdb/apply": {
       async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const { dirPath, tmdbId, mediaType } = body;
@@ -1986,6 +2161,7 @@ Bun.serve({
     // Feature 4: Auto intro/outro detection
     "/api/detect/intros": {
       async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         try {
           const body = await req.json();
           const { dirPath } = body;

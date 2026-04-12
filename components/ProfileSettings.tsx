@@ -98,7 +98,7 @@ const IconInfo = () => (
 );
 
 // ── Shared styles ──
-const css = {
+export const css = {
   overlay: {
     position: "fixed" as const, inset: 0, zIndex: 2000,
     background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)",
@@ -764,7 +764,7 @@ function DevicesTab() {
   );
 }
 
-function MigratorTab() {
+export function MigratorTab() {
   const [step, setStep] = useState(0);
   const [mediaType, setMediaType] = useState<"Movie" | "tv show">("Movie");
   const [name, setName] = useState("");
@@ -1185,7 +1185,7 @@ const IconAddFile = () => (
   </svg>
 );
 
-function AddMediaTab() {
+export function AddMediaTab() {
   const [titles, setTitles] = useState<ExistingTitle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -1499,128 +1499,11 @@ function AddMediaTab() {
 }
 
 // ── Settings Modal ──
-function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
+function SettingsModal({ show, onHide }: {
   show: boolean; onHide: () => void;
   profile: ProfileData; onProfileUpdate: (p: ProfileData) => void;
 }) {
-  const { profile: ctxProfile } = useProfile();
-  const [activeTab, setActiveTab] = useState<"directories" | "addmedia" | "migrator" | "devices" | "about">("directories");
-  const [moviesDir, setMoviesDir] = useState("");
-  const [tvshowsDir, setTvshowsDir] = useState("");
-  const [useGlobal, setUseGlobal] = useState(true);
-  const [browseTarget, setBrowseTarget] = useState<"movies" | "tvshows" | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [moviesFocused, setMoviesFocused] = useState(false);
-  const [tvFocused, setTvFocused] = useState(false);
-  const [tmdbKey, setTmdbKey] = useState("");
-  const [tmdbFocused, setTmdbFocused] = useState(false);
-  const [tmdbTesting, setTmdbTesting] = useState(false);
-  const [tmdbTestResult, setTmdbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [kaidadbUrl, setKaidadbUrl] = useState("");
-  const [kaidadbFocused, setKaidadbFocused] = useState(false);
-  const [kaidadbTesting, setKaidadbTesting] = useState(false);
-  const [kaidadbTestResult, setKaidadbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [kaidadbRootPrefix, setKaidadbRootPrefix] = useState("");
-  const [kaidadbMoviesPrefix, setKaidadbMoviesPrefix] = useState("");
-  const [kaidadbTvshowsPrefix, setKaidadbTvshowsPrefix] = useState("");
-
-  useEffect(() => {
-    if (show) {
-      const isGlobal = (profile as any).use_global_dirs !== 0;
-      setUseGlobal(isGlobal);
-      setTmdbTestResult(null);
-      // Always load global settings for TMDB key
-      fetch("/api/global-settings")
-        .then((r) => r.json())
-        .then((data) => {
-          setTmdbKey(data.tmdb_api_key ?? "");
-          setKaidadbUrl(data.kaidadb_url ?? "");
-          setKaidadbRootPrefix(data.kaidadb_root_prefix ?? "");
-          setKaidadbMoviesPrefix(data.kaidadb_movies_prefix ?? "");
-          setKaidadbTvshowsPrefix(data.kaidadb_tvshows_prefix ?? "");
-          setKaidadbTestResult(null);
-          if (isGlobal) {
-            setMoviesDir(data.movies_directory ?? "");
-            setTvshowsDir(data.tvshows_directory ?? "");
-          }
-        })
-        .catch(() => {});
-      if (!isGlobal) {
-        setMoviesDir(profile.movies_directory ?? "");
-        setTvshowsDir(profile.tvshows_directory ?? "");
-      }
-    }
-  }, [show, profile]);
-
-  const pHeaders: Record<string, string> = { "Content-Type": "application/json" };
-
-  const handleSave = () => {
-    setSaving(true);
-    // Always save TMDB key to global settings
-    const globalPayload: Record<string, any> = {
-      tmdb_api_key: tmdbKey || null,
-      kaidadb_url: kaidadbUrl || null,
-      kaidadb_root_prefix: kaidadbUrl.trim() ? kaidadbRootPrefix : null,
-      kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
-      kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
-    };
-    if (useGlobal) {
-      globalPayload.movies_directory = moviesDir || null;
-      globalPayload.tvshows_directory = tvshowsDir || null;
-    }
-    if (useGlobal) {
-      // Save to global settings
-      Promise.all([
-        fetch("/api/global-settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(globalPayload),
-        }),
-        fetch("/api/profile", {
-          method: "PUT",
-          headers: pHeaders,
-          body: JSON.stringify({ use_global_dirs: 1 }),
-        }),
-      ])
-        .then(([, profileRes]) => profileRes.json())
-        .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
-        .catch((err) => console.error("Failed to save settings:", err))
-        .finally(() => setSaving(false));
-    } else {
-      // Save to profile-specific directories + TMDB key to global
-      Promise.all([
-        fetch("/api/global-settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tmdb_api_key: tmdbKey || null,
-            kaidadb_url: kaidadbUrl || null,
-            kaidadb_root_prefix: kaidadbUrl.trim() ? kaidadbRootPrefix : null,
-            kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
-            kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
-          }),
-        }),
-        fetch("/api/profile", {
-          method: "PUT",
-          headers: pHeaders,
-          body: JSON.stringify({
-            movies_directory: moviesDir || null,
-            tvshows_directory: tvshowsDir || null,
-            use_global_dirs: 0,
-          }),
-        }),
-      ])
-        .then(([, profileRes]) => profileRes.json())
-        .then((data) => { onProfileUpdate(data); onHide(); window.dispatchEvent(new CustomEvent("ossflix-media-updated")); })
-        .catch((err) => console.error("Failed to save settings:", err))
-        .finally(() => setSaving(false));
-    }
-  };
-
-  const handleBrowseSelect = (path: string) => {
-    if (browseTarget === "movies") setMoviesDir(path);
-    else if (browseTarget === "tvshows") setTvshowsDir(path);
-  };
+  const [activeTab, setActiveTab] = useState<"devices" | "about">("devices");
 
   if (!show) return null;
 
@@ -1633,386 +1516,60 @@ function SettingsModal({ show, onHide, profile, onProfileUpdate }: {
   });
 
   return (
-    <>
-      <div style={css.overlay} onClick={(e) => { if (e.target === e.currentTarget) onHide(); }}>
-        <div style={{ ...css.panel, ...css.panelLg, maxWidth: (activeTab === "migrator" || activeTab === "addmedia") ? "700px" : "640px", transition: "max-width 0.3s ease" }}>
-          <div style={css.header}>
-            <span style={css.headerTitle}>Settings</span>
-            <button style={css.closeBtn} onClick={onHide}><IconX /></button>
-          </div>
+    <div style={css.overlay} onClick={(e) => { if (e.target === e.currentTarget) onHide(); }}>
+      <div style={{ ...css.panel, ...css.panelLg }}>
+        <div style={css.header}>
+          <span style={css.headerTitle}>Settings</span>
+          <button style={css.closeBtn} onClick={onHide}><IconX /></button>
+        </div>
 
-          {/* Tabs */}
-          <div style={{
-            display: "flex", gap: "4px", padding: "0 24px 16px",
-            borderBottom: "1px solid var(--oss-border)",
-          }}>
-            <button style={tabStyle(activeTab === "directories")} onClick={() => setActiveTab("directories")}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconFolder /> Media</span>
-            </button>
-            <button style={tabStyle(activeTab === "addmedia")} onClick={() => setActiveTab("addmedia")}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconAddFile /> Add Media</span>
-            </button>
-            <button style={tabStyle(activeTab === "migrator")} onClick={() => setActiveTab("migrator")}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconPlus /> Migrator</span>
-            </button>
-            <button style={tabStyle(activeTab === "devices")} onClick={() => setActiveTab("devices")}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconDevices /> Devices</span>
-            </button>
-            <button style={tabStyle(activeTab === "about")} onClick={() => setActiveTab("about")}>
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconInfo /> About</span>
-            </button>
-          </div>
+        <div style={{
+          display: "flex", gap: "4px", padding: "0 24px 16px",
+          borderBottom: "1px solid var(--oss-border)",
+        }}>
+          <button style={tabStyle(activeTab === "devices")} onClick={() => setActiveTab("devices")}>
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconDevices /> Devices</span>
+          </button>
+          <button style={tabStyle(activeTab === "about")} onClick={() => setActiveTab("about")}>
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><IconInfo /> About</span>
+          </button>
+        </div>
 
-          <div style={css.body}>
-            {activeTab === "directories" && (
-              <>
-                {/* Global vs per-profile toggle */}
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 16px", marginBottom: "20px",
-                  background: "var(--oss-bg-elevated)", borderRadius: "10px",
-                  border: "1px solid var(--oss-border)",
-                }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "var(--oss-text)" }}>
-                      Shared Media Directories
-                    </p>
-                    <p style={{ margin: "2px 0 0", fontSize: "0.72rem", color: "var(--oss-text-muted)" }}>
-                      {useGlobal ? "All profiles share these directories" : "Using directories specific to this profile"}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const next = !useGlobal;
-                      setUseGlobal(next);
-                      if (next) {
-                        fetch("/api/global-settings").then((r) => r.json()).then((data) => {
-                          setMoviesDir(data.movies_directory ?? "");
-                          setTvshowsDir(data.tvshows_directory ?? "");
-                        }).catch(() => {});
-                      } else {
-                        setMoviesDir(profile.movies_directory ?? "");
-                        setTvshowsDir(profile.tvshows_directory ?? "");
-                      }
-                    }}
-                    style={{
-                      width: "44px", height: "24px", borderRadius: "12px",
-                      border: "none", cursor: "pointer",
-                      background: useGlobal ? "#3b82f6" : "rgba(255,255,255,0.15)",
-                      position: "relative", transition: "background 0.2s ease",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{
-                      width: "18px", height: "18px", borderRadius: "50%",
-                      background: "#fff", position: "absolute", top: "3px",
-                      left: useGlobal ? "23px" : "3px",
-                      transition: "left 0.2s ease",
-                    }} />
-                  </button>
-                </div>
+        <div style={css.body}>
+          {activeTab === "devices" && <DevicesTab />}
 
-                {/* Movies directory */}
-                <div style={{ marginBottom: "24px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{
-                      width: "36px", height: "36px", borderRadius: "10px",
-                      background: "rgba(59,130,246,0.15)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#3b82f6",
-                    }}>
-                      <IconFilm />
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>Movies Directory</p>
-                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Folder containing your movie directories</p>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <input
-                      type="text" value={moviesDir}
-                      onChange={(e) => setMoviesDir(e.target.value)}
-                      onFocus={() => setMoviesFocused(true)}
-                      onBlur={() => setMoviesFocused(false)}
-                      placeholder="/path/to/movies"
-                      style={{
-                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
-                        ...(moviesFocused ? css.inputFocus : {}),
-                      }}
-                    />
-                    <button
-                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0 }}
-                      onClick={() => setBrowseTarget("movies")}
-                    >
-                      <IconFolder /> Browse
-                    </button>
-                  </div>
-                </div>
-
-                {/* TV Shows directory */}
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{
-                      width: "36px", height: "36px", borderRadius: "10px",
-                      background: "rgba(34,197,94,0.15)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#22c55e",
-                    }}>
-                      <IconTv />
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>TV Shows Directory</p>
-                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Folder containing your TV show directories</p>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <input
-                      type="text" value={tvshowsDir}
-                      onChange={(e) => setTvshowsDir(e.target.value)}
-                      onFocus={() => setTvFocused(true)}
-                      onBlur={() => setTvFocused(false)}
-                      placeholder="/path/to/tvshows"
-                      style={{
-                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
-                        ...(tvFocused ? css.inputFocus : {}),
-                      }}
-                    />
-                    <button
-                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0 }}
-                      onClick={() => setBrowseTarget("tvshows")}
-                    >
-                      <IconFolder /> Browse
-                    </button>
-                  </div>
-                </div>
-
-                {/* TMDB API Key */}
-                <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid var(--oss-border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{
-                      width: "36px", height: "36px", borderRadius: "10px",
-                      background: "rgba(168,85,247,0.15)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#a855f7",
-                    }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>TMDB API Key</p>
-                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Optional. Enables auto-fetching metadata from TMDB.</p>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <input
-                      type="password" value={tmdbKey}
-                      onChange={(e) => { setTmdbKey(e.target.value); setTmdbTestResult(null); }}
-                      onFocus={() => setTmdbFocused(true)}
-                      onBlur={() => setTmdbFocused(false)}
-                      placeholder="Enter your TMDB API key"
-                      style={{
-                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
-                        ...(tmdbFocused ? css.inputFocus : {}),
-                      }}
-                    />
-                    <button
-                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0, opacity: !tmdbKey.trim() ? 0.5 : 1 }}
-                      disabled={!tmdbKey.trim() || tmdbTesting}
-                      onClick={() => {
-                        setTmdbTesting(true);
-                        setTmdbTestResult(null);
-                        fetch(`/api/tmdb/search?q=test&type=movie`, {
-                          headers: { "x-tmdb-key-test": tmdbKey },
-                        })
-                          .then(async (r) => {
-                            // We need to actually test with the key directly
-                            const testUrl = `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(tmdbKey)}&query=test`;
-                            const testRes = await fetch(testUrl);
-                            if (testRes.ok) {
-                              setTmdbTestResult({ ok: true, message: "API key is valid!" });
-                            } else {
-                              setTmdbTestResult({ ok: false, message: "Invalid API key" });
-                            }
-                          })
-                          .catch(() => setTmdbTestResult({ ok: false, message: "Connection failed" }))
-                          .finally(() => setTmdbTesting(false));
-                      }}
-                    >
-                      {tmdbTesting ? "Testing..." : "Test"}
-                    </button>
-                  </div>
-                  {tmdbTestResult && (
-                    <p style={{
-                      marginTop: "6px", fontSize: "0.78rem", fontWeight: 500,
-                      color: tmdbTestResult.ok ? "#22c55e" : "#ef4444",
-                    }}>
-                      {tmdbTestResult.message}
-                    </p>
-                  )}
-                </div>
-
-                {/* KaidaDB Storage */}
-                <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid var(--oss-border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{
-                      width: "36px", height: "36px", borderRadius: "10px",
-                      background: "rgba(59,130,246,0.15)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#3b82f6",
-                    }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "var(--oss-text)" }}>KaidaDB Storage</p>
-                      <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--oss-text-muted)" }}>Optional. Stream media from a KaidaDB server.</p>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <input
-                      type="text" value={kaidadbUrl}
-                      onChange={(e) => { setKaidadbUrl(e.target.value); setKaidadbTestResult(null); }}
-                      onFocus={() => setKaidadbFocused(true)}
-                      onBlur={() => setKaidadbFocused(false)}
-                      placeholder="http://localhost:8080"
-                      style={{
-                        ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem",
-                        ...(kaidadbFocused ? css.inputFocus : {}),
-                      }}
-                    />
-                    <button
-                      style={{ ...css.btn, ...css.btnSecondary, flexShrink: 0, opacity: !kaidadbUrl.trim() ? 0.5 : 1 }}
-                      disabled={!kaidadbUrl.trim() || kaidadbTesting}
-                      onClick={() => {
-                        setKaidadbTesting(true);
-                        setKaidadbTestResult(null);
-                        fetch(`${kaidadbUrl.replace(/\/+$/, "")}/v1/health`)
-                          .then((r) => {
-                            if (r.ok) {
-                              setKaidadbTestResult({ ok: true, message: "Connected to KaidaDB!" });
-                            } else {
-                              setKaidadbTestResult({ ok: false, message: `HTTP ${r.status}` });
-                            }
-                          })
-                          .catch(() => setKaidadbTestResult({ ok: false, message: "Connection failed" }))
-                          .finally(() => setKaidadbTesting(false));
-                      }}
-                    >
-                      {kaidadbTesting ? "Testing..." : "Test"}
-                    </button>
-                  </div>
-                  {kaidadbTestResult && (
-                    <p style={{
-                      marginTop: "6px", fontSize: "0.78rem", fontWeight: 500,
-                      color: kaidadbTestResult.ok ? "#22c55e" : "#ef4444",
-                    }}>
-                      {kaidadbTestResult.message}
-                    </p>
-                  )}
-
-                  {/* KaidaDB Remote Prefixes */}
-                  {kaidadbUrl.trim() && (
-                    <div style={{ marginTop: "16px" }}>
-                      <p style={{ margin: "0 0 4px", fontSize: "0.78rem", color: "var(--oss-text-muted)" }}>
-                        Remote media prefixes — use root prefix for auto-discovery, or set explicit movie/TV prefixes.
-                      </p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
-                        <div>
-                          <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>Root Prefix</label>
-                          <input
-                            type="text" value={kaidadbRootPrefix}
-                            onChange={(e) => setKaidadbRootPrefix(e.target.value)}
-                            placeholder="leave empty to scan all"
-                            style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
-                          />
-                        </div>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>Movies Prefix</label>
-                            <input
-                              type="text" value={kaidadbMoviesPrefix}
-                              onChange={(e) => setKaidadbMoviesPrefix(e.target.value)}
-                              placeholder="movies/"
-                              style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
-                            />
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: "0.75rem", color: "var(--oss-text-muted)", marginBottom: "2px", display: "block" }}>TV Shows Prefix</label>
-                            <input
-                              type="text" value={kaidadbTvshowsPrefix}
-                              onChange={(e) => setKaidadbTvshowsPrefix(e.target.value)}
-                              placeholder="tv/"
-                              style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {activeTab === "addmedia" && <AddMediaTab />}
-
-            {activeTab === "migrator" && <MigratorTab />}
-
-            {activeTab === "devices" && <DevicesTab />}
-
-            {activeTab === "about" && (
-              <div style={{ textAlign: "center", padding: "2rem 0" }}>
-                <div style={{
-                  width: "64px", height: "64px", borderRadius: "16px",
-                  background: "linear-gradient(135deg, #3b82f6, #60a5fa)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  margin: "0 auto 16px", fontSize: "1.6rem", fontWeight: 800, color: "#fff",
-                }}>
-                  O
-                </div>
-                <h3 style={{ margin: "0 0 4px", fontSize: "1.2rem", fontWeight: 700, color: "var(--oss-text)" }}>Reelscape</h3>
-                <p style={{ margin: "0 0 16px", fontSize: "0.85rem", color: "var(--oss-text-muted)" }}>
-                  Open-source media browser and player
-                </p>
-                <div style={{
-                  display: "inline-flex", gap: "16px", padding: "12px 20px",
-                  background: "var(--oss-bg-elevated)", borderRadius: "10px",
-                  fontSize: "0.8rem", color: "var(--oss-text-muted)",
-                }}>
-                  <span>Powered by <strong style={{ color: "var(--oss-text)" }}>Bun</strong></span>
-                  <span style={{ color: "var(--oss-border)" }}>|</span>
-                  <span>Built with <strong style={{ color: "var(--oss-text)" }}>React</strong></span>
-                </div>
+          {activeTab === "about" && (
+            <div style={{ textAlign: "center", padding: "2rem 0" }}>
+              <div style={{
+                width: "64px", height: "64px", borderRadius: "16px",
+                background: "linear-gradient(135deg, #3b82f6, #60a5fa)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                margin: "0 auto 16px", fontSize: "1.6rem", fontWeight: 800, color: "#fff",
+              }}>
+                O
               </div>
-            )}
-          </div>
+              <h3 style={{ margin: "0 0 4px", fontSize: "1.2rem", fontWeight: 700, color: "var(--oss-text)" }}>Reelscape</h3>
+              <p style={{ margin: "0 0 16px", fontSize: "0.85rem", color: "var(--oss-text-muted)" }}>
+                Open-source media browser and player
+              </p>
+              <div style={{
+                display: "inline-flex", gap: "16px", padding: "12px 20px",
+                background: "var(--oss-bg-elevated)", borderRadius: "10px",
+                fontSize: "0.8rem", color: "var(--oss-text-muted)",
+              }}>
+                <span>Powered by <strong style={{ color: "var(--oss-text)" }}>Bun</strong></span>
+                <span style={{ color: "var(--oss-border)" }}>|</span>
+                <span>Built with <strong style={{ color: "var(--oss-text)" }}>React</strong></span>
+              </div>
+            </div>
+          )}
+        </div>
 
-          <div style={css.footer}>
-            <button style={{ ...css.btn, ...css.btnSecondary }} onClick={onHide}>Cancel</button>
-            {activeTab === "directories" && (
-              <button
-                style={{ ...css.btn, ...css.btnPrimary, opacity: saving ? 0.6 : 1 }}
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Save Settings"}
-              </button>
-            )}
-          </div>
+        <div style={css.footer}>
+          <button style={{ ...css.btn, ...css.btnSecondary }} onClick={onHide}>Close</button>
         </div>
       </div>
-
-      <FileBrowser
-        show={browseTarget !== null}
-        onHide={() => setBrowseTarget(null)}
-        onSelect={handleBrowseSelect}
-        initialPath={browseTarget === "movies" ? (moviesDir || "/") : (tvshowsDir || "/")}
-        mode="directories"
-      />
-    </>
+    </div>
   );
 }
 
@@ -2171,9 +1728,6 @@ export function Profile() {
             </DropdownItem>
             <DropdownItem onClick={() => { setDropdownOpen(false); setShowSettings(true); }}>
               <IconSettings /> Settings
-            </DropdownItem>
-            <DropdownItem onClick={handleRescan} style={rescanning ? { cursor: "not-allowed", opacity: 0.6 } : {}}>
-              <IconRescan spinning={rescanning} /> {rescanning ? "Scanning..." : "Rescan Library"}
             </DropdownItem>
             <div className="oss-profile-dropdown-divider" style={{ height: "1px", background: "var(--oss-border)", margin: "4px 0" }} />
             <DropdownItem onClick={() => { setDropdownOpen(false); logout(); navigate("/profiles"); }}>

@@ -18,6 +18,11 @@ export interface GlobalSettings {
   kaidadb_movies_prefix: string | null;
   kaidadb_tvshows_prefix: string | null;
   kaidadb_root_prefix: string | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_user: string | null;
+  smtp_pass: string | null;
+  smtp_from: string | null;
 }
 
 export function getProfile(id: number): ProfileData | null {
@@ -28,12 +33,21 @@ export function getAllProfiles(): ProfileData[] {
   return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id").all() as ProfileData[];
 }
 
-export function createProfile(name: string, passwordHash?: string): ProfileData {
+export function getProfilesByEmail(email: string): ProfileData[] {
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE LOWER(email) = LOWER(?) ORDER BY id").all(email.trim()) as ProfileData[];
+}
+
+export function getProfilesWithoutEmail(): ProfileData[] {
+  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE email IS NULL OR email = '' ORDER BY id").all() as ProfileData[];
+}
+
+export function createProfile(name: string, passwordHash?: string, email?: string): ProfileData {
+  const normalizedEmail = email ? email.trim().toLowerCase() : null;
   if (passwordHash) {
-    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash) VALUES (?, 1, ?)", [name, passwordHash]);
+    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash, email) VALUES (?, 1, ?, ?)", [name, passwordHash, normalizedEmail]);
     return getProfile(Number(result.lastInsertRowid))!;
   }
-  const result = db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", [name]);
+  const result = db.run("INSERT INTO profiles (name, use_global_dirs, email) VALUES (?, 1, ?)", [name, normalizedEmail]);
   return getProfile(Number(result.lastInsertRowid))!;
 }
 
@@ -112,7 +126,7 @@ export function updateProfile(id: number, updates: {
 }
 
 export function getGlobalSettings(): GlobalSettings {
-  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix FROM global_settings WHERE id = 1").get() as GlobalSettings;
+  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from FROM global_settings WHERE id = 1").get() as GlobalSettings;
 }
 
 export function updateGlobalSettings(updates: {
@@ -149,6 +163,26 @@ export function updateGlobalSettings(updates: {
   if ((updates as any).kaidadb_root_prefix !== undefined) {
     fields.push("kaidadb_root_prefix = ?");
     values.push((updates as any).kaidadb_root_prefix ?? null);
+  }
+  if ((updates as any).smtp_host !== undefined) {
+    fields.push("smtp_host = ?");
+    values.push((updates as any).smtp_host || null);
+  }
+  if ((updates as any).smtp_port !== undefined) {
+    fields.push("smtp_port = ?");
+    values.push((updates as any).smtp_port || null);
+  }
+  if ((updates as any).smtp_user !== undefined) {
+    fields.push("smtp_user = ?");
+    values.push((updates as any).smtp_user || null);
+  }
+  if ((updates as any).smtp_pass !== undefined) {
+    fields.push("smtp_pass = ?");
+    values.push((updates as any).smtp_pass || null);
+  }
+  if ((updates as any).smtp_from !== undefined) {
+    fields.push("smtp_from = ?");
+    values.push((updates as any).smtp_from || null);
   }
 
   if (fields.length > 0) {
