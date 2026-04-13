@@ -418,7 +418,13 @@ export default function Admin() {
                   disabled={!kaidadbUrl.trim() || kaidadbTesting}
                   onClick={() => {
                     setKaidadbTesting(true); setKaidadbTestResult(null);
-                    fetch("/api/kaidadb/health", { credentials: "same-origin" })
+                    // Save URL first so the backend reads the current value
+                    fetch("/api/global-settings", {
+                      method: "PUT", headers: { "Content-Type": "application/json" },
+                      credentials: "same-origin",
+                      body: JSON.stringify({ kaidadb_url: kaidadbUrl || null }),
+                    })
+                      .then(() => fetch("/api/kaidadb/health", { credentials: "same-origin" }))
                       .then(r => r.json())
                       .then(d => setKaidadbTestResult(d.ok !== false ? { ok: true, message: "Connected!" } : { ok: false, message: d.error || "Failed" }))
                       .catch(() => setKaidadbTestResult({ ok: false, message: "Connection failed" }))
@@ -487,8 +493,15 @@ export default function Admin() {
                     disabled={!smtpHost.trim() || !smtpPort.trim() || smtpTesting}
                     onClick={() => {
                       setSmtpTesting(true); setSmtpTestResult(null);
-                      handleSaveSettings();
-                      fetch("/api/smtp/test", { method: "POST", credentials: "same-origin" })
+                      fetch("/api/global-settings", {
+                        method: "PUT", headers: { "Content-Type": "application/json" },
+                        credentials: "same-origin",
+                        body: JSON.stringify({
+                          smtp_host: smtpHost || null, smtp_port: smtpPort ? parseInt(smtpPort, 10) : null,
+                          smtp_user: smtpUser || null, smtp_pass: smtpPass || null, smtp_from: smtpFrom || null,
+                        }),
+                      })
+                        .then(() => fetch("/api/smtp/test", { method: "POST", credentials: "same-origin" }))
                         .then(r => r.json())
                         .then(data => setSmtpTestResult(data))
                         .catch(() => setSmtpTestResult({ ok: false, message: "Connection failed" }))
