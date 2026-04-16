@@ -16,6 +16,10 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 const SESSION_TTL_DAYS = 30;
 const MAX_SESSIONS_PER_PROFILE = 6;
 
+function buildSessionExpiry(): string {
+  return new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
 export function createSession(profileId: number, userAgent?: string): string {
   // Enforce concurrent session limit — evict oldest if at capacity
   const countRow = db.prepare(
@@ -30,12 +34,16 @@ export function createSession(profileId: number, userAgent?: string): string {
   }
 
   const token = crypto.randomUUID();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = buildSessionExpiry();
   db.run(
     "INSERT INTO sessions (id, profile_id, expires_at, user_agent) VALUES (?, ?, ?, ?)",
     [token, profileId, expiresAt, userAgent || null]
   );
   return token;
+}
+
+export function getSessionExpiry(): string {
+  return buildSessionExpiry();
 }
 
 export function getSession(token: string): { id: string; profile_id: number; expires_at: string } | null {
@@ -83,6 +91,30 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   return cookies;
 }
 
+function getTokenFromRequest(req: Request): string | null {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  const cookieHeader = req.headers.get("cookie");
+  if (!cookieHeader) return null;
+  const cookies = parseCookies(cookieHeader);
+  return cookies["ossflix_session"] || null;
+}
+
+function touchSession(token: string): void {
+  const now = Date.now();
+  const lastTouched = lastActiveTouched.get(token) || 0;
+  if (now - lastTouched > LAST_ACTIVE_DEBOUNCE_MS) {
+    db.run("UPDATE sessions SET last_active = datetime('now') WHERE id = ?", [token]);
+    lastActiveTouched.set(token, now);
+  }
+}
+
 // ── Request authentication ──
 
 // Debounce last_active updates to once per 5 minutes per session
@@ -90,10 +122,7 @@ const lastActiveTouched = new Map<string, number>();
 const LAST_ACTIVE_DEBOUNCE_MS = 5 * 60 * 1000;
 
 export function authenticateRequest(req: Request): { profile: ProfileData; sessionId: string } | null {
-  const cookieHeader = req.headers.get("cookie");
-  if (!cookieHeader) return null;
-  const cookies = parseCookies(cookieHeader);
-  const token = cookies["ossflix_session"];
+  const token = getTokenFromRequest(req);
   if (!token) return null;
   const session = getSession(token);
   if (!session) return null;
@@ -104,12 +133,7 @@ export function authenticateRequest(req: Request): { profile: ProfileData; sessi
   }
 
   // Touch last_active (debounced)
-  const now = Date.now();
-  const lastTouched = lastActiveTouched.get(token) || 0;
-  if (now - lastTouched > LAST_ACTIVE_DEBOUNCE_MS) {
-    db.run("UPDATE sessions SET last_active = datetime('now') WHERE id = ?", [token]);
-    lastActiveTouched.set(token, now);
-  }
+  touchSession(token);
 
   return { profile, sessionId: session.id };
 }

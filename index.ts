@@ -12,7 +12,7 @@ import { updateTomlFile } from "./scripts/tomlwriter";
 import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
 import { getRecommendations } from "./scripts/recommend";
 import db, { DATA_DIR } from "./scripts/db";
-import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie } from "./scripts/auth";
+import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie, getSessionExpiry } from "./scripts/auth";
 import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey, kaidadbMediaUrl } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
 import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream, type SelectedAudioStream, type SelectedVideoStream } from "./scripts/streamingProfile";
@@ -38,6 +38,16 @@ function requireAuth(handler: (req: Request, profile: ProfileData) => Response |
     if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
     return handler(req, auth.profile);
   };
+}
+
+function createMobileAuthResponse(profileId: number, userAgent?: string): Response {
+  const token = createSession(profileId, userAgent);
+  const profile = getProfile(profileId)!;
+  return Response.json({
+    token,
+    profile,
+    expiresAt: getSessionExpiry(),
+  });
 }
 
 // Hourly session cleanup
@@ -749,6 +759,94 @@ Bun.serve({
         }
       },
     },
+    "/api/mobile/server-info": {
+      GET() {
+        return Response.json({
+          name: "Reelscape",
+          version: "1.0.0",
+          mobileAuth: true,
+        });
+      },
+    },
+    "/api/mobile/auth/login": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId, password } = body;
+          if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
+          const profileWithHash = getProfileWithHash(profileId);
+          if (!profileWithHash) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (!profileWithHash.password_hash) {
+            return Response.json({ error: "password_not_set" }, { status: 200 });
+          }
+          if (!password) return Response.json({ error: "Missing password" }, { status: 400 });
+          const valid = await verifyPassword(password, profileWithHash.password_hash);
+          if (!valid) return Response.json({ error: "Invalid password" }, { status: 401 });
+          return createMobileAuthResponse(profileWithHash.id, req.headers.get("user-agent") || "OSSFlix-Mobile");
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/mobile/auth/register": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { name, password, email } = body;
+          if (!email || typeof email !== "string" || !email.trim()) {
+            return Response.json({ error: "Email is required" }, { status: 400 });
+          }
+          if (!name || name.trim().length < 1 || name.trim().length > 25) {
+            return Response.json({ error: "Name must be between 1 and 25 characters" }, { status: 400 });
+          }
+          if (!password || password.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          const hash = await hashPassword(password);
+          const profile = createProfile(name.trim(), hash, email.trim());
+          return createMobileAuthResponse(profile.id, req.headers.get("user-agent") || "OSSFlix-Mobile");
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/mobile/auth/set-password": {
+      async POST(req) {
+        try {
+          const body = await req.json();
+          const { profileId, password } = body;
+          if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
+          if (!password || password.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          const profileWithHash = getProfileWithHash(profileId);
+          if (!profileWithHash) return Response.json({ error: "Profile not found" }, { status: 404 });
+          if (profileWithHash.password_hash) {
+            return Response.json({ error: "Password already set. Use login instead." }, { status: 400 });
+          }
+          const hash = await hashPassword(password);
+          setProfilePassword(profileId, hash);
+          return createMobileAuthResponse(profileId, req.headers.get("user-agent") || "OSSFlix-Mobile");
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/mobile/auth/logout": {
+      POST(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ ok: true });
+        deleteSession(auth.sessionId);
+        return Response.json({ ok: true });
+      },
+    },
+    "/api/mobile/auth/me": {
+      GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        return Response.json({ profile: auth.profile });
+      },
+    },
     "/api/smtp/test": {
       async POST(req) {
         if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
@@ -758,6 +856,8 @@ Bun.serve({
     },
     "/api/stream": {
       async GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         const startTime = parseFloat(url.searchParams.get("start") || "0") || 0;
@@ -1033,6 +1133,8 @@ Bun.serve({
     },
     "/api/stream/cache/status": {
       async GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         if (!srcParam) {
@@ -1115,6 +1217,8 @@ Bun.serve({
     },
     "/api/stream/prefetch": {
       async GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         if (!srcParam) {
@@ -1131,6 +1235,8 @@ Bun.serve({
     },
     "/api/stream/cache/clear": {
       async DELETE(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         if (srcParam) {
@@ -1178,6 +1284,8 @@ Bun.serve({
     },
     "/api/stream/probe": {
       async GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         if (!srcParam) {
@@ -1458,10 +1566,12 @@ Bun.serve({
     },
     "/api/playback/progress": {
       GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const src = url.searchParams.get("src");
         const dir = url.searchParams.get("dir");
-        const profile = getProfileFromReq(req);
+        const profile = auth.profile;
 
         if (src) {
           const row = db.query(
@@ -1485,7 +1595,9 @@ Bun.serve({
       },
       async PUT(req) {
         try {
-          const profile = getProfileFromReq(req);
+          const auth = authenticateRequest(req);
+          if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+          const profile = auth.profile;
           const body = await req.json();
           const { video_src, dir_path, current_time, duration } = body;
           if (!video_src || current_time == null) {
@@ -1510,7 +1622,9 @@ Bun.serve({
     },
     "/api/playback/continue-watching": {
       GET(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const titles = db.query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM playback_progress pp
@@ -1527,7 +1641,9 @@ Bun.serve({
     },
     "/api/playback/history": {
       GET(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const rows = db.query(`
           SELECT pp.video_src, pp.dir_path, pp.current_time, pp.duration, pp.updated_at,
                  t.name, t.image_path AS imagePath, t.type
@@ -1540,7 +1656,9 @@ Bun.serve({
         return Response.json(rows);
       },
       async DELETE(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const body = await req.json();
         if (body.clear_all) {
           db.run("DELETE FROM playback_progress WHERE profile_id = ?", [profile.id]);
@@ -1554,7 +1672,9 @@ Bun.serve({
     },
     "/api/watchlist": {
       GET(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const titles = db.query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM watchlist w
@@ -1565,14 +1685,18 @@ Bun.serve({
         return Response.json({ genre: "My List", titles });
       },
       async POST(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const body = await req.json();
         if (!body.dir_path) return Response.json({ error: "Missing dir_path" }, { status: 400 });
         db.run("INSERT OR IGNORE INTO watchlist (profile_id, dir_path) VALUES (?, ?)", [profile.id, body.dir_path]);
         return Response.json({ ok: true });
       },
       async DELETE(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const body = await req.json();
         if (!body.dir_path) return Response.json({ error: "Missing dir_path" }, { status: 400 });
         db.run("DELETE FROM watchlist WHERE profile_id = ? AND dir_path = ?", [profile.id, body.dir_path]);
@@ -1581,7 +1705,9 @@ Bun.serve({
     },
     "/api/watchlist/check": {
       GET(req) {
-        const profile = getProfileFromReq(req);
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const profile = auth.profile;
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) return Response.json({ error: "Missing dir" }, { status: 400 });
@@ -1591,6 +1717,8 @@ Bun.serve({
     },
     "/api/subtitles": {
       async GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const srcParam = url.searchParams.get("src");
         if (!srcParam) return Response.json({ error: "Missing src parameter" }, { status: 400 });
@@ -1628,6 +1756,8 @@ Bun.serve({
     },
     "/api/episode/timings": {
       GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const src = url.searchParams.get("src");
         if (!src) {
@@ -1640,6 +1770,8 @@ Bun.serve({
       },
       async PUT(req) {
         try {
+          const auth = authenticateRequest(req);
+          if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
           const body = await req.json();
           const { video_src, intro_start, intro_end, outro_start, outro_end } = body;
           if (!video_src) {
@@ -1663,6 +1795,8 @@ Bun.serve({
     },
     "/api/episode/timings/batch": {
       GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) {
