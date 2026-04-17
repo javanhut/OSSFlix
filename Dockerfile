@@ -1,3 +1,18 @@
+# OSSFlix / ReelScape
+#
+# Published image: docker.io/javanhut/reelscape
+#
+# Pull the latest release:
+#   docker pull javanhut/reelscape:latest
+#
+# Pull a specific version (replace X.Y.Z with the tag, without the leading "v"):
+#   docker pull javanhut/reelscape:X.Y.Z
+#
+# Run:
+#   docker run -d --name reelscape -p 3000:3000 -v reelscape-data:/usr/src/app/data javanhut/reelscape:latest
+#
+# See docker-compose.yml for a full setup with persistent storage.
+
 FROM docker.io/oven/bun:1 AS base
 
 WORKDIR /usr/src/app
