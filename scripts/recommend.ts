@@ -14,17 +14,20 @@ type Recommendation = TitleInfo & {
 
 export function getRecommendations(profileId: number, limit = 6): Recommendation[] {
   // 1. Get all titles the user has watched (any progress at all)
-  const watchedDirs = db.prepare(`
+  const watchedDirs = db
+    .prepare(`
     SELECT DISTINCT dir_path FROM playback_progress WHERE profile_id = ?
-  `).all(profileId) as { dir_path: string }[];
+  `)
+    .all(profileId) as { dir_path: string }[];
 
   if (watchedDirs.length === 0) return [];
 
-  const watchedSet = new Set(watchedDirs.map(r => r.dir_path));
+  const watchedSet = new Set(watchedDirs.map((r) => r.dir_path));
 
   // 2. Build a genre affinity score from watch history
   //    Weight completed titles higher than partially watched
-  const genreRows = db.prepare(`
+  const genreRows = db
+    .prepare(`
     SELECT g.name AS genre,
            COUNT(DISTINCT pp.dir_path) AS watch_count,
            SUM(CASE WHEN pp.current_time >= pp.duration - 5 AND pp.duration > 0 THEN 1 ELSE 0 END) AS completed_count
@@ -34,7 +37,8 @@ export function getRecommendations(profileId: number, limit = 6): Recommendation
     JOIN genres g ON g.id = tg.genre_id
     WHERE pp.profile_id = ?
     GROUP BY g.name
-  `).all(profileId) as { genre: string; watch_count: number; completed_count: number }[];
+  `)
+    .all(profileId) as { genre: string; watch_count: number; completed_count: number }[];
 
   if (genreRows.length === 0) return [];
 
@@ -55,24 +59,28 @@ export function getRecommendations(profileId: number, limit = 6): Recommendation
   }
 
   // 3. Score all unwatched titles by genre affinity
-  const allTitles = db.prepare(`
+  const allTitles = db
+    .prepare(`
     SELECT t.id, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
-  `).all() as (TitleInfo & { id: number })[];
+  `)
+    .all() as (TitleInfo & { id: number })[];
 
-  const unwatchedTitles = allTitles.filter(t => !watchedSet.has(t.pathToDir));
+  const unwatchedTitles = allTitles.filter((t) => !watchedSet.has(t.pathToDir));
   const scored: Recommendation[] = [];
 
   if (unwatchedTitles.length === 0) return [];
 
   // Bulk query: get all genre mappings for unwatched titles in one query
   const placeholders = unwatchedTitles.map(() => "?").join(",");
-  const unwatchedIds = unwatchedTitles.map(t => t.id);
-  const genreMappings = db.prepare(`
+  const unwatchedIds = unwatchedTitles.map((t) => t.id);
+  const genreMappings = db
+    .prepare(`
     SELECT tg.title_id, g.name FROM title_genres tg
     JOIN genres g ON g.id = tg.genre_id
     WHERE tg.title_id IN (${placeholders})
-  `).all(...unwatchedIds) as { title_id: number; name: string }[];
+  `)
+    .all(...unwatchedIds) as { title_id: number; name: string }[];
 
   // Group genres by title_id
   const titleGenreMap = new Map<number, string[]>();
@@ -106,9 +114,7 @@ export function getRecommendations(profileId: number, limit = 6): Recommendation
 
     if (totalScore > 0 && matchedGenres.length > 0) {
       // Build a human-readable reason
-      const topGenres = matchedGenres
-        .sort((a, b) => (genreScores.get(b) || 0) - (genreScores.get(a) || 0))
-        .slice(0, 3);
+      const topGenres = matchedGenres.sort((a, b) => (genreScores.get(b) || 0) - (genreScores.get(a) || 0)).slice(0, 3);
       const reason = `Because you watch ${topGenres.join(", ")}`;
 
       scored.push({

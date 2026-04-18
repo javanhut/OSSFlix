@@ -39,7 +39,9 @@ export default function TVShows() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const handler = () => loadData();
@@ -58,10 +60,7 @@ export default function TVShows() {
     );
   }
 
-  const defaultRows = [
-    ...(allTvRow ? [allTvRow] : []),
-    ...genreRows,
-  ];
+  const defaultRows = [...(allTvRow ? [allTvRow] : []), ...genreRows];
 
   const displayRows = filteredRows ?? defaultRows;
 

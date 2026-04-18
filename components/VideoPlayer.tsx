@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { parseEpisodePath, formatEpisodeLabel } from "../scripts/episodeNaming";
 
 type EpisodeTiming = {
   video_src: string;
@@ -43,7 +44,7 @@ type VideoPlayerProps = {
 };
 
 function formatTime(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -57,135 +58,289 @@ function safePlay(video: HTMLVideoElement): void {
 
 function parseEpisodeFromSrc(src: string): string | null {
   const filename = src.split("/").pop() || "";
-  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
-  if (!match) return null;
-  // Strip leading "s01_ep01_" folder prefix left by flattenToFilename on nested kaidadb paths
-  const title = match[1].replace(/^s\d+_ep\d+_/i, "").replace(/_/g, " ");
-  return `S${Number(match[2])} E${Number(match[3])}${title ? ` - ${title}` : ""}`;
+  const parsed = parseEpisodePath(filename);
+  if (!parsed) return null;
+  return formatEpisodeLabel(parsed);
 }
 
 // ── SVG Icon components ──
 const IconPlay = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="6,3 20,12 6,21" /></svg>
+  <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="#fff">
+    <polygon points="6,3 20,12 6,21" />
+  </svg>
 );
 const IconPause = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><rect x="5" y="3" width="5" height="18" rx="1.5"/><rect x="14" y="3" width="5" height="18" rx="1.5"/></svg>
+  <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="#fff">
+    <rect x="5" y="3" width="5" height="18" rx="1.5" />
+    <rect x="14" y="3" width="5" height="18" rx="1.5" />
+  </svg>
 );
 const IconSkipBack = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12.5 8L7 12.5L12.5 17"/>
-    <path d="M17.5 8L12 12.5L17.5 17"/>
-    <text x="12" y="24" fill="#fff" fontSize="7" fontWeight="700" textAnchor="middle" stroke="none">10</text>
+  <svg
+    aria-hidden="true"
+    width="22"
+    height="22"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12.5 8L7 12.5L12.5 17" />
+    <path d="M17.5 8L12 12.5L17.5 17" />
+    <text x="12" y="24" fill="#fff" fontSize="7" fontWeight="700" textAnchor="middle" stroke="none">
+      10
+    </text>
   </svg>
 );
 const IconSkipForward = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11.5 8L17 12.5L11.5 17"/>
-    <path d="M6.5 8L12 12.5L6.5 17"/>
-    <text x="12" y="24" fill="#fff" fontSize="7" fontWeight="700" textAnchor="middle" stroke="none">10</text>
+  <svg
+    aria-hidden="true"
+    width="22"
+    height="22"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M11.5 8L17 12.5L11.5 17" />
+    <path d="M6.5 8L12 12.5L6.5 17" />
+    <text x="12" y="24" fill="#fff" fontSize="7" fontWeight="700" textAnchor="middle" stroke="none">
+      10
+    </text>
   </svg>
 );
 const IconVolumeMuted = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none"/>
-    <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none" />
+    <line x1="23" y1="9" x2="17" y2="15" />
+    <line x1="17" y1="9" x2="23" y2="15" />
   </svg>
 );
 const IconVolumeLow = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none"/>
-    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none" />
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
   </svg>
 );
 const IconVolumeHigh = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none"/>
-    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
-    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="#fff" stroke="none" />
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
   </svg>
 );
 const IconFullscreen = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/>
-    <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="15,3 21,3 21,9" />
+    <polyline points="9,21 3,21 3,15" />
+    <line x1="21" y1="3" x2="14" y2="10" />
+    <line x1="3" y1="21" x2="10" y2="14" />
   </svg>
 );
 const IconExitFullscreen = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4,14 4,20 10,20"/><polyline points="20,10 20,4 14,4"/>
-    <line x1="14" y1="10" x2="20" y2="4"/><line x1="4" y1="20" x2="10" y2="14"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="4,14 4,20 10,20" />
+    <polyline points="20,10 20,4 14,4" />
+    <line x1="14" y1="10" x2="20" y2="4" />
+    <line x1="4" y1="20" x2="10" y2="14" />
   </svg>
 );
 const IconPip = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="3" width="20" height="14" rx="2"/>
-    <rect x="12" y="9" width="8" height="6" rx="1" fill="rgba(255,255,255,0.3)"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="2" y="3" width="20" height="14" rx="2" />
+    <rect x="12" y="9" width="8" height="6" rx="1" fill="rgba(255,255,255,0.3)" />
   </svg>
 );
 const IconPrev = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
-    <polygon points="20,3 8,12 20,21"/>
-    <rect x="4" y="3" width="3" height="18" rx="1"/>
+  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+    <polygon points="20,3 8,12 20,21" />
+    <rect x="4" y="3" width="3" height="18" rx="1" />
   </svg>
 );
 const IconNext = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
-    <polygon points="4,3 16,12 4,21"/>
-    <rect x="17" y="3" width="3" height="18" rx="1"/>
+  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+    <polygon points="4,3 16,12 4,21" />
+    <rect x="17" y="3" width="3" height="18" rx="1" />
   </svg>
 );
 const IconBack = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15,18 9,12 15,6"/>
+  <svg
+    aria-hidden="true"
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="15,18 9,12 15,6" />
   </svg>
 );
 const IconRestart = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="1,4 1,10 7,10"/>
-    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="1,4 1,10 7,10" />
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
   </svg>
 );
 const IconCC = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#3b82f6" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-    <path d="M10 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
-    <path d="M19 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={active ? "#3b82f6" : "#fff"}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+    <path d="M10 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1" />
+    <path d="M19 10.5c-.5-.7-1.2-1-2-1-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-1" />
   </svg>
 );
 const IconAudio = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#3b82f6" : "#fff"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18V5l12-2v13"/>
-    <circle cx="6" cy="18" r="3" fill={active ? "#3b82f6" : "none"}/>
-    <circle cx="18" cy="16" r="3" fill={active ? "#3b82f6" : "none"}/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={active ? "#3b82f6" : "#fff"}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" fill={active ? "#3b82f6" : "none"} />
+    <circle cx="18" cy="16" r="3" fill={active ? "#3b82f6" : "none"} />
   </svg>
 );
 const IconSettings = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  <svg
+    aria-hidden="true"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#fff"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 );
 
 // ── Skip feedback overlay ──
 function SkipFeedback({ side, seconds }: { side: "left" | "right"; seconds: number }) {
   return (
-    <div style={{
-      position: "absolute",
-      top: "50%",
-      [side]: "15%",
-      transform: "translateY(-50%)",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: "4px",
-      color: "#fff",
-      animation: "vpFadeOut 0.6s ease forwards",
-      pointerEvents: "none",
-    }}>
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-        style={{ transform: side === "left" ? "scaleX(-1)" : "none" }}>
-        <polygon points="5,4 15,12 5,20" fill="rgba(255,255,255,0.8)"/>
-        <polygon points="13,4 23,12 13,20" fill="rgba(255,255,255,0.4)"/>
+    <div
+      style={{
+        position: "absolute",
+        top: "50%",
+        [side]: "15%",
+        transform: "translateY(-50%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "4px",
+        color: "#fff",
+        animation: "vpFadeOut 0.6s ease forwards",
+        pointerEvents: "none",
+      }}
+    >
+      <svg
+        aria-hidden="true"
+        width="36"
+        height="36"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ transform: side === "left" ? "scaleX(-1)" : "none" }}
+      >
+        <polygon points="5,4 15,12 5,20" fill="rgba(255,255,255,0.8)" />
+        <polygon points="13,4 23,12 13,20" fill="rgba(255,255,255,0.4)" />
       </svg>
       <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{seconds}s</span>
     </div>
@@ -195,23 +350,47 @@ function SkipFeedback({ side, seconds }: { side: "left" | "right"; seconds: numb
 // ── Loading spinner ──
 function LoadingSpinner() {
   return (
-    <div style={{
-      position: "absolute", inset: 0,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      pointerEvents: "none",
-    }}>
-      <div style={{
-        width: "48px", height: "48px",
-        border: "3px solid rgba(255,255,255,0.15)",
-        borderTopColor: "#3b82f6",
-        borderRadius: "50%",
-        animation: "vpSpin 0.8s linear infinite",
-      }} />
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          width: "48px",
+          height: "48px",
+          border: "3px solid rgba(255,255,255,0.15)",
+          borderTopColor: "#3b82f6",
+          borderRadius: "50%",
+          animation: "vpSpin 0.8s linear infinite",
+        }}
+      />
     </div>
   );
 }
 
-export default function VideoPlayer({ show, onHide, src, title, dirPath, initialTime, onNext, onPrev, onProgress, timings, hasNext, hasPrev, profileId, subtitles, nextSrc }: VideoPlayerProps) {
+export default function VideoPlayer({
+  show,
+  onHide,
+  src,
+  title,
+  dirPath,
+  initialTime,
+  onNext,
+  onPrev,
+  onProgress,
+  timings,
+  hasNext,
+  hasPrev,
+  profileId: _profileId,
+  subtitles,
+  nextSrc,
+}: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -244,7 +423,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const cachePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Skip feedback
-  const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number; seconds: number } | null>(null);
+  const [skipFeedback, setSkipFeedback] = useState<{ side: "left" | "right"; key: number; seconds: number } | null>(
+    null,
+  );
   const skipAccumulatorRef = useRef(0);
   const skipResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSkipDirectionRef = useRef<"left" | "right" | null>(null);
@@ -292,9 +473,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const hasNextRef = useRef(hasNext);
   const onNextRef = useRef(onNext);
 
-  useEffect(() => { timingsRef.current = timings; }, [timings]);
-  useEffect(() => { hasNextRef.current = hasNext; }, [hasNext]);
-  useEffect(() => { onNextRef.current = onNext; }, [onNext]);
+  useEffect(() => {
+    timingsRef.current = timings;
+  }, [timings]);
+  useEffect(() => {
+    hasNextRef.current = hasNext;
+  }, [hasNext]);
+  useEffect(() => {
+    onNextRef.current = onNext;
+  }, [onNext]);
 
   // Source ready gate for race condition fix (2A)
   const sourceReadyRef = useRef(true);
@@ -346,19 +533,48 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       const savedRate = localStorage.getItem("ossflix_playbackRate");
       const savedCc = localStorage.getItem("ossflix_cc");
       const savedCcTrack = localStorage.getItem("ossflix_cc_track");
-      if (savedVol !== null) { const v = parseFloat(savedVol); if (isFinite(v)) setVolume(v); }
+      if (savedVol !== null) {
+        const v = parseFloat(savedVol);
+        if (Number.isFinite(v)) setVolume(v);
+      }
       if (savedMuted !== null) setMuted(savedMuted === "true");
-      if (savedRate !== null) { const r = parseFloat(savedRate); if (isFinite(r) && speeds.includes(r)) setPlaybackRate(r); }
+      if (savedRate !== null) {
+        const r = parseFloat(savedRate);
+        if (Number.isFinite(r) && speeds.includes(r)) setPlaybackRate(r);
+      }
       if (savedCc !== null) setCcEnabled(savedCc === "true");
-      if (savedCcTrack !== null) { const t = parseInt(savedCcTrack); if (isFinite(t)) setActiveTrackIndex(t); }
+      if (savedCcTrack !== null) {
+        const t = parseInt(savedCcTrack, 10);
+        if (Number.isFinite(t)) setActiveTrackIndex(t);
+      }
     } catch {}
-  }, []);
+  }, [speeds.includes]);
 
-  useEffect(() => { try { localStorage.setItem("ossflix_volume", String(volume)); } catch {} }, [volume]);
-  useEffect(() => { try { localStorage.setItem("ossflix_muted", String(muted)); } catch {} }, [muted]);
-  useEffect(() => { try { localStorage.setItem("ossflix_playbackRate", String(playbackRate)); } catch {} }, [playbackRate]);
-  useEffect(() => { try { localStorage.setItem("ossflix_cc", String(ccEnabled)); } catch {} }, [ccEnabled]);
-  useEffect(() => { try { localStorage.setItem("ossflix_cc_track", String(activeTrackIndex)); } catch {} }, [activeTrackIndex]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ossflix_volume", String(volume));
+    } catch {}
+  }, [volume]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ossflix_muted", String(muted));
+    } catch {}
+  }, [muted]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ossflix_playbackRate", String(playbackRate));
+    } catch {}
+  }, [playbackRate]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ossflix_cc", String(ccEnabled));
+    } catch {}
+  }, [ccEnabled]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ossflix_cc_track", String(activeTrackIndex));
+    } catch {}
+  }, [activeTrackIndex]);
 
   // ── Progress saving refs ──
   const saveProgressRef = useRef<(force?: boolean) => void>(() => {});
@@ -377,8 +593,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const videoSrcToSave = currentSrcRef.current;
     if (!video || !videoSrcToSave) return;
     const ct = video.currentTime + streamOffsetRef.current;
-    const dur = isStreamed ? durationRef.current : (isFinite(video.duration) ? video.duration : 0);
-    if (!isFinite(ct) || (ct === 0 && !force)) return;
+    const dur = isStreamed ? durationRef.current : Number.isFinite(video.duration) ? video.duration : 0;
+    if (!Number.isFinite(ct) || (ct === 0 && !force)) return;
     if (!force && Math.abs(ct - lastSavedTimeRef.current) < 3) return;
     lastSavedTimeRef.current = ct;
     onProgress?.(ct, dur);
@@ -390,7 +606,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         video_src: videoSrcToSave,
         dir_path: currentDirRef.current || "",
         current_time: ct,
-        duration: isFinite(dur) ? dur : 0,
+        duration: Number.isFinite(dur) ? dur : 0,
       }),
     }).catch(() => {});
   };
@@ -401,6 +617,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     return () => clearInterval(interval);
   }, [show, src]);
 
+  const isStreamed = useMemo(() => {
+    const ext = src.split(".").pop()?.toLowerCase();
+    return ext === "mkv" || ext === "avi" || ext === "wmv" || ext === "mov" || ext === "webm";
+  }, [src]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handleLoadedMetadata is declared below; closure at effect-run time picks up the current definition
   useEffect(() => {
     initialTimeAppliedRef.current = false;
     streamOffsetRef.current = 0;
@@ -441,7 +663,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             initialTimeAppliedRef.current = true;
           }
           sourceReadyRef.current = true;
-          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+          if (sourceReadyFallbackRef.current) {
+            clearTimeout(sourceReadyFallbackRef.current);
+            sourceReadyFallbackRef.current = null;
+          }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         })
         .catch(() => {
@@ -450,7 +675,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           setStreamOffset(initialTime);
           initialTimeAppliedRef.current = true;
           sourceReadyRef.current = true;
-          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+          if (sourceReadyFallbackRef.current) {
+            clearTimeout(sourceReadyFallbackRef.current);
+            sourceReadyFallbackRef.current = null;
+          }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         });
     } else if (isStreamed) {
@@ -463,18 +691,27 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setCachedMode(true);
           }
           sourceReadyRef.current = true;
-          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+          if (sourceReadyFallbackRef.current) {
+            clearTimeout(sourceReadyFallbackRef.current);
+            sourceReadyFallbackRef.current = null;
+          }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         })
         .catch(() => {
           sourceReadyRef.current = true;
-          if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+          if (sourceReadyFallbackRef.current) {
+            clearTimeout(sourceReadyFallbackRef.current);
+            sourceReadyFallbackRef.current = null;
+          }
           if (pendingMetadataRef.current) handleLoadedMetadata();
         });
     } else {
       // Non-streamed: source is immediately ready
       sourceReadyRef.current = true;
-      if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
+      if (sourceReadyFallbackRef.current) {
+        clearTimeout(sourceReadyFallbackRef.current);
+        sourceReadyFallbackRef.current = null;
+      }
     }
     // Clear countdown when src changes
     if (countdownRef.current) {
@@ -488,14 +725,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setActiveAudioTrack(0);
     activeAudioTrackRef.current = 0;
     setAudioTracks([]);
-  }, [src]);
+  }, [src, initialTime, isStreamed]);
 
   const episodeLabel = useMemo(() => parseEpisodeFromSrc(src), [src]);
-
-  const isStreamed = useMemo(() => {
-    const ext = src.split(".").pop()?.toLowerCase();
-    return ext === "mkv" || ext === "avi" || ext === "wmv" || ext === "mov" || ext === "webm";
-  }, [src]);
 
   const isCachedRef = useRef(false);
   // Track if we've switched to cached playback mode
@@ -531,35 +763,59 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setSkipFeedback(null);
     skipAccumulatorRef.current = 0;
     lastSkipDirectionRef.current = null;
-    if (skipResetTimeoutRef.current) { clearTimeout(skipResetTimeoutRef.current); skipResetTimeoutRef.current = null; }
+    if (skipResetTimeoutRef.current) {
+      clearTimeout(skipResetTimeoutRef.current);
+      skipResetTimeoutRef.current = null;
+    }
     setShowSkipIntro(false);
     setShowSkipOutro(false);
-    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
     setCountdown(null);
     setCacheStatus(null);
     setStreamBufferedPercent(0);
     isCachedRef.current = false;
     setCachedMode(false);
-    if (cachePollingRef.current) { clearInterval(cachePollingRef.current); cachePollingRef.current = null; }
+    if (cachePollingRef.current) {
+      clearInterval(cachePollingRef.current);
+      cachePollingRef.current = null;
+    }
     setShowReconnecting(false);
     setRecoveringFromStall(false);
     setTransitioning2(false);
     loadingStartedAtRef.current = null;
     recoveryAttemptsRef.current = 0;
     pendingCacheResumeRef.current = null;
-    if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
-    if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
+    if (sourceReadyFallbackRef.current) {
+      clearTimeout(sourceReadyFallbackRef.current);
+      sourceReadyFallbackRef.current = null;
+    }
+    if (cacheSwitchFallbackRef.current) {
+      clearTimeout(cacheSwitchFallbackRef.current);
+      cacheSwitchFallbackRef.current = null;
+    }
     sourceReadyRef.current = true;
     pendingMetadataRef.current = false;
     prefetchedRef.current = null;
-    if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
     hasEverPlayedRef.current = false;
   }, []);
 
   useEffect(() => {
     return () => {
-      if (sourceReadyFallbackRef.current) { clearTimeout(sourceReadyFallbackRef.current); sourceReadyFallbackRef.current = null; }
-      if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
+      if (sourceReadyFallbackRef.current) {
+        clearTimeout(sourceReadyFallbackRef.current);
+        sourceReadyFallbackRef.current = null;
+      }
+      if (cacheSwitchFallbackRef.current) {
+        clearTimeout(cacheSwitchFallbackRef.current);
+        cacheSwitchFallbackRef.current = null;
+      }
     };
   }, []);
 
@@ -587,68 +843,77 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     setIsLoading(true);
   }, []);
 
-  const attemptStreamRecovery = useCallback((reason: string) => {
-    const video = videoRef.current;
-    if (!video || !show || !playing) return;
-    if (recoveryAttemptsRef.current >= MAX_STREAM_RECOVERY_ATTEMPTS) return;
+  const attemptStreamRecovery = useCallback(
+    (reason: string) => {
+      const video = videoRef.current;
+      if (!video || !show || !playing) return;
+      if (recoveryAttemptsRef.current >= MAX_STREAM_RECOVERY_ATTEMPTS) return;
 
-    recoveryAttemptsRef.current += 1;
-    setRecoveringFromStall(true);
-    setShowReconnecting(true);
-    setIsLoading(true);
-
-    if (isStreamed) {
-      const absoluteCurrent = video.currentTime + streamOffsetRef.current;
-      if (isCachedRef.current) {
-        // Cached mode should recover with a native seek nudge.
-        const cachedDur = isFinite(video.duration) ? video.duration : durationRef.current;
-        const target = cachedDur > 1
-          ? Math.max(0, Math.min(absoluteCurrent, cachedDur - 1))
-          : Math.max(0, absoluteCurrent);
-        video.currentTime = target;
-        setCurrentTime(target);
-        safePlay(video);
-      } else {
-        seekStream(absoluteCurrent);
-      }
-      return;
-    }
-
-    // Non-streamed fallback: reload and resume from current position.
-    const pos = video.currentTime;
-    video.load();
-    video.addEventListener("loadedmetadata", () => {
-      if (!videoRef.current) return;
-      video.currentTime = pos;
-      setCurrentTime(pos);
-      safePlay(video);
-    }, { once: true });
-    console.error(`[player] recovery attempt ${recoveryAttemptsRef.current} triggered (${reason})`);
-  }, [isStreamed, playing, seekStream, show, MAX_STREAM_RECOVERY_ATTEMPTS]);
-
-  const selectAudioTrack = useCallback((trackIndex: number) => {
-    if (trackIndex === activeAudioTrackRef.current) {
-      setShowAudioMenu(false);
-      return;
-    }
-    activeAudioTrackRef.current = trackIndex;
-    setActiveAudioTrack(trackIndex);
-    setShowAudioMenu(false);
-    const video = videoRef.current;
-    if (video && isStreamed) {
-      const currentAbsoluteTime = video.currentTime + streamOffsetRef.current;
-      // Different audio track may have a different cache — reset cached mode
-      isCachedRef.current = false;
-      setCachedMode(false);
-      setCacheStatus(null);
-      setStreamBufferedPercent(0);
-      // This will trigger a new stream request (and start caching the new audio variant)
-      streamOffsetRef.current = currentAbsoluteTime;
-      setStreamOffset(currentAbsoluteTime);
-      setCurrentTime(currentAbsoluteTime);
+      recoveryAttemptsRef.current += 1;
+      setRecoveringFromStall(true);
+      setShowReconnecting(true);
       setIsLoading(true);
-    }
-  }, [isStreamed]);
+
+      if (isStreamed) {
+        const absoluteCurrent = video.currentTime + streamOffsetRef.current;
+        if (isCachedRef.current) {
+          // Cached mode should recover with a native seek nudge.
+          const cachedDur = Number.isFinite(video.duration) ? video.duration : durationRef.current;
+          const target =
+            cachedDur > 1 ? Math.max(0, Math.min(absoluteCurrent, cachedDur - 1)) : Math.max(0, absoluteCurrent);
+          video.currentTime = target;
+          setCurrentTime(target);
+          safePlay(video);
+        } else {
+          seekStream(absoluteCurrent);
+        }
+        return;
+      }
+
+      // Non-streamed fallback: reload and resume from current position.
+      const pos = video.currentTime;
+      video.load();
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (!videoRef.current) return;
+          video.currentTime = pos;
+          setCurrentTime(pos);
+          safePlay(video);
+        },
+        { once: true },
+      );
+      console.error(`[player] recovery attempt ${recoveryAttemptsRef.current} triggered (${reason})`);
+    },
+    [isStreamed, playing, seekStream, show],
+  );
+
+  const selectAudioTrack = useCallback(
+    (trackIndex: number) => {
+      if (trackIndex === activeAudioTrackRef.current) {
+        setShowAudioMenu(false);
+        return;
+      }
+      activeAudioTrackRef.current = trackIndex;
+      setActiveAudioTrack(trackIndex);
+      setShowAudioMenu(false);
+      const video = videoRef.current;
+      if (video && isStreamed) {
+        const currentAbsoluteTime = video.currentTime + streamOffsetRef.current;
+        // Different audio track may have a different cache — reset cached mode
+        isCachedRef.current = false;
+        setCachedMode(false);
+        setCacheStatus(null);
+        setStreamBufferedPercent(0);
+        // This will trigger a new stream request (and start caching the new audio variant)
+        streamOffsetRef.current = currentAbsoluteTime;
+        setStreamOffset(currentAbsoluteTime);
+        setCurrentTime(currentAbsoluteTime);
+        setIsLoading(true);
+      }
+    },
+    [isStreamed],
+  );
 
   // ── Show / hide lifecycle ──
   useEffect(() => {
@@ -661,12 +926,15 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         wakeLockRef.current = null;
       }
       // Clear stall timer (4B)
-      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
       const video = videoRef.current;
       if (video && currentSrcRef.current) {
         const ct = video.currentTime + streamOffsetRef.current;
         const dur = isStreamed ? durationRef.current : video.duration;
-        if (isFinite(ct) && ct > 0) {
+        if (Number.isFinite(ct) && ct > 0) {
           fetch("/api/playback/progress", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -675,7 +943,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               video_src: currentSrcRef.current,
               dir_path: currentDirRef.current || "",
               current_time: ct,
-              duration: isFinite(dur) ? dur : 0,
+              duration: Number.isFinite(dur) ? dur : 0,
             }),
           }).catch(() => {});
         }
@@ -688,44 +956,57 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       }
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
-        try { screen.orientation.unlock(); } catch {}
+        try {
+          screen.orientation.unlock();
+        } catch {}
       }
     } else {
       requestAnimationFrame(() => {
         const container = containerRef.current;
         if (container && !document.fullscreenElement) {
-          container.requestFullscreen().then(() => {
-            setIsFullscreen(true);
-            try { screen.orientation.lock("landscape").catch(() => {}); } catch {}
-          }).catch(() => {});
+          container
+            .requestFullscreen()
+            .then(() => {
+              setIsFullscreen(true);
+              try {
+                screen.orientation.lock("landscape").catch(() => {});
+              } catch {}
+            })
+            .catch(() => {});
         }
       });
     }
-  }, [show, resetState]);
+  }, [show, resetState, isStreamed]);
 
   // ── Controls auto-hide ──
-  const showControlsTemporarily = useCallback((timeout = 2500) => {
-    setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    if (playing && !dragging && !showVolumeSlider) {
-      controlsTimeoutRef.current = window.setTimeout(() => {
-        setShowControls(false);
-        setShowSettingsMenu(false);
-        setShowCcMenu(false);
-        setShowAudioMenu(false);
-        setShowVolumeSlider(false);
-      }, timeout);
-    }
-  }, [playing, dragging, showVolumeSlider]);
+  const showControlsTemporarily = useCallback(
+    (timeout = 2500) => {
+      setShowControls(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (playing && !dragging && !showVolumeSlider) {
+        controlsTimeoutRef.current = window.setTimeout(() => {
+          setShowControls(false);
+          setShowSettingsMenu(false);
+          setShowCcMenu(false);
+          setShowAudioMenu(false);
+          setShowVolumeSlider(false);
+        }, timeout);
+      }
+    },
+    [playing, dragging, showVolumeSlider],
+  );
 
-  const handleMouseMoveControls = useCallback((e: React.MouseEvent) => {
-    // On touch devices, ignore synthetic mousemove events
-    if (isTouchDeviceRef.current) return;
-    const last = lastMousePosRef.current;
-    if (last && last.x === e.clientX && last.y === e.clientY) return;
-    lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-    showControlsTemporarily();
-  }, [showControlsTemporarily]);
+  const handleMouseMoveControls = useCallback(
+    (e: React.MouseEvent) => {
+      // On touch devices, ignore synthetic mousemove events
+      if (isTouchDeviceRef.current) return;
+      const last = lastMousePosRef.current;
+      if (last && last.x === e.clientX && last.y === e.clientY) return;
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+      showControlsTemporarily();
+    },
+    [showControlsTemporarily],
+  );
 
   // ── Playback ──
   const togglePlay = () => {
@@ -786,7 +1067,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         if (prev === null || prev <= 1) {
           cancelCountdown();
           const next = onNextRef.current;
-          if (next) { transitioningRef.current = true; setTimeout(next, 0); }
+          if (next) {
+            transitioningRef.current = true;
+            setTimeout(next, 0);
+          }
           return null;
         }
         return prev - 1;
@@ -933,7 +1217,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         return res.json();
       })
       .then((data: { duration?: number; audioTracks?: AudioTrack[] }) => {
-        if (data.duration && isFinite(data.duration)) {
+        if (data.duration && Number.isFinite(data.duration)) {
           setDuration(data.duration);
           durationRef.current = data.duration;
         }
@@ -946,7 +1230,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         const video = videoRef.current;
         if (!video) return;
         const checkBrowserDuration = () => {
-          if (video.duration && isFinite(video.duration) && video.duration > 0 && durationRef.current === 0) {
+          if (video.duration && Number.isFinite(video.duration) && video.duration > 0 && durationRef.current === 0) {
             setDuration(video.duration);
             durationRef.current = video.duration;
           }
@@ -1035,10 +1319,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       pendingCacheResumeRef.current = null;
       const currentVideo = videoRef.current;
       if (!currentVideo) return;
-      const dur = isFinite(currentVideo.duration) ? currentVideo.duration : durationRef.current;
-      const target = dur > 1
-        ? Math.max(0, Math.min(pending.absoluteTime, dur - 1))
-        : Math.max(0, pending.absoluteTime);
+      const dur = Number.isFinite(currentVideo.duration) ? currentVideo.duration : durationRef.current;
+      const target = dur > 1 ? Math.max(0, Math.min(pending.absoluteTime, dur - 1)) : Math.max(0, pending.absoluteTime);
       currentVideo.currentTime = target;
       setCurrentTime(target);
       if (pending.wasPlaying) {
@@ -1062,18 +1344,22 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     pendingMetadataRef.current = false;
     const dur = video.duration;
     // For streamed files, only update duration if the browser reports a valid one
-    if (!isStreamed || (isFinite(dur) && dur > 60)) {
+    if (!isStreamed || (Number.isFinite(dur) && dur > 60)) {
       setDuration(dur);
       durationRef.current = dur;
     }
     setBuffered(0);
-    if (cacheSwitchFallbackRef.current) { clearTimeout(cacheSwitchFallbackRef.current); cacheSwitchFallbackRef.current = null; }
+    if (cacheSwitchFallbackRef.current) {
+      clearTimeout(cacheSwitchFallbackRef.current);
+      cacheSwitchFallbackRef.current = null;
+    }
     const pendingCacheResume = pendingCacheResumeRef.current;
     if (pendingCacheResume) {
       pendingCacheResumeRef.current = null;
-      const target = isFinite(dur) && dur > 1
-        ? Math.max(0, Math.min(pendingCacheResume.absoluteTime, dur - 1))
-        : Math.max(0, pendingCacheResume.absoluteTime);
+      const target =
+        Number.isFinite(dur) && dur > 1
+          ? Math.max(0, Math.min(pendingCacheResume.absoluteTime, dur - 1))
+          : Math.max(0, pendingCacheResume.absoluteTime);
       video.currentTime = target;
       setCurrentTime(target);
       if (pendingCacheResume.wasPlaying) {
@@ -1098,7 +1384,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     }
     if (isStreamed && isCachedRef.current) {
       // Cached streamed file — use native seeking like a regular MP4
-      if (isFinite(dur) && dur > 0) {
+      if (Number.isFinite(dur) && dur > 0) {
         setDuration(dur);
         durationRef.current = dur;
       }
@@ -1191,14 +1477,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           const onSeeked = () => {
             seekLockRef.current = false;
             video.removeEventListener("seeked", onSeeked);
-            if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
+            if (wasPlayingRef.current) {
+              safePlay(video);
+              setPlaying(true);
+            }
           };
           video.addEventListener("seeked", onSeeked);
           setTimeout(() => {
             if (seekLockRef.current) {
               seekLockRef.current = false;
               video.removeEventListener("seeked", onSeeked);
-              if (wasPlayingRef.current) { safePlay(video); setPlaying(true); }
+              if (wasPlayingRef.current) {
+                safePlay(video);
+                setPlaying(true);
+              }
             }
           }, 2000);
         }
@@ -1208,7 +1500,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     };
     const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX);
     const handleMouseUp = (e: MouseEvent) => handleEnd(e.clientX);
-    const handleTouchMove = (e: TouchEvent) => { e.preventDefault(); handleMove(e.touches[0].clientX); };
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      handleMove(e.touches[0].clientX);
+    };
     const handleTouchEnd = (e: TouchEvent) => {
       const touch = e.changedTouches[0];
       handleEnd(touch.clientX);
@@ -1223,7 +1518,8 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [dragging]);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: getTimeFromXRef is intentionally stable via closure for drag handler
+  }, [dragging, isStreamed, showControlsTemporarily, seekStream, getTimeFromXRef]);
 
   const handleProgressHover = (e: React.MouseEvent<HTMLDivElement>) => {
     if (dragging) return;
@@ -1233,14 +1529,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   };
 
   const handleProgressLeave = () => {
-    if (!dragging) { setHoverTime(null); setProgressHovered(false); }
+    if (!dragging) {
+      setHoverTime(null);
+      setProgressHovered(false);
+    }
   };
 
   // ── Volume ──
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
     setVolume(val);
-    if (videoRef.current) { videoRef.current.volume = val; setMuted(val === 0); }
+    if (videoRef.current) {
+      videoRef.current.volume = val;
+      setMuted(val === 0);
+    }
   };
 
   const toggleMute = () => {
@@ -1303,12 +1605,19 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     const container = containerRef.current;
     if (!container) return;
     if (!document.fullscreenElement) {
-      container.requestFullscreen().then(() => {
-        try { screen.orientation.lock("landscape").catch(() => {}); } catch {}
-      }).catch(() => {});
+      container
+        .requestFullscreen()
+        .then(() => {
+          try {
+            screen.orientation.lock("landscape").catch(() => {});
+          } catch {}
+        })
+        .catch(() => {});
     } else {
       document.exitFullscreen();
-      try { screen.orientation.unlock(); } catch {}
+      try {
+        screen.orientation.unlock();
+      } catch {}
     }
   };
 
@@ -1317,13 +1626,17 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       const inFullscreen = !!document.fullscreenElement;
       setIsFullscreen(inFullscreen);
       if (!inFullscreen) {
-        try { screen.orientation.unlock(); } catch {}
+        try {
+          screen.orientation.unlock();
+        } catch {}
       }
     };
     document.addEventListener("fullscreenchange", handleFsChange);
     return () => {
       document.removeEventListener("fullscreenchange", handleFsChange);
-      try { screen.orientation.unlock(); } catch {}
+      try {
+        screen.orientation.unlock();
+      } catch {}
     };
   }, []);
 
@@ -1339,7 +1652,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         await video.requestPictureInPicture();
         setIsPip(true);
       }
-    } catch { /* PiP not supported */ }
+    } catch {
+      /* PiP not supported */
+    }
   };
 
   useEffect(() => {
@@ -1385,7 +1700,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   // fetch data and parse the container — firing recovery here is counterproductive.
   useEffect(() => {
     if (!show || !playing) {
-      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
       return;
     }
     if (isLoading && hasEverPlayedRef.current) {
@@ -1397,9 +1715,12 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         }, STALL_RECOVERY_TIMEOUT_MS);
       }
     } else {
-      if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
     }
-  }, [show, playing, isLoading, attemptStreamRecovery, STALL_RECOVERY_TIMEOUT_MS]);
+  }, [show, playing, isLoading, attemptStreamRecovery]);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -1415,9 +1736,20 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         return;
       }
       switch (e.key) {
-        case "k": e.preventDefault(); togglePlay(); break;
-        case "ArrowLeft": case "j": e.preventDefault(); skip(-10); break;
-        case "ArrowRight": case "l": e.preventDefault(); skip(10); break;
+        case "k":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "ArrowLeft":
+        case "j":
+          e.preventDefault();
+          skip(-10);
+          break;
+        case "ArrowRight":
+        case "l":
+          e.preventDefault();
+          skip(10);
+          break;
         case "ArrowUp":
           e.preventDefault();
           video.volume = Math.min(1, video.volume + 0.05);
@@ -1430,30 +1762,77 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           setVolume(video.volume);
           showVolumeTemporarily();
           break;
-        case "m": toggleMute(); break;
-        case "f": toggleFullscreen(); break;
-        case "p": togglePip(); break;
-        case "Escape": e.preventDefault(); onHide(); break;
-        case "n": if (onNext) { e.preventDefault(); onNext(); } break;
-        case "b": if (onPrev) { e.preventDefault(); onPrev(); } break;
-        case "r": e.preventDefault(); restartFromBeginning(); break;
-        case "c": e.preventDefault(); toggleCC(); break;
-        case "a": if (isStreamed && audioTracks.length > 1) { e.preventDefault(); setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); setShowVolumeSlider(false); } break;
-        case ",": if (video.paused) {
-          if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current - 1); }
-          else { video.currentTime = Math.max(0, video.currentTime - 1/30); setCurrentTime(video.currentTime); }
-        } break;
-        case ".": if (video.paused) {
-          if (isStreamed) { seekStream(video.currentTime + streamOffsetRef.current + 1); }
-          else { video.currentTime = Math.min(video.duration, video.currentTime + 1/30); setCurrentTime(video.currentTime); }
-        } break;
-        case "<": case "[": {
+        case "m":
+          toggleMute();
+          break;
+        case "f":
+          toggleFullscreen();
+          break;
+        case "p":
+          togglePip();
+          break;
+        case "Escape":
+          e.preventDefault();
+          onHide();
+          break;
+        case "n":
+          if (onNext) {
+            e.preventDefault();
+            onNext();
+          }
+          break;
+        case "b":
+          if (onPrev) {
+            e.preventDefault();
+            onPrev();
+          }
+          break;
+        case "r":
+          e.preventDefault();
+          restartFromBeginning();
+          break;
+        case "c":
+          e.preventDefault();
+          toggleCC();
+          break;
+        case "a":
+          if (isStreamed && audioTracks.length > 1) {
+            e.preventDefault();
+            setShowAudioMenu((v) => !v);
+            setShowSettingsMenu(false);
+            setShowCcMenu(false);
+            setShowVolumeSlider(false);
+          }
+          break;
+        case ",":
+          if (video.paused) {
+            if (isStreamed) {
+              seekStream(video.currentTime + streamOffsetRef.current - 1);
+            } else {
+              video.currentTime = Math.max(0, video.currentTime - 1 / 30);
+              setCurrentTime(video.currentTime);
+            }
+          }
+          break;
+        case ".":
+          if (video.paused) {
+            if (isStreamed) {
+              seekStream(video.currentTime + streamOffsetRef.current + 1);
+            } else {
+              video.currentTime = Math.min(video.duration, video.currentTime + 1 / 30);
+              setCurrentTime(video.currentTime);
+            }
+          }
+          break;
+        case "<":
+        case "[": {
           e.preventDefault();
           const idx = speeds.indexOf(playbackRate);
           if (idx > 0) changeSpeed(speeds[idx - 1]);
           break;
         }
-        case ">": case "]": {
+        case ">":
+        case "]": {
           e.preventDefault();
           const idx = speeds.indexOf(playbackRate);
           if (idx < speeds.length - 1) changeSpeed(speeds[idx + 1]);
@@ -1464,7 +1843,37 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [show, playing]);
+  }, [
+    show,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: speeds literal ref is fine; memoizing would force a useMemo pattern across the file
+    speeds,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    toggleFullscreen,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    togglePip,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    togglePlay,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    toggleMute,
+    onPrev,
+    playbackRate,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    restartFromBeginning,
+    seekStream,
+    showControlsTemporarily,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    showVolumeTemporarily,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    skip,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    changeSpeed,
+    // biome-ignore lint/correctness/useExhaustiveDependencies: stable within player lifecycle; memoizing each would be invasive
+    toggleCC,
+    onNext,
+    isStreamed,
+    onHide,
+    audioTracks.length,
+  ]);
 
   // ── Double click/tap sides to skip ──
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1518,17 +1927,23 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
   const progress = duration > 0 ? (displayTime / duration) * 100 : 0;
   const bufferedProgress = isStreamed
     ? Math.min(100, streamBufferedPercent)
-    : (duration > 0 ? (buffered / duration) * 100 : 0);
+    : duration > 0
+      ? (buffered / duration) * 100
+      : 0;
   const remaining = duration - displayTime;
 
   if (!show) return null;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      background: "#000",
-      animation: "vpFadeIn 0.2s ease",
-    }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "#000",
+        animation: "vpFadeIn 0.2s ease",
+      }}
+    >
       {/* Inject player keyframes */}
       <style>{`
         @keyframes vpFadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -1556,8 +1971,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
       <div
         ref={containerRef}
         style={{
-          width: "100%", height: "100%",
-          position: "relative", overflow: "hidden",
+          width: "100%",
+          height: "100%",
+          position: "relative",
+          overflow: "hidden",
           cursor: showControls ? "default" : "none",
           userSelect: "none",
           touchAction: "none",
@@ -1628,7 +2045,10 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           autoPlay
           crossOrigin="anonymous"
           style={{
-            width: "100%", height: "100%", objectFit: "contain", background: "#000",
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            background: "#000",
             opacity: transitioning2 ? 0 : 1,
             transition: "opacity 200ms ease",
           }}
@@ -1665,7 +2085,7 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
           }}
           onError={() => {
             // Escalating delay: 1.2s, 2.4s, 4.8s, ... for transient errors
-            const delay = 1200 * Math.pow(2, Math.min(recoveryAttemptsRef.current, 4));
+            const delay = 1200 * 2 ** Math.min(recoveryAttemptsRef.current, 4);
             setTimeout(() => attemptStreamRecovery("video-error"), delay);
           }}
           onEnded={() => {
@@ -1689,7 +2109,9 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             setIsLoading(false);
             setPlaying(true);
           }}
-          onPause={() => { if (!transitioningRef.current) setPlaying(false); }}
+          onPause={() => {
+            if (!transitioningRef.current) setPlaying(false);
+          }}
         >
           {subtitles?.map((sub, i) => (
             <track
@@ -1711,47 +2133,80 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Reconnecting indicator (4A) */}
         {showReconnecting && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            background: "rgba(20,20,28,0.9)", backdropFilter: "blur(12px)",
-            color: "#fff", padding: "12px 24px", borderRadius: "8px",
-            fontSize: "0.9rem", fontWeight: 600, zIndex: 15,
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}>
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "rgba(20,20,28,0.9)",
+              backdropFilter: "blur(12px)",
+              color: "#fff",
+              padding: "12px 24px",
+              borderRadius: "8px",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              zIndex: 15,
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
             Reconnecting...
           </div>
         )}
 
         {/* Skip feedback */}
-        {skipFeedback && <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={skipFeedback.seconds} />}
+        {skipFeedback && (
+          <SkipFeedback key={skipFeedback.key} side={skipFeedback.side} seconds={skipFeedback.seconds} />
+        )}
 
         {/* Volume swipe gesture overlay */}
         {volumeGestureValue !== null && (
-          <div style={{
-            position: "absolute", top: "50%", right: "12%",
-            transform: "translateY(-50%)",
-            display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
-            pointerEvents: "none", zIndex: 6,
-          }}>
-            <div style={{
-              width: "36px", height: "140px",
-              background: "rgba(0,0,0,0.5)", borderRadius: "18px",
-              position: "relative", overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}>
-              <div style={{
-                position: "absolute", bottom: 0, left: 0, right: 0,
-                height: `${volumeGestureValue * 100}%`,
-                background: "rgba(255,255,255,0.85)",
-                borderRadius: "0 0 18px 18px",
-                transition: "height 0.05s ease",
-              }} />
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              right: "12%",
+              transform: "translateY(-50%)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
+              pointerEvents: "none",
+              zIndex: 6,
+            }}
+          >
+            <div
+              style={{
+                width: "36px",
+                height: "140px",
+                background: "rgba(0,0,0,0.5)",
+                borderRadius: "18px",
+                position: "relative",
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.15)",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: `${volumeGestureValue * 100}%`,
+                  background: "rgba(255,255,255,0.85)",
+                  borderRadius: "0 0 18px 18px",
+                  transition: "height 0.05s ease",
+                }}
+              />
             </div>
-            <span style={{
-              color: "#fff", fontSize: "0.9rem", fontWeight: 700,
-              textShadow: "0 2px 8px rgba(0,0,0,0.6)",
-            }}>
+            <span
+              style={{
+                color: "#fff",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+              }}
+            >
               {Math.round(volumeGestureValue * 100)}%
             </span>
           </div>
@@ -1759,32 +2214,61 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Speed change indicator */}
         {speedIndicator && (
-          <div key={speedIndicator.key} style={{
-            position: "absolute", top: "12%", left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(20,20,28,0.85)", backdropFilter: "blur(12px)",
-            color: "#fff", padding: "8px 20px", borderRadius: "8px",
-            fontSize: "1rem", fontWeight: 700, pointerEvents: "none", zIndex: 6,
-            border: "1px solid rgba(255,255,255,0.1)",
-            animation: "vpFadeOut 1.2s ease 0.5s forwards",
-          }}>
+          <div
+            key={speedIndicator.key}
+            style={{
+              position: "absolute",
+              top: "12%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(20,20,28,0.85)",
+              backdropFilter: "blur(12px)",
+              color: "#fff",
+              padding: "8px 20px",
+              borderRadius: "8px",
+              fontSize: "1rem",
+              fontWeight: 700,
+              pointerEvents: "none",
+              zIndex: 6,
+              border: "1px solid rgba(255,255,255,0.1)",
+              animation: "vpFadeOut 1.2s ease 0.5s forwards",
+            }}
+          >
             {speedIndicator.speed === 1 ? "Normal Speed" : `${speedIndicator.speed}x Speed`}
           </div>
         )}
 
         {/* Skip Intro button */}
         {showSkipIntro && (
-          <button className="vp-skip-btn" onClick={skipIntro} style={{
-            position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
-            background: "rgba(255,255,255,0.92)", color: "#000",
-            border: "none", borderRadius: "4px",
-            padding: "10px 24px", fontSize: "0.95rem", fontWeight: 700,
-            cursor: "pointer", letterSpacing: "0.5px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.transform = "scale(1.05)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.92)"; e.currentTarget.style.transform = "scale(1)"; }}
+          <button
+            type="button"
+            className="vp-skip-btn"
+            onClick={skipIntro}
+            style={{
+              position: "absolute",
+              bottom: "100px",
+              right: "40px",
+              zIndex: 20,
+              background: "rgba(255,255,255,0.92)",
+              color: "#000",
+              border: "none",
+              borderRadius: "4px",
+              padding: "10px 24px",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              letterSpacing: "0.5px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#fff";
+              e.currentTarget.style.transform = "scale(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.92)";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
           >
             Skip Intro
           </button>
@@ -1792,17 +2276,35 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Skip Outro / Next Episode button */}
         {showSkipOutro && hasNext && countdown === null && (
-          <button className="vp-skip-btn" onClick={skipOutro} style={{
-            position: "absolute", bottom: "100px", right: "40px", zIndex: 20,
-            background: "rgba(255,255,255,0.92)", color: "#000",
-            border: "none", borderRadius: "4px",
-            padding: "10px 24px", fontSize: "0.95rem", fontWeight: 700,
-            cursor: "pointer", letterSpacing: "0.5px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.transform = "scale(1.05)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.92)"; e.currentTarget.style.transform = "scale(1)"; }}
+          <button
+            type="button"
+            className="vp-skip-btn"
+            onClick={skipOutro}
+            style={{
+              position: "absolute",
+              bottom: "100px",
+              right: "40px",
+              zIndex: 20,
+              background: "rgba(255,255,255,0.92)",
+              color: "#000",
+              border: "none",
+              borderRadius: "4px",
+              padding: "10px 24px",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              letterSpacing: "0.5px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#fff";
+              e.currentTarget.style.transform = "scale(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.92)";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
           >
             Next Episode
           </button>
@@ -1810,48 +2312,98 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Countdown to next episode */}
         {countdown !== null && (
-          <div className="vp-countdown" style={{
-            position: "absolute", bottom: "80px", right: "40px", zIndex: 20,
-            background: "rgba(20,20,28,0.92)", backdropFilter: "blur(16px)",
-            border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
-            padding: "16px 24px", display: "flex", flexDirection: "column",
-            alignItems: "center", gap: "10px", minWidth: "200px",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-            animation: "vpSlideUp 0.3s ease",
-          }}>
+          <div
+            className="vp-countdown"
+            style={{
+              position: "absolute",
+              bottom: "80px",
+              right: "40px",
+              zIndex: 20,
+              background: "rgba(20,20,28,0.92)",
+              backdropFilter: "blur(16px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "12px",
+              padding: "16px 24px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "10px",
+              minWidth: "200px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+              animation: "vpSlideUp 0.3s ease",
+            }}
+          >
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", fontWeight: 500 }}>
               {nextSrc ? `Up Next: ${parseEpisodeFromSrc(nextSrc) || "Next Episode"}` : "Next episode in"}
             </div>
-            <div style={{
-              color: "#fff", fontSize: "2.5rem", fontWeight: 800,
-              fontVariantNumeric: "tabular-nums", lineHeight: 1,
-            }}>
+            <div
+              style={{
+                color: "#fff",
+                fontSize: "2.5rem",
+                fontWeight: 800,
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1,
+              }}
+            >
               {countdown}
             </div>
             <div style={{ display: "flex", gap: "8px", width: "100%" }}>
-              <button onClick={cancelCountdown} style={{
-                flex: 1, padding: "8px", borderRadius: "6px",
-                border: "1px solid rgba(255,255,255,0.15)", background: "transparent",
-                color: "rgba(255,255,255,0.7)", fontSize: "0.82rem", fontWeight: 600,
-                cursor: "pointer",
-              }}>
+              <button
+                type="button"
+                onClick={cancelCountdown}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "6px",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  background: "transparent",
+                  color: "rgba(255,255,255,0.7)",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
                 Cancel
               </button>
-              <button onClick={() => { cancelCountdown(); if (onNext) onNext(); }} style={{
-                flex: 1, padding: "8px", borderRadius: "6px",
-                border: "none", background: "#3b82f6",
-                color: "#fff", fontSize: "0.82rem", fontWeight: 600,
-                cursor: "pointer",
-              }}>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelCountdown();
+                  if (onNext) onNext();
+                }}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: "6px",
+                  border: "none",
+                  background: "#3b82f6",
+                  color: "#fff",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
                 Play Now
               </button>
             </div>
             {/* Progress ring */}
-            <svg width="40" height="40" viewBox="0 0 40 40" style={{ position: "absolute", top: "-4px", right: "-4px", opacity: 0.6 }}>
+            <svg
+              aria-hidden="true"
+              width="40"
+              height="40"
+              viewBox="0 0 40 40"
+              style={{ position: "absolute", top: "-4px", right: "-4px", opacity: 0.6 }}
+            >
               <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
-              <circle cx="20" cy="20" r="16" fill="none" stroke="#3b82f6" strokeWidth="3"
-                strokeDasharray={`${(2 * Math.PI * 16)}`}
-                strokeDashoffset={`${(2 * Math.PI * 16) * (1 - (countdown / 10))}`}
+              <circle
+                cx="20"
+                cy="20"
+                r="16"
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth="3"
+                strokeDasharray={`${2 * Math.PI * 16}`}
+                strokeDashoffset={`${2 * Math.PI * 16 * (1 - countdown / 10)}`}
                 strokeLinecap="round"
                 transform="rotate(-90 20 20)"
                 style={{ transition: "stroke-dashoffset 1s linear" }}
@@ -1862,47 +2414,74 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
         {/* Drag time overlay */}
         {dragging && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            color: "#fff", fontSize: "3.5rem", fontWeight: 800,
-            textShadow: "0 4px 24px rgba(0,0,0,0.7)",
-            pointerEvents: "none", fontVariantNumeric: "tabular-nums", zIndex: 5,
-            letterSpacing: "-1px",
-          }}>
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              color: "#fff",
+              fontSize: "3.5rem",
+              fontWeight: 800,
+              textShadow: "0 4px 24px rgba(0,0,0,0.7)",
+              pointerEvents: "none",
+              fontVariantNumeric: "tabular-nums",
+              zIndex: 5,
+              letterSpacing: "-1px",
+            }}
+          >
             {formatTime(dragTime)}
           </div>
         )}
 
         {/* Center play/pause icon */}
         {!playing && showControls && !dragging && !isLoading && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: "72px", height: "72px",
-            background: "rgba(59,130,246,0.85)",
-            borderRadius: "50%",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            pointerEvents: "none", zIndex: 5,
-            animation: "vpPulse 2s ease infinite",
-            boxShadow: "0 0 40px rgba(59,130,246,0.4)",
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><polygon points="8,4 20,12 8,20"/></svg>
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "72px",
+              height: "72px",
+              background: "rgba(59,130,246,0.85)",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              zIndex: 5,
+              animation: "vpPulse 2s ease infinite",
+              boxShadow: "0 0 40px rgba(59,130,246,0.4)",
+            }}
+          >
+            <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+              <polygon points="8,4 20,12 8,20" />
+            </svg>
           </div>
         )}
 
         {/* ── Top bar ── */}
-        <div data-controls style={{
-          position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
-          padding: "16px 24px",
-          background: "linear-gradient(rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 60%, transparent 100%)",
-          display: "flex", alignItems: "center", gap: "16px",
-          opacity: showControls ? 1 : 0,
-          transform: showControls ? "translateY(0)" : "translateY(-8px)",
-          transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-          pointerEvents: showControls ? "auto" : "none",
-        }}>
-          <button className="vp-ctrl-btn" onClick={onHide} style={{ marginRight: "4px" }}>
+        <div
+          data-controls
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            padding: "16px 24px",
+            background: "linear-gradient(rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 60%, transparent 100%)",
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+            opacity: showControls ? 1 : 0,
+            transform: showControls ? "translateY(0)" : "translateY(-8px)",
+            transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+            pointerEvents: showControls ? "auto" : "none",
+          }}
+        >
+          <button type="button" className="vp-ctrl-btn" onClick={onHide} style={{ marginRight: "4px" }}>
             <IconBack />
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1911,22 +2490,31 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
         </div>
 
         {/* ── Bottom controls ── */}
-        <div data-controls style={{
-          position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 10,
-          padding: "0 20px 16px",
-          background: "linear-gradient(transparent 0%, rgba(0,0,0,0.5) 30%, rgba(0,0,0,0.85) 100%)",
-          opacity: showControls || dragging ? 1 : 0,
-          transform: (showControls || dragging) ? "translateY(0)" : "translateY(8px)",
-          transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-          pointerEvents: (showControls || dragging) ? "auto" : "none",
-        }}>
-
+        <div
+          data-controls
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            padding: "0 20px 16px",
+            background: "linear-gradient(transparent 0%, rgba(0,0,0,0.5) 30%, rgba(0,0,0,0.85) 100%)",
+            opacity: showControls || dragging ? 1 : 0,
+            transform: showControls || dragging ? "translateY(0)" : "translateY(8px)",
+            transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+            pointerEvents: showControls || dragging ? "auto" : "none",
+          }}
+        >
           {/* ── Progress bar (outer touch target) ── */}
           <div
             ref={progressRef}
             onMouseDown={handleProgressMouseDown}
             onTouchStart={handleProgressTouchStart}
-            onMouseMove={(e) => { handleProgressHover(e); setProgressHovered(true); }}
+            onMouseMove={(e) => {
+              handleProgressHover(e);
+              setProgressHovered(true);
+            }}
             onMouseLeave={handleProgressLeave}
             onMouseEnter={() => setProgressHovered(true)}
             style={{
@@ -1938,79 +2526,111 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               touchAction: "none",
             }}
           >
-          {/* Visual bar */}
-          <div style={{
-              width: "100%",
-              height: (dragging || progressHovered) ? "8px" : "4px",
-              background: "rgba(255,255,255,0.15)",
-              borderRadius: "4px",
-              position: "relative",
-              transition: "height 0.15s ease",
-              pointerEvents: "none",
-            }}
-          >
-            {/* Hover tooltip */}
-            {hoverTime !== null && !dragging && (
-              <div style={{
-                position: "absolute", bottom: "18px",
-                left: `${hoverX}px`, transform: "translateX(-50%)",
-                background: "rgba(20,20,28,0.92)", backdropFilter: "blur(8px)",
-                color: "#fff", padding: "4px 10px", borderRadius: "6px",
-                fontSize: "0.78rem", fontWeight: 600, pointerEvents: "none",
-                whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-                border: "1px solid rgba(255,255,255,0.08)",
-              }}>
-                {formatTime(hoverTime)}
-              </div>
-            )}
+            {/* Visual bar */}
+            <div
+              style={{
+                width: "100%",
+                height: dragging || progressHovered ? "8px" : "4px",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: "4px",
+                position: "relative",
+                transition: "height 0.15s ease",
+                pointerEvents: "none",
+              }}
+            >
+              {/* Hover tooltip */}
+              {hoverTime !== null && !dragging && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "18px",
+                    left: `${hoverX}px`,
+                    transform: "translateX(-50%)",
+                    background: "rgba(20,20,28,0.92)",
+                    backdropFilter: "blur(8px)",
+                    color: "#fff",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {formatTime(hoverTime)}
+                </div>
+              )}
 
-            {/* Drag tooltip */}
-            {dragging && (
-              <div style={{
-                position: "absolute", bottom: "20px",
-                left: `${dragX}px`, transform: "translateX(-50%)",
-                background: "rgba(59,130,246,0.92)", backdropFilter: "blur(8px)",
-                color: "#fff", padding: "5px 12px", borderRadius: "6px",
-                fontSize: "0.82rem", fontWeight: 700, pointerEvents: "none",
-                whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-              }}>
-                {formatTime(dragTime)}
-              </div>
-            )}
+              {/* Drag tooltip */}
+              {dragging && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "20px",
+                    left: `${dragX}px`,
+                    transform: "translateX(-50%)",
+                    background: "rgba(59,130,246,0.92)",
+                    backdropFilter: "blur(8px)",
+                    color: "#fff",
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {formatTime(dragTime)}
+                </div>
+              )}
 
-            {/* Buffered */}
-            <div style={{
-              position: "absolute", top: 0, left: 0, height: "100%",
-              width: `${bufferedProgress}%`,
-              background: isStreamed
-                ? "rgba(255,255,255,0.25)"
-                : "rgba(255,255,255,0.2)",
-              borderRadius: "4px",
-              transition: "width 0.5s ease",
-            }} />
+              {/* Buffered */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  width: `${bufferedProgress}%`,
+                  background: isStreamed ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.2)",
+                  borderRadius: "4px",
+                  transition: "width 0.5s ease",
+                }}
+              />
 
-            {/* Played */}
-            <div style={{
-              position: "absolute", top: 0, left: 0, height: "100%",
-              width: `${progress}%`,
-              background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
-              borderRadius: "4px",
-              boxShadow: "0 0 8px rgba(59,130,246,0.4)",
-            }} />
+              {/* Played */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  width: `${progress}%`,
+                  background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
+                  borderRadius: "4px",
+                  boxShadow: "0 0 8px rgba(59,130,246,0.4)",
+                }}
+              />
 
-            {/* Scrubber handle */}
-            <div style={{
-              position: "absolute", top: "50%",
-              left: `${progress}%`,
-              transform: "translate(-50%, -50%)",
-              width: (dragging || progressHovered) ? "16px" : (isTouchDeviceRef.current ? "12px" : "0px"),
-              height: (dragging || progressHovered) ? "16px" : (isTouchDeviceRef.current ? "12px" : "0px"),
-              borderRadius: "50%",
-              background: "#fff",
-              transition: "all 0.15s ease",
-              boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(59,130,246,0.3)",
-            }} />
-          </div>
+              {/* Scrubber handle */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: `${progress}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: dragging || progressHovered ? "16px" : isTouchDeviceRef.current ? "12px" : "0px",
+                  height: dragging || progressHovered ? "16px" : isTouchDeviceRef.current ? "12px" : "0px",
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "all 0.15s ease",
+                  boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(59,130,246,0.3)",
+                }}
+              />
+            </div>
           </div>
 
           {/* ── Control buttons ── */}
@@ -2018,26 +2638,26 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             {/* Left controls */}
             <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
               {/* Play/Pause */}
-              <button className="vp-ctrl-btn" onClick={togglePlay}>
+              <button type="button" className="vp-ctrl-btn" onClick={togglePlay}>
                 {playing ? <IconPause /> : <IconPlay />}
                 <span className="vp-tooltip">{playing ? "Pause (k)" : "Play (k)"}</span>
               </button>
 
               {/* Skip back */}
-              <button className="vp-ctrl-btn" onClick={() => skip(-10)}>
+              <button type="button" className="vp-ctrl-btn" onClick={() => skip(-10)}>
                 <IconSkipBack />
                 <span className="vp-tooltip">-10s (j)</span>
               </button>
 
               {/* Skip forward */}
-              <button className="vp-ctrl-btn" onClick={() => skip(10)}>
+              <button type="button" className="vp-ctrl-btn" onClick={() => skip(10)}>
                 <IconSkipForward />
                 <span className="vp-tooltip">+10s (l)</span>
               </button>
 
               {/* Previous episode */}
               {onPrev && hasPrev && (
-                <button className="vp-ctrl-btn" onClick={onPrev}>
+                <button type="button" className="vp-ctrl-btn" onClick={onPrev}>
                   <IconPrev />
                   <span className="vp-tooltip">Previous (b)</span>
                 </button>
@@ -2045,39 +2665,61 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
               {/* Next episode */}
               {onNext && (
-                <button className="vp-ctrl-btn" onClick={onNext}>
+                <button type="button" className="vp-ctrl-btn" onClick={onNext}>
                   <IconNext />
                   <span className="vp-tooltip">Next (n)</span>
                 </button>
               )}
 
               {/* Volume */}
-              <div className="vp-volume-wrapper" style={{ display: "flex", alignItems: "center", position: "relative" }}
-                onMouseEnter={() => { if (!isTouchDeviceRef.current) { setShowVolumeSlider(true); if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current); } }}
-                onMouseLeave={() => { if (!isTouchDeviceRef.current) { volumeTimeoutRef.current = window.setTimeout(() => setShowVolumeSlider(false), 800); } }}
-              >
-                <button className="vp-ctrl-btn" onClick={() => {
-                  if (isTouchDeviceRef.current) {
-                    setShowVolumeSlider((v) => !v);
-                    setShowSettingsMenu(false);
-                    setShowCcMenu(false);
-                    setShowAudioMenu(false);
-                  } else {
-                    toggleMute();
+              <div
+                className="vp-volume-wrapper"
+                style={{ display: "flex", alignItems: "center", position: "relative" }}
+                onMouseEnter={() => {
+                  if (!isTouchDeviceRef.current) {
+                    setShowVolumeSlider(true);
+                    if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
                   }
-                }}>
+                }}
+                onMouseLeave={() => {
+                  if (!isTouchDeviceRef.current) {
+                    volumeTimeoutRef.current = window.setTimeout(() => setShowVolumeSlider(false), 800);
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  className="vp-ctrl-btn"
+                  onClick={() => {
+                    if (isTouchDeviceRef.current) {
+                      setShowVolumeSlider((v) => !v);
+                      setShowSettingsMenu(false);
+                      setShowCcMenu(false);
+                      setShowAudioMenu(false);
+                    } else {
+                      toggleMute();
+                    }
+                  }}
+                >
                   {muted || volume === 0 ? <IconVolumeMuted /> : volume < 0.5 ? <IconVolumeLow /> : <IconVolumeHigh />}
                 </button>
                 {/* Desktop: horizontal slider */}
-                <div className="vp-volume-horizontal" style={{
-                  width: showVolumeSlider ? "100px" : "0px",
-                  overflow: "hidden",
-                  transition: "width 0.2s ease",
-                  display: "flex", alignItems: "center",
-                  paddingRight: showVolumeSlider ? "8px" : "0px",
-                }}>
+                <div
+                  className="vp-volume-horizontal"
+                  style={{
+                    width: showVolumeSlider ? "100px" : "0px",
+                    overflow: "hidden",
+                    transition: "width 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    paddingRight: showVolumeSlider ? "8px" : "0px",
+                  }}
+                >
                   <input
-                    type="range" min="0" max="1" step="0.02"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.02"
                     value={muted ? 0 : volume}
                     onChange={handleVolumeChange}
                     className="vp-volume-track"
@@ -2088,36 +2730,62 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                 </div>
                 {/* Mobile: vertical popup slider */}
                 {showVolumeSlider && (
-                  <div className="vp-volume-popup"
-                    onTouchStart={(e) => { e.stopPropagation(); if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); }}
-                    onTouchMove={(e) => { e.stopPropagation(); }}
-                    onTouchEnd={(e) => { e.stopPropagation(); }}
+                  <div
+                    className="vp-volume-popup"
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+                    }}
+                    onTouchMove={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                    }}
                     style={{
-                    position: "absolute", bottom: "calc(100% + 12px)", left: "50%",
-                    transform: "translateX(-50%)",
-                    background: "rgba(20,20,28,0.96)", backdropFilter: "blur(20px)",
-                    border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px",
-                    padding: "16px 12px", display: "none", flexDirection: "column",
-                    alignItems: "center", gap: "10px", minHeight: "140px",
-                    boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-                    animation: "vpSlideUp 0.2s ease",
-                  }}>
+                      position: "absolute",
+                      bottom: "calc(100% + 12px)",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      background: "rgba(20,20,28,0.96)",
+                      backdropFilter: "blur(20px)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: "12px",
+                      padding: "16px 12px",
+                      display: "none",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "10px",
+                      minHeight: "140px",
+                      boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+                      animation: "vpSlideUp 0.2s ease",
+                    }}
+                  >
                     <input
-                      type="range" min="0" max="1" step="0.02"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.02"
                       value={muted ? 0 : volume}
                       onChange={handleVolumeChange}
                       className="vp-volume-track"
                       style={{
                         writingMode: "vertical-lr",
                         direction: "rtl",
-                        width: "6px", height: "120px",
+                        width: "6px",
+                        height: "120px",
                         background: `linear-gradient(to top, #3b82f6 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
                       }}
                     />
                     <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.72rem", fontWeight: 600 }}>
                       {Math.round((muted ? 0 : volume) * 100)}%
                     </span>
-                    <button className="vp-speed-btn" onClick={toggleMute} style={{ padding: "6px 12px", fontSize: "0.78rem", justifyContent: "center" }}>
+                    <button
+                      type="button"
+                      className="vp-speed-btn"
+                      onClick={toggleMute}
+                      style={{ padding: "6px 12px", fontSize: "0.78rem", justifyContent: "center" }}
+                    >
                       {muted ? "Unmute" : "Mute"}
                     </button>
                   </div>
@@ -2125,11 +2793,16 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </div>
 
               {/* Time */}
-              <span style={{
-                color: "rgba(255,255,255,0.7)", fontSize: "0.82rem",
-                marginLeft: "8px", fontVariantNumeric: "tabular-nums",
-                fontWeight: 500, letterSpacing: "0.3px",
-              }}>
+              <span
+                style={{
+                  color: "rgba(255,255,255,0.7)",
+                  fontSize: "0.82rem",
+                  marginLeft: "8px",
+                  fontVariantNumeric: "tabular-nums",
+                  fontWeight: 500,
+                  letterSpacing: "0.3px",
+                }}
+              >
                 {formatTime(displayTime)}
                 <span style={{ color: "rgba(255,255,255,0.35)", margin: "0 4px" }}>/</span>
                 {formatTime(duration)}
@@ -2138,26 +2811,43 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
             {/* Episode navigation (center) */}
             {episodeLabel && (
-              <div className="vp-hide-mobile" style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                minWidth: 0, padding: "0 12px", gap: "4px",
-              }}>
+              <div
+                className="vp-hide-mobile"
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minWidth: 0,
+                  padding: "0 12px",
+                  gap: "4px",
+                }}
+              >
                 {onPrev && hasPrev && (
-                  <button className="vp-ctrl-btn" onClick={onPrev} style={{ padding: "6px" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="15,4 5,12 15,20" /></svg>
+                  <button type="button" className="vp-ctrl-btn" onClick={onPrev} style={{ padding: "6px" }}>
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                      <polygon points="15,4 5,12 15,20" />
+                    </svg>
                     <span className="vp-tooltip">Previous (b)</span>
                   </button>
                 )}
-                <span style={{
-                  color: "rgba(255,255,255,0.7)", fontSize: "0.82rem",
-                  fontWeight: 500, overflow: "hidden",
-                  textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
+                <span
+                  style={{
+                    color: "rgba(255,255,255,0.7)",
+                    fontSize: "0.82rem",
+                    fontWeight: 500,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   {episodeLabel}
                 </span>
                 {onNext && hasNext && (
-                  <button className="vp-ctrl-btn" onClick={onNext} style={{ padding: "6px" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="9,4 19,12 9,20" /></svg>
+                  <button type="button" className="vp-ctrl-btn" onClick={onNext} style={{ padding: "6px" }}>
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                      <polygon points="9,4 19,12 9,20" />
+                    </svg>
                     <span className="vp-tooltip">Next (n)</span>
                   </button>
                 )}
@@ -2168,18 +2858,32 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
             <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
               {/* Remaining time badge */}
               {playing && duration > 0 && (
-                <span className="vp-hide-mobile" style={{
-                  color: "rgba(255,255,255,0.45)", fontSize: "0.78rem",
-                  fontVariantNumeric: "tabular-nums", marginRight: "4px",
-                }}>
+                <span
+                  className="vp-hide-mobile"
+                  style={{
+                    color: "rgba(255,255,255,0.45)",
+                    fontSize: "0.78rem",
+                    fontVariantNumeric: "tabular-nums",
+                    marginRight: "4px",
+                  }}
+                >
                   -{formatTime(remaining)}
                 </span>
               )}
 
               {/* Settings (speed) */}
               <div style={{ position: "relative" }}>
-                <button className="vp-ctrl-btn" onClick={() => { setShowSettingsMenu((v) => !v); setShowCcMenu(false); setShowAudioMenu(false); setShowVolumeSlider(false); }}
-                  style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="vp-ctrl-btn"
+                  onClick={() => {
+                    setShowSettingsMenu((v) => !v);
+                    setShowCcMenu(false);
+                    setShowAudioMenu(false);
+                    setShowVolumeSlider(false);
+                  }}
+                  style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}
+                >
                   <IconSettings />
                   {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#3b82f6" }}>{playbackRate}x</span>}
                   <span className="vp-tooltip">Settings</span>
@@ -2187,11 +2891,25 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
 
                 {showSettingsMenu && (
                   <div className="vp-settings-panel">
-                    <div style={{ padding: "6px 16px 8px", color: "rgba(255,255,255,0.4)", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>
+                    <div
+                      style={{
+                        padding: "6px 16px 8px",
+                        color: "rgba(255,255,255,0.4)",
+                        fontSize: "0.72rem",
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: "1px",
+                      }}
+                    >
                       Speed
                     </div>
                     {speeds.map((s) => (
-                      <button key={s} className={`vp-speed-btn${s === playbackRate ? " active" : ""}`} onClick={() => changeSpeed(s)}>
+                      <button
+                        type="button"
+                        key={s}
+                        className={`vp-speed-btn${s === playbackRate ? " active" : ""}`}
+                        onClick={() => changeSpeed(s)}
+                      >
                         <span>{s === 1 ? "Normal" : `${s}x`}</span>
                         {s === playbackRate && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
                       </button>
@@ -2201,29 +2919,51 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               </div>
 
               {/* Restart */}
-              <button className="vp-ctrl-btn vp-hide-mobile" onClick={restartFromBeginning}>
+              <button type="button" className="vp-ctrl-btn vp-hide-mobile" onClick={restartFromBeginning}>
                 <IconRestart />
                 <span className="vp-tooltip">Restart</span>
               </button>
 
               {/* Closed Captions */}
               <div style={{ position: "relative" }}>
-                <button className="vp-ctrl-btn" onClick={toggleCC}
-                  style={{ opacity: ccAvailable ? 1 : 0.4 }}>
+                <button
+                  type="button"
+                  className="vp-ctrl-btn"
+                  onClick={toggleCC}
+                  style={{ opacity: ccAvailable ? 1 : 0.4 }}
+                >
                   <IconCC active={ccEnabled} />
                   <span className="vp-tooltip">{ccEnabled ? "CC Off (c)" : "CC On (c)"}</span>
                 </button>
                 {showCcMenu && subtitles && subtitles.length > 0 && (
                   <div className="vp-settings-panel" style={{ right: 0 }}>
-                    <div style={{ padding: "6px 16px 8px", color: "rgba(255,255,255,0.4)", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>
+                    <div
+                      style={{
+                        padding: "6px 16px 8px",
+                        color: "rgba(255,255,255,0.4)",
+                        fontSize: "0.72rem",
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: "1px",
+                      }}
+                    >
                       Subtitles
                     </div>
-                    <button className={`vp-speed-btn${activeTrackIndex === -1 ? " active" : ""}`} onClick={disableCC}>
+                    <button
+                      type="button"
+                      className={`vp-speed-btn${activeTrackIndex === -1 ? " active" : ""}`}
+                      onClick={disableCC}
+                    >
                       <span>Off</span>
                       {activeTrackIndex === -1 && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
                     </button>
                     {subtitles.map((sub, i) => (
-                      <button key={sub.src} className={`vp-speed-btn${activeTrackIndex === i ? " active" : ""}`} onClick={() => selectCcTrack(i)}>
+                      <button
+                        type="button"
+                        key={sub.src}
+                        className={`vp-speed-btn${activeTrackIndex === i ? " active" : ""}`}
+                        onClick={() => selectCcTrack(i)}
+                      >
                         <span>{sub.label}</span>
                         {activeTrackIndex === i && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
                       </button>
@@ -2235,13 +2975,31 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               {/* Audio Track Selector */}
               {isStreamed && audioTracks.length > 1 && (
                 <div style={{ position: "relative" }}>
-                  <button className="vp-ctrl-btn" onClick={() => { setShowAudioMenu((v) => !v); setShowSettingsMenu(false); setShowCcMenu(false); setShowVolumeSlider(false); }}>
+                  <button
+                    type="button"
+                    className="vp-ctrl-btn"
+                    onClick={() => {
+                      setShowAudioMenu((v) => !v);
+                      setShowSettingsMenu(false);
+                      setShowCcMenu(false);
+                      setShowVolumeSlider(false);
+                    }}
+                  >
                     <IconAudio active={activeAudioTrack > 0} />
                     <span className="vp-tooltip">Audio (a)</span>
                   </button>
                   {showAudioMenu && (
                     <div className="vp-settings-panel" style={{ right: 0 }}>
-                      <div style={{ padding: "6px 16px 8px", color: "rgba(255,255,255,0.4)", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>
+                      <div
+                        style={{
+                          padding: "6px 16px 8px",
+                          color: "rgba(255,255,255,0.4)",
+                          fontSize: "0.72rem",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "1px",
+                        }}
+                      >
                         Audio
                       </div>
                       {audioTracks.map((track, i) => {
@@ -2250,12 +3008,19 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
                           : track.language !== "und"
                             ? track.language.toUpperCase()
                             : `Track ${i + 1}`;
-                        const channelInfo = track.channels > 2
-                          ? ` (${track.channelLayout || `${track.channels}ch`})`
-                          : "";
+                        const channelInfo =
+                          track.channels > 2 ? ` (${track.channelLayout || `${track.channels}ch`})` : "";
                         return (
-                          <button key={track.index} className={`vp-speed-btn${i === activeAudioTrack ? " active" : ""}`} onClick={() => selectAudioTrack(i)}>
-                            <span>{label}{channelInfo}</span>
+                          <button
+                            type="button"
+                            key={track.index}
+                            className={`vp-speed-btn${i === activeAudioTrack ? " active" : ""}`}
+                            onClick={() => selectAudioTrack(i)}
+                          >
+                            <span>
+                              {label}
+                              {channelInfo}
+                            </span>
                             {i === activeAudioTrack && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
                           </button>
                         );
@@ -2266,13 +3031,13 @@ export default function VideoPlayer({ show, onHide, src, title, dirPath, initial
               )}
 
               {/* PiP */}
-              <button className="vp-ctrl-btn vp-hide-mobile" onClick={togglePip}>
+              <button type="button" className="vp-ctrl-btn vp-hide-mobile" onClick={togglePip}>
                 <IconPip />
                 <span className="vp-tooltip">{isPip ? "Exit PiP (p)" : "PiP (p)"}</span>
               </button>
 
               {/* Fullscreen */}
-              <button className="vp-ctrl-btn" onClick={toggleFullscreen}>
+              <button type="button" className="vp-ctrl-btn" onClick={toggleFullscreen}>
                 {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
                 <span className="vp-tooltip">{isFullscreen ? "Exit Fullscreen (f)" : "Fullscreen (f)"}</span>
               </button>

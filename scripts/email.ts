@@ -1,7 +1,6 @@
 import nodemailer from "nodemailer";
 import { getGlobalSettings } from "./profile";
 import db from "./db";
-import { createHash, randomBytes } from "node:crypto";
 
 export function isSmtpConfigured(): boolean {
   const settings = getGlobalSettings();
@@ -17,14 +16,20 @@ function createTransport() {
     host: settings.smtp_host,
     port: settings.smtp_port,
     secure: settings.smtp_port === 465,
-    auth: settings.smtp_user ? {
-      user: settings.smtp_user,
-      pass: settings.smtp_pass || "",
-    } : undefined,
+    auth: settings.smtp_user
+      ? {
+          user: settings.smtp_user,
+          pass: settings.smtp_pass || "",
+        }
+      : undefined,
   });
 }
 
-export async function sendPasswordResetEmail(profileEmail: string, profileName: string, resetCode: string): Promise<void> {
+export async function sendPasswordResetEmail(
+  profileEmail: string,
+  profileName: string,
+  resetCode: string,
+): Promise<void> {
   const settings = getGlobalSettings();
   const transport = createTransport();
   await transport.sendMail({
@@ -63,14 +68,20 @@ export function createResetToken(profileId: number): string {
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   // Invalidate any existing unused tokens for this profile
   db.run("UPDATE password_reset_tokens SET used = 1 WHERE profile_id = ? AND used = 0", [profileId]);
-  db.run("INSERT INTO password_reset_tokens (profile_id, token, expires_at) VALUES (?, ?, ?)", [profileId, code, expiresAt]);
+  db.run("INSERT INTO password_reset_tokens (profile_id, token, expires_at) VALUES (?, ?, ?)", [
+    profileId,
+    code,
+    expiresAt,
+  ]);
   return code;
 }
 
 export function verifyResetToken(profileId: number, token: string): boolean {
-  const row = db.prepare(
-    "SELECT id FROM password_reset_tokens WHERE profile_id = ? AND token = ? AND used = 0 AND expires_at > datetime('now')"
-  ).get(profileId, token) as { id: number } | null;
+  const row = db
+    .prepare(
+      "SELECT id FROM password_reset_tokens WHERE profile_id = ? AND token = ? AND used = 0 AND expires_at > datetime('now')",
+    )
+    .get(profileId, token) as { id: number } | null;
   if (!row) return false;
   // Mark as used
   db.run("UPDATE password_reset_tokens SET used = 1 WHERE id = ?", [row.id]);

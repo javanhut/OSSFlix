@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream } from "../scripts/streamingProfile";
+import {
+  buildCacheTranscodeArgs,
+  buildLiveTranscodeArgs,
+  selectAudioStream,
+  selectVideoStream,
+} from "../scripts/streamingProfile";
 
 describe("selectAudioStream", () => {
   const streams = [
@@ -40,7 +45,7 @@ describe("buildLiveTranscodeArgs", () => {
       "/media/sample.mkv",
       { index: 2, channels: 6, codecName: "eac3" },
       { index: 0, codecName: "hevc", pixFmt: "yuv420p10le" },
-      0
+      0,
     );
     const joined = args.join(" ");
 
@@ -54,7 +59,9 @@ describe("buildLiveTranscodeArgs", () => {
     expect(args).toContain("0:2");
     expect(args).toContain("superfast");
     expect(joined.includes("loudnorm=I=-16:TP=-1.5:LRA=11")).toBe(false);
-    expect(joined.includes("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE")).toBe(true);
+    expect(joined.includes("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE")).toBe(
+      true,
+    );
   });
 
   test("includes hybrid seek arguments when startTime is non-zero", () => {
@@ -62,7 +69,7 @@ describe("buildLiveTranscodeArgs", () => {
       "/media/sample.mkv",
       { index: 1, channels: 2, codecName: "aac" },
       { index: 0, codecName: "h264", pixFmt: "yuv420p" },
-      75
+      75,
     );
 
     // Includes a pre-input seek window and an accurate post-input seek.
@@ -77,7 +84,7 @@ describe("buildLiveTranscodeArgs", () => {
       "/media/sample.mkv",
       { index: 1, channels: 2, codecName: "aac" },
       { index: 0, codecName: "h264", pixFmt: "yuv420p" },
-      0
+      0,
     );
 
     expect(args).toContain("-c:v");
@@ -89,7 +96,11 @@ describe("buildLiveTranscodeArgs", () => {
 
 describe("buildCacheTranscodeArgs", () => {
   test("uses cache profile and faststart output", () => {
-    const args = buildCacheTranscodeArgs("/media/sample.mkv", { index: 1, channels: 2, codecName: "aac" }, "/tmp/out.mp4");
+    const args = buildCacheTranscodeArgs(
+      "/media/sample.mkv",
+      { index: 1, channels: 2, codecName: "aac" },
+      "/tmp/out.mp4",
+    );
 
     expect(args).toContain("libx264");
     expect(args).toContain("fast");

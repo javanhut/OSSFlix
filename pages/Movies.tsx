@@ -39,7 +39,9 @@ export default function Movies() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const handler = () => loadData();
@@ -58,10 +60,7 @@ export default function Movies() {
     );
   }
 
-  const defaultRows = [
-    ...(allMoviesRow ? [allMoviesRow] : []),
-    ...genreRows,
-  ];
+  const defaultRows = [...(allMoviesRow ? [allMoviesRow] : []), ...genreRows];
 
   const displayRows = filteredRows ?? defaultRows;
 

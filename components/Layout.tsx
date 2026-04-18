@@ -6,7 +6,9 @@ export default function Layout() {
 
   return (
     <div className="oss-page">
-      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <NavBar />
       <div id="main-content" key={location.pathname} className="page-transition-wrapper">
         <Outlet />

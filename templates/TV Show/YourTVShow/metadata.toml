@@ -6,3 +6,17 @@ episodes = 3
 description = """A brief synopsis of the show."""
 genre = ["Action", "Comedy", "Drama"]
 cast = ["Actor One", "Actor Two"]
+
+# Optional per-season metadata. Each entry binds to its `season` number, matched
+# against the season parsed from video paths (s1, s01, Season 1 all equivalent).
+# When present, the Card modal swaps its banner + description per selected season.
+#
+# [[seasons]]
+# season = 1
+# description = "Season 1 arc description."
+# logo = "s1_logo.png"
+#
+# [[seasons]]
+# season = 2
+# description = "Season 2 arc description."
+# logo = "s2_logo.png"

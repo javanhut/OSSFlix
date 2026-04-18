@@ -23,11 +23,30 @@ bun install
 # Create required directories
 mkdir -p data/avatars
 
-# Run the server
-bun --hot index.ts
+# Run the server (HMR enabled)
+bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Development
+
+All dev commands are wired up in `package.json`:
+
+| Command                | What it does                                         |
+|------------------------|------------------------------------------------------|
+| `bun run dev`          | Start the server with hot-module reload              |
+| `bun run start`        | Start in production mode (`NODE_ENV=production`)     |
+| `bun run scan`         | Rescan media directories into the SQLite DB         |
+| `bun run test`         | Run the full test suite (`bun test`)                 |
+| `bun run test:watch`   | Run tests in watch mode                              |
+| `bun run typecheck`    | Type-check the project with `tsc --noEmit`           |
+| `bun run format`       | Format all files with Biome (writes changes)         |
+| `bun run format:check` | Check formatting without writing                     |
+| `bun run lint`         | Lint with Biome                                      |
+| `bun run check`        | Format + lint + import organize (CI-friendly)        |
+
+Formatting is configured in `biome.json` (2-space indent, double quotes, semicolons, trailing commas, 120-col lines). Editor integration: install the [Biome extension](https://biomejs.dev/guides/editors/first-party-extensions/) for format-on-save.
 
 ## Docker / Podman
 
@@ -124,6 +143,32 @@ genre = ["Action", "Comedy", "Drama"]
 cast = ["Actor One", "Actor Two"]
 ```
 
+The `type` field is matched case- and punctuation-insensitive. Any of these resolve to "TV Show": `"TV Show"`, `"tv show"`, `"TvShow"`, `"TV-Show"`, `"series"`, `"show"`, `"TV Series"`. For movies: `"Movie"`, `"movie"`, `"film"`.
+
+#### Per-Season Metadata (optional)
+
+For multi-season shows, add a top-level `[[seasons]]` array. Each entry binds to its `season` number and, when the user switches seasons in the Card modal, swaps the banner image and description accordingly. Shows without `[[seasons]]` keep using the show-level `description` and banner image.
+
+```toml
+[series]
+name = "Your TV Show"
+type = "TV Show"
+description = "Default show-level description (fallback)."
+genre = ["Drama"]
+
+[[seasons]]
+season = 1
+description = "Season 1 arc description."
+logo = "s1_logo.png"         # filename relative to the title folder
+
+[[seasons]]
+season = 2
+description = "Season 2 arc description."
+logo = "s2_logo.png"
+```
+
+Season numbers match the file-system season (`s1`, `s01`, `Season 1` are all equivalent). If the content has only one season and exactly one `[[seasons]]` entry, the entry is applied regardless of its declared `season`.
+
 ### TOML Fields Reference
 
 | Field         | Required | Type       | Description                                |
@@ -138,24 +183,20 @@ cast = ["Actor One", "Actor Two"]
 
 ### Episode Naming Convention
 
-For TV shows, name video files with this pattern so episodes are recognized and ordered:
+TV episodes are labeled as `S{season} E{episode} - Title` in the UI. Reelscape accepts four equivalent layouts — all four resolve to the same canonical label:
 
-```
-<episode title>_s<season>_ep<episode>.<ext>
-```
+| Layout | Example                                     | Resolves to             |
+|--------|---------------------------------------------|-------------------------|
+| A      | `s1/ep1/pilot.mkv`                          | `S1 E1 - Pilot`         |
+| B      | `s1/MyShow_s01_ep02.mkv`                    | `S1 E2 - MyShow`        |
+| C      | `s01/ep02/The Bank Job.mkv`                 | `S1 E2 - The Bank Job`  |
+| Flat   | `Breaking_Bad_s01_ep03.mkv`                 | `S1 E3 - Breaking Bad`  |
 
-**Examples:**
-```
-Pilot_s1_ep1.mp4
-The Journey Begins_s1_ep2.mp4
-New Horizons_s2_ep1.mp4
-```
+Season and episode tokens are case-insensitive and accept multiple spellings:
+- Season: `s1`, `s01`, `S1`, `Season 1`, `season1`
+- Episode: `e1`, `e01`, `ep1`, `ep01`, `episode 1`, `episode1`
 
-- `_s1_` = Season 1
-- `_ep1` = Episode 1
-- The part before `_s` becomes the episode title (underscores are converted to spaces in the UI)
-
-For **movies**, the filename doesn't matter — just place the video file in the folder.
+Layouts A and C rely on the directory structure (used by KaidaDB nested layouts). The flat layout works locally too. For **movies**, the filename doesn't matter — just place the video file in the folder.
 
 ### Supported Formats
 
@@ -294,7 +335,8 @@ If KaidaDB is unreachable, playback falls back to local files transparently. The
    ```
 
 5. **Rescan the library** — either:
-   - Restart the server (`bun --hot index.ts`)
+   - Run `bun run scan` from the command line
+   - Restart the server (`bun run dev`)
    - Update the directory path in Settings (triggers a rescan)
    - Hit the API directly: `GET /api/media/resolve`
 

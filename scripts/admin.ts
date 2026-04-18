@@ -4,7 +4,9 @@ import { hashPassword, verifyPassword } from "./auth";
 const ADMIN_SESSION_TTL_HOURS = 24;
 
 export function isAdminSetup(): boolean {
-  const row = db.prepare("SELECT admin_password_hash FROM global_settings WHERE id = 1").get() as { admin_password_hash: string | null } | null;
+  const row = db.prepare("SELECT admin_password_hash FROM global_settings WHERE id = 1").get() as {
+    admin_password_hash: string | null;
+  } | null;
   return !!row?.admin_password_hash;
 }
 
@@ -15,7 +17,9 @@ export async function setupAdmin(plain: string): Promise<void> {
 }
 
 export async function verifyAdminPassword(plain: string): Promise<boolean> {
-  const row = db.prepare("SELECT admin_password_hash FROM global_settings WHERE id = 1").get() as { admin_password_hash: string | null } | null;
+  const row = db.prepare("SELECT admin_password_hash FROM global_settings WHERE id = 1").get() as {
+    admin_password_hash: string | null;
+  } | null;
   if (!row?.admin_password_hash) return false;
   return verifyPassword(plain, row.admin_password_hash);
 }

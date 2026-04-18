@@ -18,7 +18,17 @@ type SelectorMenuProps = {
   onWatchlistChange?: (dirPath: string, inList: boolean) => void;
 };
 
-function TitleCard({ title, onClick, showQuickAdd, onWatchlistChange }: { title: TitleInfo; onClick: () => void; showQuickAdd?: boolean; onWatchlistChange?: (dirPath: string, inList: boolean) => void }) {
+function TitleCard({
+  title,
+  onClick,
+  showQuickAdd,
+  onWatchlistChange,
+}: {
+  title: TitleInfo;
+  onClick: () => void;
+  showQuickAdd?: boolean;
+  onWatchlistChange?: (dirPath: string, inList: boolean) => void;
+}) {
   const [hovered, setHovered] = useState(false);
   const [description, setDescription] = useState<string | null>(null);
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -29,7 +39,10 @@ function TitleCard({ title, onClick, showQuickAdd, onWatchlistChange }: { title:
     if (showQuickAdd && !checkedWatchlist) {
       fetch(`/api/watchlist/check?dir=${encodeURIComponent(title.pathToDir)}`, { credentials: "same-origin" })
         .then((res) => res.json())
-        .then((data: { inList: boolean }) => { setInWatchlist(data.inList); setCheckedWatchlist(true); })
+        .then((data: { inList: boolean }) => {
+          setInWatchlist(data.inList);
+          setCheckedWatchlist(true);
+        })
         .catch(() => {});
     }
   }, [showQuickAdd, title.pathToDir, checkedWatchlist]);
@@ -70,12 +83,7 @@ function TitleCard({ title, onClick, showQuickAdd, onWatchlistChange }: { title:
       onMouseLeave={() => setHovered(false)}
       onClick={onClick}
     >
-      <img
-        src={title.imagePath}
-        alt={title.name}
-        className="oss-card-img"
-        loading="lazy"
-      />
+      <img src={title.imagePath} alt={title.name} className="oss-card-img" loading="lazy" />
       <div className="oss-card-overlay">
         <p>{hovered ? (description ?? "Loading...") : ""}</p>
       </div>
@@ -84,6 +92,7 @@ function TitleCard({ title, onClick, showQuickAdd, onWatchlistChange }: { title:
       </div>
       {showQuickAdd && (
         <button
+          type="button"
           className={`watchlist-quick${inWatchlist ? " in-list" : ""}`}
           onClick={handleWatchlistToggle}
           aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}

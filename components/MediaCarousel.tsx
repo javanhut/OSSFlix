@@ -20,7 +20,9 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
   const [playerDir, setPlayerDir] = useState("");
   const [playerInitialTime, setPlayerInitialTime] = useState(0);
   const [infoCache, setInfoCache] = useState<Record<string, { description: string; videos: string[] }>>({});
-  const [progressCache, setProgressCache] = useState<Record<string, { video_src: string; current_time: number; duration: number }>>({});
+  const [progressCache, setProgressCache] = useState<
+    Record<string, { video_src: string; current_time: number; duration: number }>
+  >({});
   const [cardDir, setCardDir] = useState("");
   const fetchedDirs = useRef(new Set<string>());
   const timerRef = useRef<ReturnType<typeof setInterval>>();
@@ -53,7 +55,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     timerRef.current = setInterval(advance, 8000);
   };
 
-  // Prefetch info for current slide
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fetchProgressForDir is stable; effect runs when the active slide changes
   useEffect(() => {
     const item = mediaList[activeIndex];
     if (!item || fetchedDirs.current.has(item.pathToDir)) return;
@@ -112,21 +114,38 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
         {currentItem && (
           <div className="oss-hero-content">
             <h1 className="oss-hero-title">{currentItem.title}</h1>
-            <p className="oss-hero-desc">
-              {currentInfo?.description || ""}
-            </p>
+            <p className="oss-hero-desc">{currentInfo?.description || ""}</p>
             <div className="oss-hero-actions">
               <button
+                type="button"
                 className="oss-btn oss-btn-primary"
                 onClick={() => handlePlay(currentItem)}
                 disabled={!currentInfo?.videos?.length}
                 style={{ opacity: currentInfo?.videos?.length ? 1 : 0.5 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21" /></svg>
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="#fff">
+                  <polygon points="5,3 19,12 5,21" />
+                </svg>
                 {hasProgress ? "Resume" : "Play"}
               </button>
-              <button className="oss-btn oss-btn-secondary" onClick={() => setCardDir(currentItem.pathToDir)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <button
+                type="button"
+                className="oss-btn oss-btn-secondary"
+                onClick={() => setCardDir(currentItem.pathToDir)}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
                 More Info
               </button>
             </div>
@@ -134,9 +153,10 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
         )}
         {mediaList.length > 1 && (
           <div className="oss-hero-indicators">
-            {mediaList.map((_, idx) => (
+            {mediaList.map((item, idx) => (
               <button
-                key={idx}
+                type="button"
+                key={item.pathToDir}
                 className={`oss-hero-dot${idx === activeIndex ? " active" : ""}`}
                 onClick={() => goTo(idx)}
               />
@@ -147,7 +167,10 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
 
       <VideoPlayer
         show={!!playerSrc}
-        onHide={() => { setPlayerSrc(null); if (playerDir) fetchProgressForDir(playerDir); }}
+        onHide={() => {
+          setPlayerSrc(null);
+          if (playerDir) fetchProgressForDir(playerDir);
+        }}
         src={playerSrc || ""}
         title={playerTitle}
         dirPath={playerDir}
@@ -167,11 +190,7 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
         profileId={undefined}
       />
 
-      <Card
-        show={!!cardDir}
-        onHide={() => setCardDir("")}
-        dirPath={cardDir}
-      />
+      <Card show={!!cardDir} onHide={() => setCardDir("")} dirPath={cardDir} />
     </>
   );
 }

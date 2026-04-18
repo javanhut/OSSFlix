@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { scanDirectory, type ScannedMedia } from "./mediascanner";
+import { scanDirectory } from "./mediascanner";
 import { scanKaidaDBPrefix, scanKaidaDBRoot } from "./remotescanner";
 import { getOrCreateDefaultProfile, getGlobalSettings } from "./profile";
 import db from "./db";
@@ -46,13 +46,17 @@ export async function resolveToDb(): Promise<void> {
   const settings = getGlobalSettings();
   if (settings.kaidadb_url) {
     try {
-      if (settings.kaidadb_root_prefix != null) {
-        // Root prefix mode — auto-discover categories by type field
-        const { movies: remoteMovies, tvshows: remoteTv } = await scanKaidaDBRoot(settings.kaidadb_root_prefix);
+      const hasExplicitPrefix = settings.kaidadb_movies_prefix || settings.kaidadb_tvshows_prefix;
+      const useRoot = settings.kaidadb_root_prefix != null || !hasExplicitPrefix;
+
+      if (useRoot) {
+        // Auto-discover: explicit root prefix, or default to entire bucket ("") when nothing configured
+        const rootPrefix = settings.kaidadb_root_prefix ?? "";
+        const { movies: remoteMovies, tvshows: remoteTv } = await scanKaidaDBRoot(rootPrefix);
         movies.push(...remoteMovies);
         tvShows.push(...remoteTv);
       } else {
-        // Explicit prefix mode
+        // Explicit movies/tvshows prefix mode
         if (settings.kaidadb_movies_prefix) {
           const remoteMovies = await scanKaidaDBPrefix(settings.kaidadb_movies_prefix, "/media/movies");
           movies.push(...remoteMovies);
@@ -77,15 +81,17 @@ export async function resolveToDb(): Promise<void> {
     db.run("DELETE FROM titles");
 
     const insertTitle = db.prepare(`
-      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles, seasons_meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertGenre = db.prepare("INSERT OR IGNORE INTO genres (name) VALUES (?)");
     const getGenreId = db.prepare("SELECT id FROM genres WHERE name = ?");
     const insertTitleGenre = db.prepare("INSERT OR IGNORE INTO title_genres (title_id, genre_id) VALUES (?, ?)");
     const insertCategory = db.prepare("INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)");
     const getCategoryId = db.prepare("SELECT id FROM categories WHERE name = ?");
-    const insertCategoryTitle = db.prepare("INSERT OR IGNORE INTO category_titles (category_id, title_id) VALUES (?, ?)");
+    const insertCategoryTitle = db.prepare(
+      "INSERT OR IGNORE INTO category_titles (category_id, title_id) VALUES (?, ?)",
+    );
 
     const titleIds: Map<string, number> = new Map();
 
@@ -97,11 +103,12 @@ export async function resolveToDb(): Promise<void> {
         media.bannerImage,
         media.dirPath,
         media.sourcePath,
-        media.cast?.filter(c => c).join(", ") || null,
+        media.cast?.filter((c) => c).join(", ") || null,
         media.season ?? null,
         media.episodes ?? null,
         media.videos.length > 0 ? JSON.stringify(media.videos) : null,
         media.subtitles.length > 0 ? JSON.stringify(media.subtitles) : null,
+        media.seasons && media.seasons.length > 0 ? JSON.stringify(media.seasons) : null,
       );
       const titleId = Number(result.lastInsertRowid);
       titleIds.set(media.dirPath, titleId);
@@ -197,13 +204,15 @@ export async function resolveToDb(): Promise<void> {
 }
 
 export function getCategoriesFromDb(): MenuRow[] {
-  const allRows = db.prepare(`
+  const allRows = db
+    .prepare(`
     SELECT c.name AS category, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
     FROM categories c
     JOIN category_titles ct ON ct.category_id = c.id
     JOIN titles t ON t.id = ct.title_id
     ORDER BY c.sort_order, c.name
-  `).all() as { category: string; name: string; imagePath: string; pathToDir: string }[];
+  `)
+    .all() as { category: string; name: string; imagePath: string; pathToDir: string }[];
 
   const grouped = new Map<string, TitleInfo[]>();
   for (const row of allRows) {
@@ -221,17 +230,19 @@ export function getCategoriesFromDb(): MenuRow[] {
 
 export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
   const types = Array.isArray(typeFilter) ? typeFilter : [typeFilter];
-  const lowerTypes = types.map(t => t.toLowerCase());
+  const lowerTypes = types.map((t) => t.toLowerCase());
   const placeholders = lowerTypes.map(() => "?").join(", ");
 
-  const allRows = db.prepare(`
+  const allRows = db
+    .prepare(`
     SELECT g.name AS genre, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
     WHERE LOWER(t.type) IN (${placeholders})
     ORDER BY g.name, t.name
-  `).all(...lowerTypes) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
+  `)
+    .all(...lowerTypes) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
 
   const grouped = new Map<string, TitleInfo[]>();
   for (const row of allRows) {
@@ -248,32 +259,36 @@ export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
 }
 
 export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
-  const lowerTags = genreTags.map(t => t.toLowerCase());
+  const lowerTags = genreTags.map((t) => t.toLowerCase());
   const tagPlaceholders = lowerTags.map(() => "?").join(", ");
 
   // Get title IDs that have any of the specified genre tags
-  const titleIds = db.prepare(`
+  const titleIds = db
+    .prepare(`
     SELECT DISTINCT t.id
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
     WHERE LOWER(g.name) IN (${tagPlaceholders})
-  `).all(...lowerTags) as { id: number }[];
+  `)
+    .all(...lowerTags) as { id: number }[];
 
   if (titleIds.length === 0) return [];
 
   const idPlaceholders = titleIds.map(() => "?").join(", ");
-  const idValues = titleIds.map(r => r.id);
+  const idValues = titleIds.map((r) => r.id);
 
   // Single query: get all genre-title mappings for matching titles, excluding the filter tags
-  const allRows = db.prepare(`
+  const allRows = db
+    .prepare(`
     SELECT DISTINCT g.name AS genre, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
     WHERE t.id IN (${idPlaceholders}) AND LOWER(g.name) NOT IN (${tagPlaceholders})
     ORDER BY g.name, t.name
-  `).all(...idValues, ...lowerTags) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
+  `)
+    .all(...idValues, ...lowerTags) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
 
   const grouped = new Map<string, TitleInfo[]>();
   for (const row of allRows) {
@@ -290,14 +305,16 @@ export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
 }
 
 export function getTitleFromDb(dirPath: string) {
-  const title = db.prepare(`
+  const title = db
+    .prepare(`
     SELECT
       t.id, t.name, t.description, t.type, t.image_path AS bannerImage,
       t.dir_path AS dirPath, t.source_path AS sourcePath, t.cast_list AS castList,
-      t.season, t.episodes, t.videos, t.subtitles
+      t.season, t.episodes, t.videos, t.subtitles, t.seasons_meta AS seasonsMeta
     FROM titles t
     WHERE t.dir_path = ?
-  `).get(dirPath) as {
+  `)
+    .get(dirPath) as {
     id: number;
     name: string;
     description: string;
@@ -310,55 +327,72 @@ export function getTitleFromDb(dirPath: string) {
     episodes: number | null;
     videos: string | null;
     subtitles: string | null;
+    seasonsMeta: string | null;
   } | null;
 
   if (!title) return null;
 
-  const genres = db.prepare(`
+  const genres = db
+    .prepare(`
     SELECT g.name FROM genres g
     JOIN title_genres tg ON tg.genre_id = g.id
     WHERE tg.title_id = ?
-  `).all(title.id) as { name: string }[];
+  `)
+    .all(title.id) as { name: string }[];
 
   return {
     ...title,
-    genres: genres.map(g => g.name),
+    genres: genres.map((g) => g.name),
   };
 }
 
 export function listAllTitles() {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT t.name, t.type, t.image_path AS imagePath, t.dir_path AS dirPath,
            t.source_path AS sourcePath, t.season, t.episodes
     FROM titles t
     ORDER BY t.name
-  `).all() as { name: string; type: string; imagePath: string | null; dirPath: string; sourcePath: string; season: number | null; episodes: number | null }[];
+  `)
+    .all() as {
+    name: string;
+    type: string;
+    imagePath: string | null;
+    dirPath: string;
+    sourcePath: string;
+    season: number | null;
+    episodes: number | null;
+  }[];
 }
 
 export function searchTitles(query: string) {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
     WHERE t.name LIKE ?
     ORDER BY t.name
     LIMIT 20
-  `).all(`%${query}%`) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+  `)
+    .all(`%${query}%`) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
 }
 
 export function searchGenres(query: string) {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT DISTINCT g.name
     FROM genres g
     WHERE g.name LIKE ?
     ORDER BY g.name
     LIMIT 5
-  `).all(`%${query}%`) as { name: string }[];
+  `)
+    .all(`%${query}%`) as { name: string }[];
 }
 
 export function resolveSourcePath(servePath: string): string | null {
-  const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(
-    servePath.replace(/\/[^/]+$/, "")
-  ) as { source_path: string } | null;
+  const title = db
+    .prepare("SELECT source_path FROM titles WHERE dir_path = ?")
+    .get(servePath.replace(/\/[^/]+$/, "")) as { source_path: string } | null;
   if (!title) return null;
   const filename = servePath.split("/").pop()!;
   return `${title.source_path}/${filename}`;
@@ -366,20 +400,27 @@ export function resolveSourcePath(servePath: string): string | null {
 
 export function getAllGenreNames(): string[] {
   const rows = db.prepare("SELECT name FROM genres ORDER BY name").all() as { name: string }[];
-  return rows.map(r => r.name);
+  return rows.map((r) => r.name);
 }
 
 export function getTitlesByMultipleGenres(genreNames: string[]) {
-  const lowerNames = genreNames.map(n => n.toLowerCase());
+  const lowerNames = genreNames.map((n) => n.toLowerCase());
   const placeholders = lowerNames.map(() => "?").join(", ");
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
     WHERE LOWER(g.name) IN (${placeholders})
     GROUP BY t.id HAVING COUNT(DISTINCT g.id) = ?
-  `).all(...lowerNames, lowerNames.length) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+  `)
+    .all(...lowerNames, lowerNames.length) as {
+    name: string;
+    imagePath: string | null;
+    pathToDir: string;
+    type: string;
+  }[];
 }
 
 // Run directly: bun scripts/autoresolver.ts

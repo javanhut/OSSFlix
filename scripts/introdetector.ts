@@ -3,17 +3,17 @@ import db from "./db";
 type JobStatus = "pending" | "running" | "completed" | "failed";
 
 export function createJob(type: string, dirPath: string): number {
-  const result = db.run(
-    "INSERT INTO background_jobs (type, dir_path, status) VALUES (?, ?, 'pending')",
-    [type, dirPath]
-  );
+  const result = db.run("INSERT INTO background_jobs (type, dir_path, status) VALUES (?, ?, 'pending')", [
+    type,
+    dirPath,
+  ]);
   return Number(result.lastInsertRowid);
 }
 
 export function updateJobStatus(
   jobId: number,
   status: JobStatus,
-  extra?: { progress?: string; result?: string; error?: string }
+  extra?: { progress?: string; result?: string; error?: string },
 ) {
   const sets = ["status = ?", "updated_at = datetime('now')"];
   const vals: any[] = [status];
@@ -50,11 +50,7 @@ async function checkFpcalc(): Promise<boolean> {
   }
 }
 
-async function runFpcalc(
-  filePath: string,
-  offset: number,
-  length: number
-): Promise<number[]> {
+async function runFpcalc(filePath: string, offset: number, length: number): Promise<number[]> {
   const args = ["fpcalc", "-raw", "-length", String(length), "-offset", String(offset), filePath];
   const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
   const output = await new Response(proc.stdout).text();
@@ -62,37 +58,23 @@ async function runFpcalc(
 
   if (proc.exitCode !== 0) throw new Error(`fpcalc failed for ${filePath}`);
 
-  const fpLine = output
-    .split("\n")
-    .find((l) => l.startsWith("FINGERPRINT="));
+  const fpLine = output.split("\n").find((l) => l.startsWith("FINGERPRINT="));
   if (!fpLine) throw new Error("No fingerprint in output");
 
-  return fpLine
-    .replace("FINGERPRINT=", "")
-    .split(",")
-    .map(Number);
+  return fpLine.replace("FINGERPRINT=", "").split(",").map(Number);
 }
 
 async function getDuration(filePath: string): Promise<number> {
-  const proc = Bun.spawn(
-    [
-      "ffprobe",
-      "-v", "quiet",
-      "-show_entries", "format=duration",
-      "-of", "csv=p=0",
-      filePath,
-    ],
-    { stdout: "pipe", stderr: "pipe" }
-  );
+  const proc = Bun.spawn(["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", filePath], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const output = await new Response(proc.stdout).text();
   await proc.exited;
   return parseFloat(output.trim()) || 0;
 }
 
-function correlateFingerprints(
-  fp1: number[],
-  fp2: number[]
-): { offset: number; score: number } {
+function correlateFingerprints(fp1: number[], fp2: number[]): { offset: number; score: number } {
   let bestOffset = 0;
   let bestScore = 0;
   const maxShift = Math.min(fp1.length, fp2.length, 200);
@@ -146,15 +128,16 @@ export async function detectIntros(dirPath: string, jobId: number) {
     const hasFpcalc = await checkFpcalc();
     if (!hasFpcalc) {
       updateJobStatus(jobId, "failed", {
-        error: "fpcalc not found. Install chromaprint (e.g., 'sudo pacman -S chromaprint' or 'brew install chromaprint').",
+        error:
+          "fpcalc not found. Install chromaprint (e.g., 'sudo pacman -S chromaprint' or 'brew install chromaprint').",
       });
       return;
     }
 
     // Get videos for this title
-    const title = db
-      .prepare("SELECT videos FROM titles WHERE dir_path = ?")
-      .get(dirPath) as { videos: string | null } | null;
+    const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dirPath) as {
+      videos: string | null;
+    } | null;
 
     if (!title?.videos) {
       updateJobStatus(jobId, "failed", { error: "No videos found for this title" });
@@ -194,7 +177,11 @@ export async function detectIntros(dirPath: string, jobId: number) {
 
         const introFp = await runFpcalc(sourcePath, 0, Math.min(INTRO_LENGTH, Math.floor(duration)));
         const outroOffset = Math.max(0, Math.floor(duration) - OUTRO_LENGTH);
-        const outroFp = await runFpcalc(sourcePath, outroOffset, Math.min(OUTRO_LENGTH, Math.floor(duration) - outroOffset));
+        const outroFp = await runFpcalc(
+          sourcePath,
+          outroOffset,
+          Math.min(OUTRO_LENGTH, Math.floor(duration) - outroOffset),
+        );
 
         epData.push({ src: videos[i], introFp, outroFp, duration });
       } catch {
@@ -233,12 +220,7 @@ export async function detectIntros(dirPath: string, jobId: number) {
           introOffsets.push(offsetSecs);
 
           // Estimate intro length by finding where correlation drops
-          const introLen = estimateSegmentLength(
-            epData[i].introFp,
-            epData[j].introFp,
-            introCorr.offset,
-            fpPerSec
-          );
+          const introLen = estimateSegmentLength(epData[i].introFp, epData[j].introFp, introCorr.offset, fpPerSec);
           if (introLen > 10) introLengths.push(introLen);
         }
 
@@ -274,13 +256,8 @@ export async function detectIntros(dirPath: string, jobId: number) {
     for (const ep of epData) {
       const introStart = medianIntroStart != null ? Math.round(medianIntroStart) : null;
       const introEnd =
-        medianIntroStart != null && medianIntroLen != null
-          ? Math.round(medianIntroStart + medianIntroLen)
-          : null;
-      const outroStart =
-        medianOutroOffset != null
-          ? Math.round(ep.duration - OUTRO_LENGTH + medianOutroOffset)
-          : null;
+        medianIntroStart != null && medianIntroLen != null ? Math.round(medianIntroStart + medianIntroLen) : null;
+      const outroStart = medianOutroOffset != null ? Math.round(ep.duration - OUTRO_LENGTH + medianOutroOffset) : null;
       const outroEnd = outroStart != null ? Math.round(ep.duration) : null;
 
       if (introStart != null || outroStart != null) {
@@ -298,12 +275,7 @@ export async function detectIntros(dirPath: string, jobId: number) {
   }
 }
 
-function estimateSegmentLength(
-  fp1: number[],
-  fp2: number[],
-  offset: number,
-  fpPerSec: number
-): number {
+function estimateSegmentLength(fp1: number[], fp2: number[], offset: number, fpPerSec: number): number {
   const start1 = Math.max(0, offset);
   const start2 = Math.max(0, -offset);
   const len = Math.min(fp1.length - start1, fp2.length - start2);
@@ -341,7 +313,5 @@ function estimateSegmentLength(
 function median(arr: number[]): number {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }

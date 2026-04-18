@@ -52,7 +52,9 @@ export default function Anime() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const handler = () => loadData();
@@ -71,10 +73,7 @@ export default function Anime() {
     );
   }
 
-  const defaultRows = [
-    ...(allAnimeRow ? [allAnimeRow] : []),
-    ...genreRows,
-  ];
+  const defaultRows = [...(allAnimeRow ? [allAnimeRow] : []), ...genreRows];
 
   const displayRows = filteredRows ?? defaultRows;
 

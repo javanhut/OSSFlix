@@ -12,8 +12,7 @@ export type SelectedAudioStream = {
   codecName: string;
 };
 
-const STEREO_DOWNMIX_FILTER =
-  "pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE";
+const STEREO_DOWNMIX_FILTER = "pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE";
 
 export type SelectedVideoStream = {
   index: number;
@@ -69,7 +68,7 @@ export function selectVideoStream(streams: ProbeStream[]): SelectedVideoStream |
 export function buildCacheTranscodeArgs(
   sourcePath: string,
   selectedAudio: SelectedAudioStream | null,
-  outputPath: string
+  outputPath: string,
 ): string[] {
   return [
     "ffmpeg",
@@ -113,12 +112,17 @@ export function buildLiveTranscodeArgs(
   selectedAudio: SelectedAudioStream | null,
   selectedVideo: SelectedVideoStream | null,
   startTime: number,
-  isRemote: boolean = false
+  isRemote: boolean = false,
 ): string[] {
   const seekWindow = 30;
   const preSeek = startTime > 0 ? Math.max(0, startTime - seekWindow) : 0;
   const postSeek = startTime > 0 ? startTime - preSeek : 0;
-  const canCopyVideo = !isRemote && !!selectedVideo && selectedVideo.codecName === "h264" && selectedVideo.pixFmt === "yuv420p" && startTime <= 0;
+  const canCopyVideo =
+    !isRemote &&
+    !!selectedVideo &&
+    selectedVideo.codecName === "h264" &&
+    selectedVideo.pixFmt === "yuv420p" &&
+    startTime <= 0;
   const canCopyAudio = !isRemote && !!selectedAudio && selectedAudio.codecName === "aac" && selectedAudio.channels <= 2;
 
   // Remote sources: smaller probe (MKV headers fit in ~1MB) and shorter fragments for faster first frame
@@ -157,9 +161,9 @@ export function buildLiveTranscodeArgs(
           "high",
         ]),
     ...(selectedAudio
-      ? (canCopyAudio
-          ? ["-c:a", "copy"]
-          : ["-c:a", "aac", "-ac", "2", "-b:a", "192k", "-af", buildLiveAudioFilters(selectedAudio.channels)])
+      ? canCopyAudio
+        ? ["-c:a", "copy"]
+        : ["-c:a", "aac", "-ac", "2", "-b:a", "192k", "-af", buildLiveAudioFilters(selectedAudio.channels)]
       : []),
     "-avoid_negative_ts",
     "make_zero",

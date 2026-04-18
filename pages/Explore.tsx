@@ -51,9 +51,7 @@ export default function Explore() {
 
   return (
     <div style={{ padding: "2rem 4%", minHeight: "100vh" }}>
-      <h2 style={{ color: "var(--oss-text)", marginBottom: "0.5rem", fontSize: "1.5rem" }}>
-        Explore Tags
-      </h2>
+      <h2 style={{ color: "var(--oss-text)", marginBottom: "0.5rem", fontSize: "1.5rem" }}>Explore Tags</h2>
       <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
         Select one or more genres to find titles matching all of them.
       </p>
@@ -66,17 +64,14 @@ export default function Explore() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {customGenres.map((g) => (
               <button
+                type="button"
                 key={g}
                 onClick={() => toggleGenre(g)}
                 style={{
                   padding: "6px 16px",
                   borderRadius: "20px",
-                  border: selectedGenres.has(g)
-                    ? "1px solid var(--oss-accent)"
-                    : "1px solid var(--oss-border)",
-                  background: selectedGenres.has(g)
-                    ? "rgba(59,130,246,0.2)"
-                    : "rgba(255,255,255,0.06)",
+                  border: selectedGenres.has(g) ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
+                  background: selectedGenres.has(g) ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.06)",
                   color: selectedGenres.has(g) ? "#60a5fa" : "var(--oss-text-muted)",
                   fontSize: "0.85rem",
                   fontWeight: 500,
@@ -99,17 +94,14 @@ export default function Explore() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
             {predefined.map((g) => (
               <button
+                type="button"
                 key={g}
                 onClick={() => toggleGenre(g)}
                 style={{
                   padding: "6px 16px",
                   borderRadius: "20px",
-                  border: selectedGenres.has(g)
-                    ? "1px solid var(--oss-accent)"
-                    : "1px solid var(--oss-border)",
-                  background: selectedGenres.has(g)
-                    ? "rgba(59,130,246,0.2)"
-                    : "rgba(255,255,255,0.06)",
+                  border: selectedGenres.has(g) ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
+                  background: selectedGenres.has(g) ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.06)",
                   color: selectedGenres.has(g) ? "#60a5fa" : "var(--oss-text-muted)",
                   fontSize: "0.85rem",
                   fontWeight: 500,
@@ -127,10 +119,9 @@ export default function Explore() {
       {selectedGenres.size > 0 && (
         <div style={{ marginBottom: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "1rem" }}>
-            <h3 style={{ color: "var(--oss-text)", fontSize: "1.1rem", margin: 0 }}>
-              Results
-            </h3>
+            <h3 style={{ color: "var(--oss-text)", fontSize: "1.1rem", margin: 0 }}>Results</h3>
             <button
+              type="button"
               onClick={() => setSelectedGenres(new Set())}
               style={{
                 background: "rgba(239,68,68,0.12)",
@@ -256,11 +247,7 @@ export default function Explore() {
         </div>
       )}
 
-      <Card
-        show={!!selectedDir}
-        onHide={() => setSelectedDir("")}
-        dirPath={selectedDir}
-      />
+      <Card show={!!selectedDir} onHide={() => setSelectedDir("")} dirPath={selectedDir} />
     </div>
   );
 }

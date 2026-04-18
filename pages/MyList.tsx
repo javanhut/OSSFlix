@@ -29,16 +29,9 @@ export default function MyList() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
-
-  if (loading) {
-    return (
-      <>
-        <h1 className="oss-page-title">My List</h1>
-        <SkeletonRow />
-      </>
-    );
-  }
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleWatchlistChange = useCallback((dirPath: string, inList: boolean) => {
     if (!inList) {
@@ -49,6 +42,15 @@ export default function MyList() {
       });
     }
   }, []);
+
+  if (loading) {
+    return (
+      <>
+        <h1 className="oss-page-title">My List</h1>
+        <SkeletonRow />
+      </>
+    );
+  }
 
   return (
     <>

@@ -9,7 +9,11 @@ const CACHE_DIR = resolve("./data/cache");
 
 function getCacheKey(sourcePath: string, audioIndex: number): string {
   const hash = createHash("sha256").update(`${sourcePath}:audio=${audioIndex}`).digest("hex").slice(0, 16);
-  const baseName = sourcePath.split("/").pop()?.replace(/\.[^.]+$/, "") || "video";
+  const baseName =
+    sourcePath
+      .split("/")
+      .pop()
+      ?.replace(/\.[^.]+$/, "") || "video";
   return `${baseName}_${hash}`;
 }
 
@@ -48,9 +52,7 @@ function getAudioBitrate(channels: number): string {
 
 // Build the FFmpeg video args for cache transcode
 function buildCacheVideoArgs(canCopyVideo: boolean): string[] {
-  return canCopyVideo
-    ? ["-c:v", "copy"]
-    : ["-c:v", "libx264", "-preset", "medium", "-crf", "20"];
+  return canCopyVideo ? ["-c:v", "copy"] : ["-c:v", "libx264", "-preset", "medium", "-crf", "20"];
 }
 
 // Build the FFmpeg video args for live transcode

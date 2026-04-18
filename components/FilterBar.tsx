@@ -40,7 +40,7 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
         }
       })
       .catch(() => {});
-  }, [sort, genreFilter, active]);
+  }, [sort, genreFilter, active, type, onResults]);
 
   const handleSortChange = (newSort: string) => {
     setSort(newSort);
@@ -80,6 +80,7 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
       </select>
       {availableGenres.slice(0, 12).map((g) => (
         <button
+          type="button"
           key={g}
           className={`oss-filter-pill${genreFilter === g ? " active" : ""}`}
           onClick={() => handleGenreClick(g)}
@@ -89,6 +90,7 @@ export default function FilterBar({ type, onResults }: FilterBarProps) {
       ))}
       {active && (
         <button
+          type="button"
           className="oss-filter-pill"
           onClick={clearAll}
           style={{ color: "#f87171", borderColor: "rgba(239,68,68,0.25)" }}

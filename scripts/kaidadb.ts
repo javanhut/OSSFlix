@@ -22,7 +22,7 @@ export async function kaidadbStream(key: string, rangeHeader?: string | null): P
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
   const headers: Record<string, string> = {};
-  if (rangeHeader) headers["Range"] = rangeHeader;
+  if (rangeHeader) headers.Range = rangeHeader;
   return fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers });
 }
 
@@ -75,7 +75,7 @@ export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
     if (cursor) params.set("cursor", cursor);
     const res = await fetch(`${baseUrl}/v1/media?${params}`);
     if (!res.ok) throw new Error(`KaidaDB list failed: ${res.status}`);
-    const data = await res.json() as { items: KaidaDBListItem[]; next_cursor: string | null };
+    const data = (await res.json()) as { items: KaidaDBListItem[]; next_cursor: string | null };
     allItems.push(...data.items);
     cursor = data.next_cursor;
   } while (cursor);
@@ -93,7 +93,9 @@ export async function kaidadbFetchText(key: string): Promise<string> {
 // ── DB mapping functions ──
 
 export function getKaidadbKey(videoSrc: string): string | null {
-  const row = db.prepare("SELECT kaidadb_key FROM kaidadb_media WHERE video_src = ?").get(videoSrc) as { kaidadb_key: string } | null;
+  const row = db.prepare("SELECT kaidadb_key FROM kaidadb_media WHERE video_src = ?").get(videoSrc) as {
+    kaidadb_key: string;
+  } | null;
   return row?.kaidadb_key || null;
 }
 
@@ -126,9 +128,9 @@ export function getKaidadbStatus(videoSrc: string): {
   content_type?: string;
   total_size?: number;
 } {
-  const row = db.prepare(
-    "SELECT kaidadb_key, content_type, total_size FROM kaidadb_media WHERE video_src = ?"
-  ).get(videoSrc) as any;
+  const row = db
+    .prepare("SELECT kaidadb_key, content_type, total_size FROM kaidadb_media WHERE video_src = ?")
+    .get(videoSrc) as any;
   if (!row) return { hasKaidadb: false };
   return {
     hasKaidadb: true,

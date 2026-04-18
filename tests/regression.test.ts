@@ -52,7 +52,9 @@ describe("1C: Cache transcode quality — no zerolatency in cache", () => {
 
 describe("1D: 5.1→stereo downmix filter", () => {
   test("transcode source has pan=stereo downmix filter", () => {
-    expect(TRANSCODE_SRC).toContain("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
+    expect(TRANSCODE_SRC).toContain(
+      "pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE",
+    );
   });
 
   test("downmix preserves center channel (dialog)", () => {

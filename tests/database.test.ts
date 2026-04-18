@@ -111,9 +111,11 @@ describe("Database schema and operations", () => {
 
   // ── Titles ──
   test("inserts and retrieves a title", () => {
-    db.run(`INSERT INTO titles (name, description, type, dir_path, source_path, videos)
+    db.run(
+      `INSERT INTO titles (name, description, type, dir_path, source_path, videos)
       VALUES (?, ?, ?, ?, ?, ?)`,
-      ["Test Movie", "A test movie", "Movie", "/media/movies/test", "/path/to/test", '["ep1.mp4"]']);
+      ["Test Movie", "A test movie", "Movie", "/media/movies/test", "/path/to/test", '["ep1.mp4"]'],
+    );
     const title = db.prepare("SELECT * FROM titles WHERE name = ?").get("Test Movie") as any;
     expect(title).toBeTruthy();
     expect(title.type).toBe("Movie");
@@ -122,9 +124,11 @@ describe("Database schema and operations", () => {
 
   test("enforces unique dir_path", () => {
     expect(() => {
-      db.run(`INSERT INTO titles (name, description, type, dir_path, source_path)
+      db.run(
+        `INSERT INTO titles (name, description, type, dir_path, source_path)
         VALUES (?, ?, ?, ?, ?)`,
-        ["Duplicate", "Dup", "Movie", "/media/movies/test", "/path"]);
+        ["Duplicate", "Dup", "Movie", "/media/movies/test", "/path"],
+      );
     }).toThrow();
   });
 
@@ -138,11 +142,13 @@ describe("Database schema and operations", () => {
     db.run("INSERT INTO title_genres (title_id, genre_id) VALUES (?, ?)", [titleId, actionId]);
     db.run("INSERT INTO title_genres (title_id, genre_id) VALUES (?, ?)", [titleId, comedyId]);
 
-    const genres = db.prepare(`
+    const genres = db
+      .prepare(`
       SELECT g.name FROM genres g
       JOIN title_genres tg ON tg.genre_id = g.id
       WHERE tg.title_id = ?
-    `).all(titleId) as any[];
+    `)
+      .all(titleId) as any[];
     expect(genres.length).toBe(2);
     expect(genres.map((g: any) => g.name).sort()).toEqual(["Action", "Comedy"]);
   });
@@ -158,12 +164,15 @@ describe("Database schema and operations", () => {
     db.run("INSERT INTO profiles (name) VALUES (?)", ["TestUser"]);
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
 
-    db.run(`INSERT INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
-      VALUES (?, ?, ?, ?, ?)`, [profileId, "/media/movies/test/ep1.mp4", "/media/movies/test", 120.5, 7200]);
+    db.run(
+      `INSERT INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
+      VALUES (?, ?, ?, ?, ?)`,
+      [profileId, "/media/movies/test/ep1.mp4", "/media/movies/test", 120.5, 7200],
+    );
 
-    const progress = db.prepare(
-      "SELECT * FROM playback_progress WHERE profile_id = ? AND video_src = ?"
-    ).get(profileId, "/media/movies/test/ep1.mp4") as any;
+    const progress = db
+      .prepare("SELECT * FROM playback_progress WHERE profile_id = ? AND video_src = ?")
+      .get(profileId, "/media/movies/test/ep1.mp4") as any;
 
     expect(progress).toBeTruthy();
     expect(progress.current_time).toBe(120.5);
@@ -172,34 +181,43 @@ describe("Database schema and operations", () => {
 
   test("upserts playback progress (UNIQUE constraint)", () => {
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    db.run(`INSERT OR REPLACE INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
-      VALUES (?, ?, ?, ?, ?)`, [profileId, "/media/movies/test/ep1.mp4", "/media/movies/test", 300, 7200]);
+    db.run(
+      `INSERT OR REPLACE INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
+      VALUES (?, ?, ?, ?, ?)`,
+      [profileId, "/media/movies/test/ep1.mp4", "/media/movies/test", 300, 7200],
+    );
 
-    const progress = db.prepare(
-      "SELECT * FROM playback_progress WHERE profile_id = ? AND video_src = ?"
-    ).get(profileId, "/media/movies/test/ep1.mp4") as any;
+    const progress = db
+      .prepare("SELECT * FROM playback_progress WHERE profile_id = ? AND video_src = ?")
+      .get(profileId, "/media/movies/test/ep1.mp4") as any;
     expect(progress.current_time).toBe(300);
   });
 
   test("retrieves all progress for a directory", () => {
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    db.run(`INSERT OR REPLACE INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
-      VALUES (?, ?, ?, ?, ?)`, [profileId, "/media/movies/test/ep2.mp4", "/media/movies/test", 60, 7200]);
+    db.run(
+      `INSERT OR REPLACE INTO playback_progress (profile_id, video_src, dir_path, current_time, duration)
+      VALUES (?, ?, ?, ?, ?)`,
+      [profileId, "/media/movies/test/ep2.mp4", "/media/movies/test", 60, 7200],
+    );
 
-    const rows = db.prepare(
-      "SELECT * FROM playback_progress WHERE profile_id = ? AND dir_path = ?"
-    ).all(profileId, "/media/movies/test") as any[];
+    const rows = db
+      .prepare("SELECT * FROM playback_progress WHERE profile_id = ? AND dir_path = ?")
+      .all(profileId, "/media/movies/test") as any[];
     expect(rows.length).toBe(2);
   });
 
   // ── Episode Timings ──
   test("saves and retrieves episode timings", () => {
-    db.run(`INSERT INTO episode_timings (video_src, intro_start, intro_end, outro_start, outro_end)
-      VALUES (?, ?, ?, ?, ?)`, ["/media/tvshows/show/ep1.mkv", 5, 90, 1200, 1260]);
+    db.run(
+      `INSERT INTO episode_timings (video_src, intro_start, intro_end, outro_start, outro_end)
+      VALUES (?, ?, ?, ?, ?)`,
+      ["/media/tvshows/show/ep1.mkv", 5, 90, 1200, 1260],
+    );
 
-    const timing = db.prepare(
-      "SELECT * FROM episode_timings WHERE video_src = ?"
-    ).get("/media/tvshows/show/ep1.mkv") as any;
+    const timing = db
+      .prepare("SELECT * FROM episode_timings WHERE video_src = ?")
+      .get("/media/tvshows/show/ep1.mkv") as any;
 
     expect(timing).toBeTruthy();
     expect(timing.intro_start).toBe(5);
@@ -209,12 +227,15 @@ describe("Database schema and operations", () => {
   });
 
   test("allows null timing values", () => {
-    db.run(`INSERT INTO episode_timings (video_src, intro_start, intro_end)
-      VALUES (?, ?, ?)`, ["/media/tvshows/show/ep2.mkv", 10, 95]);
+    db.run(
+      `INSERT INTO episode_timings (video_src, intro_start, intro_end)
+      VALUES (?, ?, ?)`,
+      ["/media/tvshows/show/ep2.mkv", 10, 95],
+    );
 
-    const timing = db.prepare(
-      "SELECT * FROM episode_timings WHERE video_src = ?"
-    ).get("/media/tvshows/show/ep2.mkv") as any;
+    const timing = db
+      .prepare("SELECT * FROM episode_timings WHERE video_src = ?")
+      .get("/media/tvshows/show/ep2.mkv") as any;
 
     expect(timing.intro_start).toBe(10);
     expect(timing.outro_start).toBeNull();
@@ -224,40 +245,40 @@ describe("Database schema and operations", () => {
   // ── Watchlist ──
   test("adds and removes from watchlist", () => {
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)",
-      [profileId, "/media/movies/test"]);
+    db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)", [profileId, "/media/movies/test"]);
 
-    const item = db.prepare(
-      "SELECT * FROM watchlist WHERE profile_id = ? AND dir_path = ?"
-    ).get(profileId, "/media/movies/test") as any;
+    const item = db
+      .prepare("SELECT * FROM watchlist WHERE profile_id = ? AND dir_path = ?")
+      .get(profileId, "/media/movies/test") as any;
     expect(item).toBeTruthy();
 
-    db.run("DELETE FROM watchlist WHERE profile_id = ? AND dir_path = ?",
-      [profileId, "/media/movies/test"]);
-    const deleted = db.prepare(
-      "SELECT * FROM watchlist WHERE profile_id = ? AND dir_path = ?"
-    ).get(profileId, "/media/movies/test");
+    db.run("DELETE FROM watchlist WHERE profile_id = ? AND dir_path = ?", [profileId, "/media/movies/test"]);
+    const deleted = db
+      .prepare("SELECT * FROM watchlist WHERE profile_id = ? AND dir_path = ?")
+      .get(profileId, "/media/movies/test");
     expect(deleted).toBeNull();
   });
 
   test("enforces unique watchlist entries per profile", () => {
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)",
-      [profileId, "/media/movies/unique"]);
+    db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)", [profileId, "/media/movies/unique"]);
     expect(() => {
-      db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)",
-        [profileId, "/media/movies/unique"]);
+      db.run("INSERT INTO watchlist (profile_id, dir_path) VALUES (?, ?)", [profileId, "/media/movies/unique"]);
     }).toThrow();
   });
 
   // ── Cascade deletes ──
   test("cascades profile deletion to playback_progress", () => {
     const profileId = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    const beforeCount = (db.prepare("SELECT COUNT(*) as c FROM playback_progress WHERE profile_id = ?").get(profileId) as any).c;
+    const beforeCount = (
+      db.prepare("SELECT COUNT(*) as c FROM playback_progress WHERE profile_id = ?").get(profileId) as any
+    ).c;
     expect(beforeCount).toBeGreaterThan(0);
 
     db.run("DELETE FROM profiles WHERE id = ?", [profileId]);
-    const afterCount = (db.prepare("SELECT COUNT(*) as c FROM playback_progress WHERE profile_id = ?").get(profileId) as any).c;
+    const afterCount = (
+      db.prepare("SELECT COUNT(*) as c FROM playback_progress WHERE profile_id = ?").get(profileId) as any
+    ).c;
     expect(afterCount).toBe(0);
   });
 
@@ -273,14 +294,20 @@ describe("Database schema and operations", () => {
 
   // ── Background Jobs ──
   test("creates and updates background jobs", () => {
-    db.run(`INSERT INTO background_jobs (type, dir_path, status) VALUES (?, ?, ?)`,
-      ["intro_detect", "/media/tvshows/show", "pending"]);
+    db.run(`INSERT INTO background_jobs (type, dir_path, status) VALUES (?, ?, ?)`, [
+      "intro_detect",
+      "/media/tvshows/show",
+      "pending",
+    ]);
 
     const job = db.prepare("SELECT * FROM background_jobs ORDER BY id DESC LIMIT 1").get() as any;
     expect(job.status).toBe("pending");
 
-    db.run("UPDATE background_jobs SET status = ?, progress = ? WHERE id = ?",
-      ["running", '{"current": 3, "total": 12}', job.id]);
+    db.run("UPDATE background_jobs SET status = ?, progress = ? WHERE id = ?", [
+      "running",
+      '{"current": 3, "total": 12}',
+      job.id,
+    ]);
 
     const updated = db.prepare("SELECT * FROM background_jobs WHERE id = ?").get(job.id) as any;
     expect(updated.status).toBe("running");

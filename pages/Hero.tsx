@@ -23,9 +23,19 @@ type MenuRow = {
 
 // Basic genres to show on the Home page — broad categories only
 const BASIC_GENRES = new Set([
-  "Newly Added", "Action", "Adventure", "Comedy", "Drama",
-  "Fantasy", "Horror", "Romance", "Thriller", "Family",
-  "Science Fiction", "Mystery", "Documentary",
+  "Newly Added",
+  "Action",
+  "Adventure",
+  "Comedy",
+  "Drama",
+  "Fantasy",
+  "Horror",
+  "Romance",
+  "Thriller",
+  "Family",
+  "Science Fiction",
+  "Mystery",
+  "Documentary",
 ]);
 
 export default function Home() {
@@ -76,7 +86,9 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const handler = () => loadData();
@@ -107,10 +119,7 @@ export default function Home() {
           </div>
         )}
         {(watchlistRow || rows.length > 0) && (
-          <SelectorMenu rows={[
-            ...(watchlistRow ? [watchlistRow] : []),
-            ...rows,
-          ]} />
+          <SelectorMenu rows={[...(watchlistRow ? [watchlistRow] : []), ...rows]} />
         )}
       </div>
     </>

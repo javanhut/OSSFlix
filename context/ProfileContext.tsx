@@ -156,16 +156,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     if (!authenticated) return;
     fetch("/api/auth/me", { credentials: "same-origin" })
       .then((r) => r.json())
-      .then((data) => { if (data.profile?.id) setProfileState(data.profile); })
+      .then((data) => {
+        if (data.profile?.id) setProfileState(data.profile);
+      })
       .catch(() => {});
   }, [authenticated]);
 
   return (
-    <ProfileContext.Provider value={{
-      authenticated, profile, loading,
-      login, register, setPassword, logout,
-      setProfile, fetchProfile,
-    }}>
+    <ProfileContext.Provider
+      value={{
+        authenticated,
+        profile,
+        loading,
+        login,
+        register,
+        setPassword,
+        logout,
+        setProfile,
+        fetchProfile,
+      }}
+    >
       {children}
     </ProfileContext.Provider>
   );

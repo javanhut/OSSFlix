@@ -2,22 +2,88 @@ import index from "./index.html";
 import { resolve, join, dirname, extname, basename } from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { readTomlFile } from "./scripts/tomlreader";
-import { resolveToDb, getCategoriesFromDb, getCategoriesByType, getCategoriesByGenreTag, getTitleFromDb, resolveSourcePath, searchTitles, searchGenres, listAllTitles, getAllGenreNames, getTitlesByMultipleGenres } from "./scripts/autoresolver";
+import {
+  resolveToDb,
+  getCategoriesFromDb,
+  getCategoriesByType,
+  getCategoriesByGenreTag,
+  getTitleFromDb,
+  resolveSourcePath,
+  searchTitles,
+  searchGenres,
+  getAllGenreNames,
+  getTitlesByMultipleGenres,
+} from "./scripts/autoresolver";
 import { copyFile, mkdir, unlink } from "node:fs/promises";
-import { getOrCreateDefaultProfile, updateProfile, getProfile, getAllProfiles, getProfilesByEmail, getProfilesWithoutEmail, createProfile, deleteProfile, getGlobalSettings, updateGlobalSettings, getEffectiveDirs, getProfileWithHash, setProfilePassword, profileHasPassword } from "./scripts/profile";
+import {
+  getOrCreateDefaultProfile,
+  updateProfile,
+  getProfile,
+  getAllProfiles,
+  getProfilesByEmail,
+  getProfilesWithoutEmail,
+  createProfile,
+  deleteProfile,
+  getGlobalSettings,
+  updateGlobalSettings,
+  getEffectiveDirs,
+  getProfileWithHash,
+  setProfilePassword,
+  profileHasPassword,
+} from "./scripts/profile";
 import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
 import { updateTomlFile } from "./scripts/tomlwriter";
-import { createJob, updateJobStatus, getJob, detectIntros } from "./scripts/introdetector";
+import { createJob, getJob, detectIntros } from "./scripts/introdetector";
 import { getRecommendations } from "./scripts/recommend";
 import db, { DATA_DIR } from "./scripts/db";
-import { authenticateRequest, hashPassword, verifyPassword, createSession, deleteSession, deleteAllSessionsForProfile, cleanExpiredSessions, sessionCookie, clearSessionCookie, getSessionExpiry } from "./scripts/auth";
-import { kaidadbHealthCheck, kaidadbStream, kaidadbUpload, getKaidadbKey, setKaidadbMapping, getKaidadbStatus, videoSrcToKaidadbKey, kaidadbMediaUrl } from "./scripts/kaidadb";
+import {
+  authenticateRequest,
+  hashPassword,
+  verifyPassword,
+  createSession,
+  deleteSession,
+  cleanExpiredSessions,
+  sessionCookie,
+  clearSessionCookie,
+  getSessionExpiry,
+} from "./scripts/auth";
+import {
+  kaidadbHealthCheck,
+  kaidadbStream,
+  kaidadbUpload,
+  getKaidadbKey,
+  setKaidadbMapping,
+  getKaidadbStatus,
+  videoSrcToKaidadbKey,
+  kaidadbMediaUrl,
+} from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
-import { buildCacheTranscodeArgs, buildLiveTranscodeArgs, selectAudioStream, selectVideoStream, type SelectedAudioStream, type SelectedVideoStream } from "./scripts/streamingProfile";
-import { isSmtpConfigured, sendPasswordResetEmail, testSmtpConnection, createResetToken, verifyResetToken, cleanExpiredResetTokens } from "./scripts/email";
-import { isAdminSetup, setupAdmin, verifyAdminPassword, createAdminSession, deleteAdminSession, authenticateAdminRequest, adminSessionCookie, clearAdminSessionCookie } from "./scripts/admin";
+import {
+  buildCacheTranscodeArgs,
+  buildLiveTranscodeArgs,
+  selectAudioStream,
+  selectVideoStream,
+  type SelectedAudioStream,
+} from "./scripts/streamingProfile";
+import {
+  isSmtpConfigured,
+  sendPasswordResetEmail,
+  testSmtpConnection,
+  createResetToken,
+  verifyResetToken,
+  cleanExpiredResetTokens,
+} from "./scripts/email";
+import {
+  isAdminSetup,
+  setupAdmin,
+  verifyAdminPassword,
+  createAdminSession,
+  deleteAdminSession,
+  authenticateAdminRequest,
+  adminSessionCookie,
+  clearAdminSessionCookie,
+} from "./scripts/admin";
 
 function getProfileFromReq(req: Request): ProfileData {
   // Try session-based auth first
@@ -105,13 +171,16 @@ async function enforceCacheLimit() {
 }
 
 // Track active transcoding jobs: cacheKey -> { process, bytesWritten, duration, done, error }
-const activeTranscodes = new Map<string, {
-  process: ReturnType<typeof Bun.spawn>;
-  bytesWritten: number;
-  duration: number;
-  done: boolean;
-  error: boolean;
-}>();
+const activeTranscodes = new Map<
+  string,
+  {
+    process: ReturnType<typeof Bun.spawn>;
+    bytesWritten: number;
+    duration: number;
+    done: boolean;
+    error: boolean;
+  }
+>();
 
 const MAX_CONCURRENT_CACHE_JOBS = 1;
 const CACHE_PREWARM_DELAY_MS = 8_000;
@@ -134,7 +203,11 @@ const activeLiveStreams = new Map<string, number>();
 
 function getCacheKey(sourcePath: string, audioIndex: number): string {
   const hash = createHash("sha256").update(`${sourcePath}:audio=${audioIndex}`).digest("hex").slice(0, 16);
-  const baseName = sourcePath.split("/").pop()?.replace(/\.[^.]+$/, "") || "video";
+  const baseName =
+    sourcePath
+      .split("/")
+      .pop()
+      ?.replace(/\.[^.]+$/, "") || "video";
   return `${baseName}_${hash}`;
 }
 
@@ -180,13 +253,13 @@ function scheduleCacheRetry(sourcePath: string, audioIndex: number, cacheKey: st
   const attempts = cacheRetryCounts.get(cacheKey) ?? 0;
   if (attempts >= MAX_CACHE_JOB_RETRIES) {
     cacheRetryCounts.delete(cacheKey);
-    console.error(`[stream] cache transcode retries exhausted for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason})`);
+    console.error(
+      `[stream] cache transcode retries exhausted for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason})`,
+    );
     return;
   }
   cacheRetryCounts.set(cacheKey, attempts + 1);
-  const retryReason = reason.startsWith("prefetch")
-    ? `prefetch-retry-${attempts + 1}`
-    : `retry-${attempts + 1}`;
+  const retryReason = reason.startsWith("prefetch") ? `prefetch-retry-${attempts + 1}` : `retry-${attempts + 1}`;
   queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, retryReason);
 }
 
@@ -194,7 +267,7 @@ function queueCacheTranscode(
   sourcePath: string,
   audioIndex: number,
   delayMs = CACHE_PREWARM_DELAY_MS,
-  reason = "stream"
+  reason = "stream",
 ): string {
   const cacheKey = getCacheKey(sourcePath, audioIndex);
   if (activeTranscodes.has(cacheKey)) return cacheKey;
@@ -214,11 +287,14 @@ function queueCacheTranscode(
     const cacheBusy = getActiveCacheTranscodeCount() >= MAX_CONCURRENT_CACHE_JOBS;
     const allowDuringPlayback = queued.reason.startsWith("prefetch");
     const sameSourceLive = activeLiveStreams.has(getLiveStreamKey(queued.sourcePath, queued.audioIndex));
-    const shouldDeferForPlayback = (!allowDuringPlayback && liveStreams > 0) || (allowDuringPlayback && (liveStreams > 1 || sameSourceLive));
+    const shouldDeferForPlayback =
+      (!allowDuringPlayback && liveStreams > 0) || (allowDuringPlayback && (liveStreams > 1 || sameSourceLive));
 
     if (cacheBusy || shouldDeferForPlayback) {
       queued.readyAt = Date.now() + CACHE_QUEUE_POLL_MS;
-      queued.timer = setTimeout(() => { void runQueuedJob(); }, CACHE_QUEUE_POLL_MS);
+      queued.timer = setTimeout(() => {
+        void runQueuedJob();
+      }, CACHE_QUEUE_POLL_MS);
       return;
     }
 
@@ -228,7 +304,9 @@ function queueCacheTranscode(
       await startCacheTranscode(sourcePath, audioIndex);
       cacheRetryCounts.delete(cacheKey);
     } catch (err) {
-      console.error(`[stream] queued cache start failed for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason}): ${String(err)}`);
+      console.error(
+        `[stream] queued cache start failed for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason}): ${String(err)}`,
+      );
       scheduleCacheRetry(sourcePath, audioIndex, cacheKey, "start-failed");
     }
   };
@@ -237,14 +315,19 @@ function queueCacheTranscode(
     sourcePath,
     audioIndex,
     reason,
-    timer: setTimeout(() => { void runQueuedJob(); }, delayMs),
+    timer: setTimeout(() => {
+      void runQueuedJob();
+    }, delayMs),
     readyAt: Date.now() + delayMs,
   };
   pendingCacheJobs.set(cacheKey, entry);
   return cacheKey;
 }
 
-async function getCacheStatus(sourcePath: string, audioIndex: number): Promise<{
+async function getCacheStatus(
+  sourcePath: string,
+  audioIndex: number,
+): Promise<{
   cached: boolean;
   cacheKey: string;
   cachePath: string;
@@ -271,9 +354,7 @@ async function getCacheStatus(sourcePath: string, audioIndex: number): Promise<{
   };
 }
 
-type FfprobeResult =
-  | { ok: true; data: any }
-  | { ok: false; error: string };
+type FfprobeResult = { ok: true; data: any } | { ok: false; error: string };
 
 function parseJsonSafe(raw: string): any | null {
   try {
@@ -297,7 +378,9 @@ function runFfprobe(sourcePath: string, showEntries: string[]): FfprobeResult {
 
   if (probe.exitCode !== 0) {
     const stderrText = probe.stderr.toString().trim();
-    console.error(`[stream] ffprobe failed for ${basename(sourcePath)}: ${stderrText || `exit code ${probe.exitCode}`}`);
+    console.error(
+      `[stream] ffprobe failed for ${basename(sourcePath)}: ${stderrText || `exit code ${probe.exitCode}`}`,
+    );
     return { ok: false, error: "Unable to inspect media file" };
   }
 
@@ -349,17 +432,14 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
   const file = Bun.file(cachePath);
   if (await file.exists()) return cacheKey;
 
-  const probe = runFfprobe(sourcePath, [
-    "stream=index,codec_type,channels",
-    "format=duration",
-  ]);
+  const probe = runFfprobe(sourcePath, ["stream=index,codec_type,channels", "format=duration"]);
   if (!probe.ok) {
     throw new Error(probe.error);
   }
   const selectedAudio = selectAudioStream(probe.data.streams || [], audioIndex);
   const duration = parseFloat(probe.data.format?.duration || "0");
 
-  const tmpPath = cachePath + ".tmp";
+  const tmpPath = `${cachePath}.tmp`;
   const args = buildCacheTranscodeArgs(sourcePath, selectedAudio, tmpPath);
 
   const ffmpeg = Bun.spawn(args, {
@@ -408,7 +488,7 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
       job.error = true;
       console.error(
         `[stream] ffmpeg cache transcode failed for ${basename(sourcePath)} (audio=${audioIndex}, code=${code})` +
-        (getStderrTail() ? `: ${getStderrTail()}` : "")
+          (getStderrTail() ? `: ${getStderrTail()}` : ""),
       );
       scheduleCacheRetry(sourcePath, audioIndex, cacheKey, `ffmpeg-exit-${code}`);
       // Clean up tmp file
@@ -452,7 +532,8 @@ Bun.serve({
         try {
           if (isAdminSetup()) return Response.json({ error: "Admin already configured" }, { status: 400 });
           const { password } = await req.json();
-          if (!password || password.length < 4) return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          if (!password || password.length < 4)
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
           await setupAdmin(password);
           const token = createAdminSession();
           return Response.json({ ok: true }, { headers: { "Set-Cookie": adminSessionCookie(token) } });
@@ -494,11 +575,19 @@ Bun.serve({
       GET(req) {
         if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const all = getAllProfiles();
-        const grouped: Record<string, { email: string; profiles: { id: number; name: string; image_path: string | null; has_password: boolean }[] }> = {};
+        const grouped: Record<
+          string,
+          { email: string; profiles: { id: number; name: string; image_path: string | null; has_password: boolean }[] }
+        > = {};
         for (const p of all) {
           const key = p.email?.toLowerCase() || "__no_email__";
           if (!grouped[key]) grouped[key] = { email: p.email || "", profiles: [] };
-          grouped[key].profiles.push({ id: p.id, name: p.name, image_path: p.image_path, has_password: profileHasPassword(p.id) });
+          grouped[key].profiles.push({
+            id: p.id,
+            name: p.name,
+            image_path: p.image_path,
+            has_password: profileHasPassword(p.id),
+          });
         }
         return Response.json({ accounts: Object.values(grouped) });
       },
@@ -530,7 +619,7 @@ Bun.serve({
           if (!email || typeof email !== "string" || !email.trim()) {
             return Response.json({ error: "Email is required" }, { status: 400 });
           }
-          const profiles = getProfilesByEmail(email).map(p => ({
+          const profiles = getProfilesByEmail(email).map((p) => ({
             id: p.id,
             name: p.name,
             image_path: p.image_path,
@@ -545,7 +634,7 @@ Bun.serve({
     },
     "/api/auth/lookup-unclaimed": {
       POST() {
-        const profiles = getProfilesWithoutEmail().map(p => ({
+        const profiles = getProfilesWithoutEmail().map((p) => ({
           id: p.id,
           name: p.name,
           image_path: p.image_path,
@@ -570,9 +659,12 @@ Bun.serve({
           if (!valid) return Response.json({ error: "Invalid password" }, { status: 401 });
           const token = createSession(profileWithHash.id, req.headers.get("user-agent") || undefined);
           const profile = getProfile(profileWithHash.id)!;
-          return Response.json({ profile }, {
-            headers: { "Set-Cookie": sessionCookie(token) },
-          });
+          return Response.json(
+            { profile },
+            {
+              headers: { "Set-Cookie": sessionCookie(token) },
+            },
+          );
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
@@ -595,9 +687,12 @@ Bun.serve({
           const hash = await hashPassword(password);
           const profile = createProfile(name.trim(), hash, email.trim());
           const token = createSession(profile.id, req.headers.get("user-agent") || undefined);
-          return Response.json({ profile }, {
-            headers: { "Set-Cookie": sessionCookie(token) },
-          });
+          return Response.json(
+            { profile },
+            {
+              headers: { "Set-Cookie": sessionCookie(token) },
+            },
+          );
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
@@ -621,9 +716,12 @@ Bun.serve({
           setProfilePassword(profileId, hash);
           const token = createSession(profileId, req.headers.get("user-agent") || undefined);
           const profile = getProfile(profileId)!;
-          return Response.json({ profile }, {
-            headers: { "Set-Cookie": sessionCookie(token) },
-          });
+          return Response.json(
+            { profile },
+            {
+              headers: { "Set-Cookie": sessionCookie(token) },
+            },
+          );
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
@@ -633,9 +731,12 @@ Bun.serve({
       async POST(req) {
         const auth = authenticateRequest(req);
         if (auth) deleteSession(auth.sessionId);
-        return Response.json({ ok: true }, {
-          headers: { "Set-Cookie": clearSessionCookie() },
-        });
+        return Response.json(
+          { ok: true },
+          {
+            headers: { "Set-Cookie": clearSessionCookie() },
+          },
+        );
       },
     },
     "/api/auth/me": {
@@ -649,9 +750,16 @@ Bun.serve({
       GET(req) {
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
-        const sessions = db.query(
-          "SELECT id, user_agent, created_at, last_active FROM sessions WHERE profile_id = ? AND expires_at > datetime('now') ORDER BY last_active DESC"
-        ).all(auth.profile.id) as { id: string; user_agent: string | null; created_at: string; last_active: string | null }[];
+        const sessions = db
+          .query(
+            "SELECT id, user_agent, created_at, last_active FROM sessions WHERE profile_id = ? AND expires_at > datetime('now') ORDER BY last_active DESC",
+          )
+          .all(auth.profile.id) as {
+          id: string;
+          user_agent: string | null;
+          created_at: string;
+          last_active: string | null;
+        }[];
         return Response.json({
           sessions: sessions.map((s) => ({
             id: s.id,
@@ -675,9 +783,9 @@ Bun.serve({
           return Response.json({ error: "Use logout to end your current session" }, { status: 400 });
         }
         // Ensure the session belongs to this profile
-        const session = db.prepare(
-          "SELECT profile_id FROM sessions WHERE id = ?"
-        ).get(sessionId) as { profile_id: number } | null;
+        const session = db.prepare("SELECT profile_id FROM sessions WHERE id = ?").get(sessionId) as {
+          profile_id: number;
+        } | null;
         if (!session || session.profile_id !== auth.profile.id) {
           return Response.json({ error: "Session not found" }, { status: 404 });
         }
@@ -717,7 +825,10 @@ Bun.serve({
           const { profileId } = body;
           if (!profileId) return Response.json({ error: "Missing profileId" }, { status: 400 });
           if (!isSmtpConfigured()) {
-            return Response.json({ error: "Email is not configured on this server. Contact the server admin." }, { status: 400 });
+            return Response.json(
+              { error: "Email is not configured on this server. Contact the server admin." },
+              { status: 400 },
+            );
           }
           const profile = getProfile(profileId);
           if (!profile) return Response.json({ error: "Profile not found" }, { status: 404 });
@@ -751,9 +862,12 @@ Bun.serve({
           setProfilePassword(profileId, hash);
           const token = createSession(profileId, req.headers.get("user-agent") || undefined);
           const profile = getProfile(profileId)!;
-          return Response.json({ profile }, {
-            headers: { "Set-Cookie": sessionCookie(token) },
-          });
+          return Response.json(
+            { profile },
+            {
+              headers: { "Set-Cookie": sessionCookie(token) },
+            },
+          );
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
@@ -870,7 +984,7 @@ Bun.serve({
         }
 
         const isRemoteSource = sourcePath.startsWith("kaidadb:");
-        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0", 10) || 0;
 
         // Check KaidaDB first (handles both remote-only and locally-ingested content)
         const kaidadbKey = getKaidadbKey(srcParam);
@@ -889,7 +1003,8 @@ Bun.serve({
                   "Accept-Ranges": "bytes",
                   "X-Cache": "kaidadb",
                 };
-                if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+                if (kaidaRes.headers.has("content-range"))
+                  headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
                 if (kaidaRes.status === 200 && kStatus.total_size) {
                   headers["Content-Length"] = String(kStatus.total_size);
                 }
@@ -990,13 +1105,15 @@ Bun.serve({
               if (code !== 0) {
                 console.error(
                   `[stream] ffmpeg kaidadb transcode failed for ${kaidadbKey} (audio=${audioIndex}, code=${code})` +
-                  (getStderrTail() ? `: ${getStderrTail()}` : "")
+                    (getStderrTail() ? `: ${getStderrTail()}` : ""),
                 );
               }
             });
             if (req.signal) {
               req.signal.addEventListener("abort", () => {
-                try { ffmpeg.kill(); } catch {}
+                try {
+                  ffmpeg.kill();
+                } catch {}
                 releaseLiveStream();
               });
             }
@@ -1102,7 +1219,7 @@ Bun.serve({
           if (code !== 0) {
             console.error(
               `[stream] ffmpeg live transcode failed for ${basename(sourcePath)} (audio=${audioIndex}, code=${code})` +
-              (getStderrTail() ? `: ${getStderrTail()}` : "")
+                (getStderrTail() ? `: ${getStderrTail()}` : ""),
             );
           }
         });
@@ -1110,7 +1227,9 @@ Bun.serve({
         // Kill live transcode FFmpeg when client disconnects
         if (req.signal) {
           req.signal.addEventListener("abort", () => {
-            try { ffmpeg.kill(); } catch {}
+            try {
+              ffmpeg.kill();
+            } catch {}
             releaseLiveStream();
           });
         }
@@ -1144,7 +1263,7 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
-        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0", 10) || 0;
 
         // For remote sources, check KaidaDB
         if (sourcePath.startsWith("kaidadb:")) {
@@ -1228,7 +1347,7 @@ Bun.serve({
         if (!sourcePath) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
-        const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+        const audioIndex = parseInt(url.searchParams.get("audio") || "0", 10) || 0;
         const cacheKey = queueCacheTranscode(sourcePath, audioIndex, 0, "prefetch");
         return Response.json({ prefetching: true, queued: true, cacheKey });
       },
@@ -1245,7 +1364,7 @@ Bun.serve({
           if (!sourcePath) {
             return Response.json({ error: "Not found" }, { status: 404 });
           }
-          const audioIndex = parseInt(url.searchParams.get("audio") || "0") || 0;
+          const audioIndex = parseInt(url.searchParams.get("audio") || "0", 10) || 0;
           const cacheKey = getCacheKey(sourcePath, audioIndex);
           const cachePath = getCachePath(cacheKey);
           clearPendingCacheJob(cacheKey);
@@ -1258,7 +1377,7 @@ Bun.serve({
           try {
             const { unlink } = await import("node:fs/promises");
             await unlink(cachePath);
-            await unlink(cachePath + ".tmp").catch(() => {});
+            await unlink(`${cachePath}.tmp`).catch(() => {});
           } catch {}
           return Response.json({ cleared: true });
         }
@@ -1364,7 +1483,7 @@ Bun.serve({
         if (!type) {
           return Response.json({ error: "Missing type parameter" }, { status: 400 });
         }
-        const types = type.split(",").map(t => t.trim());
+        const types = type.split(",").map((t) => t.trim());
         const rows = getCategoriesByType(types);
         return Response.json(rows);
       },
@@ -1376,7 +1495,7 @@ Bun.serve({
         if (!tags) {
           return Response.json({ error: "Missing tags parameter" }, { status: 400 });
         }
-        const tagList = tags.split(",").map(t => t.trim());
+        const tagList = tags.split(",").map((t) => t.trim());
         const rows = getCategoriesByGenreTag(tagList);
         return Response.json(rows);
       },
@@ -1416,6 +1535,7 @@ Bun.serve({
           episodes: title.episodes,
           videos: title.videos ? JSON.parse(title.videos) : [],
           subtitles: title.subtitles ? JSON.parse(title.subtitles) : [],
+          seasonsMeta: title.seasonsMeta ? JSON.parse(title.seasonsMeta) : [],
         });
       },
     },
@@ -1443,7 +1563,7 @@ Bun.serve({
     },
     "/api/profiles": {
       GET() {
-        const profiles = getAllProfiles().map(p => ({
+        const profiles = getAllProfiles().map((p) => ({
           id: p.id,
           name: p.name,
           image_path: p.image_path,
@@ -1508,15 +1628,18 @@ Bun.serve({
 
           const ext = src.split(".").pop()?.toLowerCase();
           let filePath = sourcePath;
-          let contentType = "video/mp4";
+          const contentType = "video/mp4";
 
           if (ext !== "mp4") {
-            const audioIndex = parseInt(body.audio || "0") || 0;
+            const audioIndex = parseInt(body.audio || "0", 10) || 0;
             const cache = await getCacheStatus(sourcePath, audioIndex);
             if (!cache.cached) {
-              return Response.json({
-                error: "No cached transcode available. Play the file first to generate a transcode, then try again.",
-              }, { status: 400 });
+              return Response.json(
+                {
+                  error: "No cached transcode available. Play the file first to generate a transcode, then try again.",
+                },
+                { status: 400 },
+              );
             }
             filePath = cache.cachePath;
           }
@@ -1552,9 +1675,13 @@ Bun.serve({
           const updated = updateGlobalSettings(body);
 
           // Re-scan if directories or KaidaDB prefixes changed
-          if (body.movies_directory !== undefined || body.tvshows_directory !== undefined ||
-              body.kaidadb_movies_prefix !== undefined || body.kaidadb_tvshows_prefix !== undefined ||
-              body.kaidadb_root_prefix !== undefined) {
+          if (
+            body.movies_directory !== undefined ||
+            body.tvshows_directory !== undefined ||
+            body.kaidadb_movies_prefix !== undefined ||
+            body.kaidadb_tvshows_prefix !== undefined ||
+            body.kaidadb_root_prefix !== undefined
+          ) {
             await resolveToDb();
           }
 
@@ -1574,23 +1701,29 @@ Bun.serve({
         const profile = auth.profile;
 
         if (src) {
-          const row = db.query(
-            "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND video_src = ?"
-          ).get(profile.id, src) as any;
+          const row = db
+            .query(
+              "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND video_src = ?",
+            )
+            .get(profile.id, src) as any;
           return Response.json(row || null);
         }
 
         if (dir) {
-          const rows = db.query(
-            "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at DESC"
-          ).all(profile.id, dir) as any[];
+          const rows = db
+            .query(
+              "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at DESC",
+            )
+            .all(profile.id, dir) as any[];
           return Response.json(rows);
         }
 
         // Return most recent playback entries for "continue watching"
-        const rows = db.query(
-          "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND playback_progress.current_time > 0 AND (duration = 0 OR playback_progress.current_time < duration - 5) ORDER BY updated_at DESC LIMIT 20"
-        ).all(profile.id) as any[];
+        const rows = db
+          .query(
+            "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND playback_progress.current_time > 0 AND (duration = 0 OR playback_progress.current_time < duration - 5) ORDER BY updated_at DESC LIMIT 20",
+          )
+          .all(profile.id) as any[];
         return Response.json(rows);
       },
       async PUT(req) {
@@ -1612,7 +1745,7 @@ Bun.serve({
                updated_at = datetime('now')
              WHERE excluded."current_time" >= playback_progress."current_time"
                OR (julianday('now') - julianday(playback_progress.updated_at)) * 86400 > 5`,
-            [profile.id, video_src, dir_path || "", current_time, duration || 0]
+            [profile.id, video_src, dir_path || "", current_time, duration || 0],
           );
           return Response.json({ ok: true });
         } catch (err: any) {
@@ -1625,7 +1758,8 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
-        const titles = db.query(`
+        const titles = db
+          .query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM playback_progress pp
           JOIN titles t ON t.dir_path = pp.dir_path
@@ -1635,7 +1769,8 @@ Bun.serve({
           GROUP BY pp.dir_path
           ORDER BY MAX(pp.updated_at) DESC
           LIMIT 20
-        `).all(profile.id) as any[];
+        `)
+          .all(profile.id) as any[];
         return Response.json({ genre: "Continue Watching", titles });
       },
     },
@@ -1644,7 +1779,8 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
-        const rows = db.query(`
+        const rows = db
+          .query(`
           SELECT pp.video_src, pp.dir_path, pp.current_time, pp.duration, pp.updated_at,
                  t.name, t.image_path AS imagePath, t.type
           FROM playback_progress pp
@@ -1652,7 +1788,8 @@ Bun.serve({
           WHERE pp.profile_id = ?
           ORDER BY pp.updated_at DESC
           LIMIT 100
-        `).all(profile.id) as any[];
+        `)
+          .all(profile.id) as any[];
         return Response.json(rows);
       },
       async DELETE(req) {
@@ -1675,13 +1812,15 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
-        const titles = db.query(`
+        const titles = db
+          .query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM watchlist w
           JOIN titles t ON t.dir_path = w.dir_path
           WHERE w.profile_id = ?
           ORDER BY w.added_at DESC
-        `).all(profile.id) as any[];
+        `)
+          .all(profile.id) as any[];
         return Response.json({ genre: "My List", titles });
       },
       async POST(req) {
@@ -1745,9 +1884,7 @@ Bun.serve({
         const ext = srcParam.split(".").pop()?.toLowerCase();
         // Convert SRT to WebVTT on-the-fly
         if (ext === "srt") {
-          content = "WEBVTT\n\n" + content
-            .replace(/\r\n/g, "\n")
-            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+          content = `WEBVTT\n\n${content.replace(/\r\n/g, "\n").replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2")}`;
         }
         return new Response(content, {
           headers: { "Content-Type": "text/vtt; charset=utf-8" },
@@ -1763,10 +1900,14 @@ Bun.serve({
         if (!src) {
           return Response.json({ error: "Missing src parameter" }, { status: 400 });
         }
-        const row = db.query(
-          "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src = ?"
-        ).get(src) as any;
-        return Response.json(row || { video_src: src, intro_start: null, intro_end: null, outro_start: null, outro_end: null });
+        const row = db
+          .query(
+            "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src = ?",
+          )
+          .get(src) as any;
+        return Response.json(
+          row || { video_src: src, intro_start: null, intro_end: null, outro_start: null, outro_end: null },
+        );
       },
       async PUT(req) {
         try {
@@ -1785,7 +1926,7 @@ Bun.serve({
                intro_end = excluded.intro_end,
                outro_start = excluded.outro_start,
                outro_end = excluded.outro_end`,
-            [video_src, intro_start ?? null, intro_end ?? null, outro_start ?? null, outro_end ?? null]
+            [video_src, intro_start ?? null, intro_end ?? null, outro_start ?? null, outro_end ?? null],
           );
           return Response.json({ ok: true });
         } catch (err: any) {
@@ -1802,9 +1943,11 @@ Bun.serve({
         if (!dir) {
           return Response.json({ error: "Missing dir parameter" }, { status: 400 });
         }
-        const rows = db.query(
-          "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?"
-        ).all(`${dir}%`) as any[];
+        const rows = db
+          .query(
+            "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?",
+          )
+          .all(`${dir}%`) as any[];
         return Response.json(rows);
       },
       DELETE(req) {
@@ -1823,7 +1966,15 @@ Bun.serve({
           const toml = await import("toml");
           const text = await req.text();
           const parsed = toml.parse(text);
-          const result: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = {};
+          const result: Record<
+            string,
+            {
+              intro_start: number | null;
+              intro_end: number | null;
+              outro_start: number | null;
+              outro_end: number | null;
+            }
+          > = {};
           const parseMinSec = (v: unknown): number | null => {
             if (typeof v === "number") return v;
             if (typeof v !== "string") return null;
@@ -1862,7 +2013,15 @@ Bun.serve({
           const toml = await import("toml");
           const text = await file.text();
           const parsed = toml.parse(text);
-          const result: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = {};
+          const result: Record<
+            string,
+            {
+              intro_start: number | null;
+              intro_end: number | null;
+              outro_start: number | null;
+              outro_end: number | null;
+            }
+          > = {};
           const parseMinSec = (v: unknown): number | null => {
             if (typeof v === "number") return v;
             if (typeof v !== "string") return null;
@@ -1945,9 +2104,10 @@ Bun.serve({
           // Determine destination directory from profile settings (respects global vs per-profile)
           const profile = getProfileFromReq(req);
           const dirs = getEffectiveDirs(profile.id);
-          const baseDir = mediaType === "Movie"
-            ? (dirs.movies_directory || resolve("./TestDir/Movies"))
-            : (dirs.tvshows_directory || resolve("./TestDir/TV Shows"));
+          const baseDir =
+            mediaType === "Movie"
+              ? dirs.movies_directory || resolve("./TestDir/Movies")
+              : dirs.tvshows_directory || resolve("./TestDir/TV Shows");
 
           const folderName = tomlData.name.replace(/\s+/g, "");
           const destDir = join(baseDir, folderName);
@@ -1980,7 +2140,7 @@ Bun.serve({
           }
 
           // Write TOML file
-          const tomlFilename = tomlData.name.toLowerCase().replace(/[^a-z0-9]+/g, "") + ".toml";
+          const tomlFilename = `${tomlData.name.toLowerCase().replace(/[^a-z0-9]+/g, "")}.toml`;
           await Bun.write(join(destDir, tomlFilename), tomlContent);
 
           // Copy and rename files
@@ -2018,21 +2178,26 @@ Bun.serve({
         const pid = profile.id;
 
         // Total hours watched
-        const totalRow = db.prepare(`
+        const totalRow = db
+          .prepare(`
           SELECT COALESCE(SUM(current_time), 0) AS total_seconds
           FROM playback_progress WHERE profile_id = ?
-        `).get(pid) as { total_seconds: number };
+        `)
+          .get(pid) as { total_seconds: number };
         const totalHours = Math.round((totalRow.total_seconds / 3600) * 10) / 10;
 
         // Titles completed
-        const completedRow = db.prepare(`
+        const completedRow = db
+          .prepare(`
           SELECT COUNT(DISTINCT dir_path) AS count
           FROM playback_progress
           WHERE profile_id = ? AND duration > 0 AND current_time >= duration - 5
-        `).get(pid) as { count: number };
+        `)
+          .get(pid) as { count: number };
 
         // Top genres
-        const topGenres = db.prepare(`
+        const topGenres = db
+          .prepare(`
           SELECT g.name, COUNT(DISTINCT pp.dir_path) AS count
           FROM playback_progress pp
           JOIN titles t ON t.dir_path = pp.dir_path
@@ -2042,22 +2207,27 @@ Bun.serve({
           GROUP BY g.name
           ORDER BY count DESC
           LIMIT 5
-        `).all(pid) as { name: string; count: number }[];
+        `)
+          .all(pid) as { name: string; count: number }[];
 
         // Total titles watched (any progress)
-        const watchedRow = db.prepare(`
+        const watchedRow = db
+          .prepare(`
           SELECT COUNT(DISTINCT dir_path) AS count
           FROM playback_progress WHERE profile_id = ?
-        `).get(pid) as { count: number };
+        `)
+          .get(pid) as { count: number };
 
         // Watch streak (consecutive days with activity)
-        const recentDays = db.prepare(`
+        const recentDays = db
+          .prepare(`
           SELECT DISTINCT DATE(updated_at) AS day
           FROM playback_progress
           WHERE profile_id = ?
           ORDER BY day DESC
           LIMIT 30
-        `).all(pid) as { day: string }[];
+        `)
+          .all(pid) as { day: string }[];
 
         let streak = 0;
         if (recentDays.length > 0) {
@@ -2077,24 +2247,32 @@ Bun.serve({
 
         // Library stats (always available)
         const libraryTitles = db.prepare(`SELECT COUNT(*) AS count FROM titles`).get() as { count: number };
-        const libraryMovies = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) = 'movie'`).get() as { count: number };
-        const libraryShows = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) != 'movie'`).get() as { count: number };
+        const libraryMovies = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) = 'movie'`).get() as {
+          count: number;
+        };
+        const libraryShows = db.prepare(`SELECT COUNT(*) AS count FROM titles WHERE LOWER(type) != 'movie'`).get() as {
+          count: number;
+        };
         const libraryGenres = db.prepare(`SELECT COUNT(*) AS count FROM genres`).get() as { count: number };
 
         // All genres with title counts for the library
-        const allGenreStats = db.prepare(`
+        const allGenreStats = db
+          .prepare(`
           SELECT g.name, COUNT(DISTINCT tg.title_id) AS count
           FROM genres g
           JOIN title_genres tg ON tg.genre_id = g.id
           GROUP BY g.name
           ORDER BY count DESC
           LIMIT 10
-        `).all() as { name: string; count: number }[];
+        `)
+          .all() as { name: string; count: number }[];
 
         // Watchlist count
-        const watchlistCount = db.prepare(`
+        const watchlistCount = db
+          .prepare(`
           SELECT COUNT(*) AS count FROM watchlist WHERE profile_id = ?
-        `).get(pid) as { count: number };
+        `)
+          .get(pid) as { count: number };
 
         return Response.json({
           totalHours,
@@ -2170,7 +2348,10 @@ Bun.serve({
         if (!genresParam) {
           return Response.json({ error: "Missing genres parameter" }, { status: 400 });
         }
-        const genreNames = genresParam.split(",").map(g => g.trim()).filter(Boolean);
+        const genreNames = genresParam
+          .split(",")
+          .map((g) => g.trim())
+          .filter(Boolean);
         if (genreNames.length === 0) {
           return Response.json([]);
         }
@@ -2188,12 +2369,16 @@ Bun.serve({
         const pHeaders: Record<string, string> = { "x-profile-id": String(profile.id) };
 
         // Get progress entries for this dir
-        const entries = db.query(
-          "SELECT video_src, current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at"
-        ).all(profile.id, dir) as any[];
+        const entries = db
+          .query(
+            "SELECT video_src, current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at",
+          )
+          .all(profile.id, dir) as any[];
 
         // Get videos for this title
-        const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dir) as { videos: string | null } | null;
+        const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dir) as {
+          videos: string | null;
+        } | null;
         const videos: string[] = title?.videos ? JSON.parse(title.videos) : [];
 
         const result = detectSleepPattern(entries, videos);
@@ -2248,7 +2433,9 @@ Bun.serve({
           const details = await getTMDBDetails(tmdbId, mediaType, settings.tmdb_api_key);
 
           // Resolve the actual source path for the title
-          const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(dirPath) as { source_path: string } | null;
+          const title = db.prepare("SELECT source_path FROM titles WHERE dir_path = ?").get(dirPath) as {
+            source_path: string;
+          } | null;
           if (!title) return Response.json({ error: "Title not found" }, { status: 404 });
 
           const updates: Record<string, any> = {};
@@ -2256,13 +2443,13 @@ Bun.serve({
           if (name) updates.name = name;
           if (details.overview) updates.description = details.overview;
           if (details.genres?.length > 0) {
-            updates.genre = details.genres.map(g => g.name);
+            updates.genre = details.genres.map((g) => g.name);
           }
           if (details.credits?.cast?.length) {
             updates.cast = details.credits.cast
               .sort((a, b) => a.order - b.order)
               .slice(0, 10)
-              .map(c => c.name);
+              .map((c) => c.name);
           }
           updates.type = mediaType === "movie" ? "Movie" : "TV Show";
           if (mediaType === "tv" && details.number_of_seasons) {
@@ -2446,7 +2633,7 @@ Bun.serve({
         return new Response(file, {
           headers: {
             "Cache-Control": "public, max-age=86400",
-            "ETag": etag,
+            ETag: etag,
           },
         });
       },
@@ -2471,7 +2658,7 @@ Bun.serve({
         return new Response(file, {
           headers: {
             "Cache-Control": "public, max-age=86400",
-            "ETag": etag,
+            ETag: etag,
           },
         });
       },
@@ -2543,7 +2730,8 @@ Bun.serve({
                   "Accept-Ranges": "bytes",
                   "X-Source": "kaidadb",
                 };
-                if (kaidaRes.headers.has("content-range")) headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
+                if (kaidaRes.headers.has("content-range"))
+                  headers["Content-Range"] = kaidaRes.headers.get("content-range")!;
                 // For 200 responses, use known file size for Content-Length.
                 // For 206 responses, omit Content-Length to avoid chunked encoding conflicts.
                 if (kaidaRes.status === 200) {
@@ -2567,7 +2755,7 @@ Bun.serve({
           return new Response(file, {
             headers: {
               "Cache-Control": "public, max-age=86400",
-              "ETag": etag,
+              ETag: etag,
             },
           });
         }
@@ -2603,8 +2791,11 @@ Bun.serve({
       },
     },
   },
-  development: process.env.NODE_ENV !== "production" ? {
-    hmr: true,
-    console: true,
-  } : false,
+  development:
+    process.env.NODE_ENV !== "production"
+      ? {
+          hmr: true,
+          console: true,
+        }
+      : false,
 });

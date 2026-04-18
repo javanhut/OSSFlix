@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve, join } from "node:path";
+import { resolve, join } from "node:path";
 
 export const DATA_DIR = resolve(process.env.OSSFLIX_DATA_DIR || "./data");
 const DB_PATH = join(DATA_DIR, "ossflix.db");
@@ -144,6 +144,13 @@ try {
   // column already exists
 }
 
+// Migration: add per-season metadata JSON to titles
+try {
+  db.run("ALTER TABLE titles ADD COLUMN seasons_meta TEXT");
+} catch {
+  // column already exists
+}
+
 // Migration: add tmdb_api_key to global_settings
 try {
   db.run("ALTER TABLE global_settings ADD COLUMN tmdb_api_key TEXT");
@@ -232,11 +239,21 @@ db.run(`
 db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_email_lower ON profiles(LOWER(email))`);
 
 // Migration: add SMTP settings to global_settings
-try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_host TEXT"); } catch {}
-try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_port INTEGER"); } catch {}
-try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_user TEXT"); } catch {}
-try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_pass TEXT"); } catch {}
-try { db.run("ALTER TABLE global_settings ADD COLUMN smtp_from TEXT"); } catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN smtp_host TEXT");
+} catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN smtp_port INTEGER");
+} catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN smtp_user TEXT");
+} catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN smtp_pass TEXT");
+} catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN smtp_from TEXT");
+} catch {}
 
 // Password reset tokens
 db.run(`
@@ -253,7 +270,9 @@ db.run(`
 db.run(`CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON password_reset_tokens(token)`);
 
 // Migration: add admin password to global_settings
-try { db.run("ALTER TABLE global_settings ADD COLUMN admin_password_hash TEXT"); } catch {}
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN admin_password_hash TEXT");
+} catch {}
 
 // Admin sessions
 db.run(`

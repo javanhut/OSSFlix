@@ -22,23 +22,25 @@ function buildSessionExpiry(): string {
 
 export function createSession(profileId: number, userAgent?: string): string {
   // Enforce concurrent session limit — evict oldest if at capacity
-  const countRow = db.prepare(
-    "SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ? AND expires_at > datetime('now')"
-  ).get(profileId) as { cnt: number };
+  const countRow = db
+    .prepare("SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ? AND expires_at > datetime('now')")
+    .get(profileId) as { cnt: number };
 
   if (countRow.cnt >= MAX_SESSIONS_PER_PROFILE) {
     db.run(
       "DELETE FROM sessions WHERE id = (SELECT id FROM sessions WHERE profile_id = ? ORDER BY created_at ASC LIMIT 1)",
-      [profileId]
+      [profileId],
     );
   }
 
   const token = crypto.randomUUID();
   const expiresAt = buildSessionExpiry();
-  db.run(
-    "INSERT INTO sessions (id, profile_id, expires_at, user_agent) VALUES (?, ?, ?, ?)",
-    [token, profileId, expiresAt, userAgent || null]
-  );
+  db.run("INSERT INTO sessions (id, profile_id, expires_at, user_agent) VALUES (?, ?, ?, ?)", [
+    token,
+    profileId,
+    expiresAt,
+    userAgent || null,
+  ]);
   return token;
 }
 
@@ -47,9 +49,11 @@ export function getSessionExpiry(): string {
 }
 
 export function getSession(token: string): { id: string; profile_id: number; expires_at: string } | null {
-  const row = db.prepare(
-    "SELECT id, profile_id, expires_at FROM sessions WHERE id = ?"
-  ).get(token) as { id: string; profile_id: number; expires_at: string } | null;
+  const row = db.prepare("SELECT id, profile_id, expires_at FROM sessions WHERE id = ?").get(token) as {
+    id: string;
+    profile_id: number;
+    expires_at: string;
+  } | null;
   if (!row) return null;
   if (new Date(row.expires_at) < new Date()) {
     db.run("DELETE FROM sessions WHERE id = ?", [token]);
@@ -103,7 +107,7 @@ function getTokenFromRequest(req: Request): string | null {
   const cookieHeader = req.headers.get("cookie");
   if (!cookieHeader) return null;
   const cookies = parseCookies(cookieHeader);
-  return cookies["ossflix_session"] || null;
+  return cookies.ossflix_session || null;
 }
 
 function touchSession(token: string): void {

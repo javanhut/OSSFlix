@@ -1,8 +1,10 @@
-import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from 'react-bootstrap';
-import { useEffect, useState, useRef, useCallback } from "react";
+import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from "react-bootstrap";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
+import { parseEpisodePath, formatEpisodeLabel } from "../scripts/episodeNaming";
+import type { SeasonMeta } from "../scripts/tomlreader";
 
 type SubtitleTrack = {
   label: string;
@@ -23,6 +25,7 @@ interface MediaInfo {
   videos: string[];
   subtitles?: SubtitleTrack[];
   dirPath: string;
+  seasonsMeta?: SeasonMeta[];
 }
 
 type CardProps = {
@@ -64,13 +67,13 @@ function mmSsToSecs(val: string): number | null {
     return m * 60 + s;
   }
   const n = parseFloat(trimmed);
-  return isNaN(n) ? null : n;
+  return Number.isNaN(n) ? null : n;
 }
 
 function parseEpisodeLabel(videoSrc: string): string {
   const filename = videoSrc.split("/").pop() || videoSrc;
-  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
-  if (match) return `S${match[2]} E${match[3]} - ${match[1].replace(/_/g, " ")}`;
+  const parsed = parseEpisodePath(filename);
+  if (parsed) return formatEpisodeLabel(parsed);
   return filename.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
 }
 
@@ -89,8 +92,15 @@ type BrowseResult = {
   files: { name: string; path: string }[];
 };
 
-function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
-  show: boolean; onHide: () => void; onSelect: (path: string) => void;
+function TimingFileBrowser({
+  show,
+  onHide,
+  onSelect,
+  initialPath,
+}: {
+  show: boolean;
+  onHide: () => void;
+  onSelect: (path: string) => void;
   initialPath?: string;
 }) {
   const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
@@ -98,22 +108,34 @@ function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
   const [error, setError] = useState<string | null>(null);
 
   const browseTo = (path: string) => {
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     fetch(`/api/browse?path=${encodeURIComponent(path)}&mode=toml`)
       .then((r) => r.json())
-      .then((data) => data.error ? setError(data.error) : setBrowseData(data))
+      .then((data) => (data.error ? setError(data.error) : setBrowseData(data)))
       .catch(() => setError("Failed to browse"))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (show) browseTo(initialPath || "/"); }, [show]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: browseTo is stable within component lifetime
+  useEffect(() => {
+    if (show) browseTo(initialPath || "/");
+  }, [show, initialPath]);
 
   const itemStyle: React.CSSProperties = {
-    display: "flex", alignItems: "center", gap: "10px",
-    padding: "10px 14px", border: "none", borderRadius: "8px",
-    background: "transparent", color: "var(--oss-text)",
-    cursor: "pointer", fontSize: "0.85rem", textAlign: "left",
-    transition: "background 0.15s ease", width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px 14px",
+    border: "none",
+    borderRadius: "8px",
+    background: "transparent",
+    color: "var(--oss-text)",
+    cursor: "pointer",
+    fontSize: "0.85rem",
+    textAlign: "left",
+    transition: "background 0.15s ease",
+    width: "100%",
   };
 
   return (
@@ -123,12 +145,20 @@ function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
       </ModalHeader>
       <ModalBody>
         {browseData && (
-          <div style={{
-            padding: "8px 14px", borderRadius: "8px", marginBottom: "12px",
-            background: "var(--oss-bg-elevated)", fontSize: "0.82rem",
-            color: "var(--oss-text-muted)", fontFamily: "monospace",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>
+          <div
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              marginBottom: "12px",
+              background: "var(--oss-bg-elevated)",
+              fontSize: "0.82rem",
+              color: "var(--oss-text-muted)",
+              fontFamily: "monospace",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {browseData.current}
           </div>
         )}
@@ -142,42 +172,97 @@ function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
           <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxHeight: "400px", overflowY: "auto" }}>
             {browseData.parent && (
               <button
+                type="button"
                 style={itemStyle}
                 onClick={() => browseTo(browseData.parent!)}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5"/></svg>
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5"
+                  />
+                </svg>
                 <span style={{ color: "var(--oss-accent)" }}>..</span>
               </button>
             )}
             {browseData.directories.map((dir) => (
               <button
+                type="button"
                 key={dir.path}
                 style={itemStyle}
                 onClick={() => browseTo(dir.path)}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ color: "#f59e0b", flexShrink: 0 }}><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5z"/></svg>
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ color: "#f59e0b", flexShrink: 0 }}
+                >
+                  <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5z" />
+                </svg>
                 <span style={{ flex: 1, textAlign: "left" }}>{dir.name}</span>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.3 }}><path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/></svg>
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ opacity: 0.3 }}
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"
+                  />
+                </svg>
               </button>
             ))}
             {browseData.files.map((file) => (
               <button
+                type="button"
                 key={file.path}
                 style={{ ...itemStyle, color: "var(--oss-accent)" }}
-                onClick={() => { onSelect(file.path); onHide(); }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(59,130,246,0.1)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                onClick={() => {
+                  onSelect(file.path);
+                  onHide();
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(59,130,246,0.1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.414A2 2 0 0 0 13.414 3L11 .586A2 2 0 0 0 9.586 0zm5.586 1H10v3a1 1 0 0 0 1 1h3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/></svg>
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ flexShrink: 0 }}
+                >
+                  <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.414A2 2 0 0 0 13.414 3L11 .586A2 2 0 0 0 9.586 0zm5.586 1H10v3a1 1 0 0 0 1 1h3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z" />
+                </svg>
                 <span style={{ flex: 1, textAlign: "left" }}>{file.name}</span>
               </button>
             ))}
             {browseData.directories.length === 0 && browseData.files.length === 0 && (
-              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "1.5rem" }}>
+              <p
+                style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "1.5rem" }}
+              >
                 No .toml files found
               </p>
             )}
@@ -185,13 +270,24 @@ function TimingFileBrowser({ show, onHide, onSelect, initialPath }: {
         )}
       </ModalBody>
       <ModalFooter>
-        <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Cancel</button>
+        <button type="button" className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>
+          Cancel
+        </button>
       </ModalFooter>
     </Modal>
   );
 }
 
-function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose, dirPath, onTimingsRefresh }: {
+function TimingsModal({
+  show,
+  videos,
+  timingsMap,
+  onSaveAll,
+  onClearAll,
+  onClose,
+  dirPath,
+  onTimingsRefresh,
+}: {
   show: boolean;
   videos: string[];
   timingsMap: Record<string, EpisodeTiming>;
@@ -212,23 +308,25 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
   // Re-init rows when modal opens
   useEffect(() => {
     if (show) {
-      setRows(videos.map((v) => {
-        const t = timingsMap[v];
-        return {
-          video_src: v,
-          introStart: secsToMmSs(t?.intro_start ?? null),
-          introEnd: secsToMmSs(t?.intro_end ?? null),
-          outroStart: secsToMmSs(t?.outro_start ?? null),
-          outroEnd: secsToMmSs(t?.outro_end ?? null),
-        };
-      }));
+      setRows(
+        videos.map((v) => {
+          const t = timingsMap[v];
+          return {
+            video_src: v,
+            introStart: secsToMmSs(t?.intro_start ?? null),
+            introEnd: secsToMmSs(t?.intro_end ?? null),
+            outroStart: secsToMmSs(t?.outro_start ?? null),
+            outroEnd: secsToMmSs(t?.outro_end ?? null),
+          };
+        }),
+      );
       setSaved(false);
       setSaving(false);
     }
   }, [show, videos, timingsMap]);
 
   const updateRow = (idx: number, field: keyof TimingRowData, value: string) => {
-    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
     setSaved(false);
   };
 
@@ -242,13 +340,22 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
       outro_end: mmSsToSecs(r.outroEnd),
     }));
     onSaveAll(timings);
-    setTimeout(() => { setSaving(false); setSaved(true); }, 400);
+    setTimeout(() => {
+      setSaving(false);
+      setSaved(true);
+    }, 400);
   };
 
   const handleClearAll = () => {
-    setRows((prev) => prev.map((r) => ({
-      ...r, introStart: "", introEnd: "", outroStart: "", outroEnd: "",
-    })));
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        introStart: "",
+        introEnd: "",
+        outroStart: "",
+        outroEnd: "",
+      })),
+    );
     onClearAll();
     setSaved(false);
   };
@@ -268,7 +375,11 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
         body: JSON.stringify({ dirPath }),
       });
       const data = await res.json();
-      if (data.error) { setAutoDetectProgress(data.error); setAutoDetecting(false); return; }
+      if (data.error) {
+        setAutoDetectProgress(data.error);
+        setAutoDetecting(false);
+        return;
+      }
       const jobId = data.jobId;
 
       // Poll for status
@@ -307,24 +418,32 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
         body: JSON.stringify({ path: filePath }),
       });
       if (!res.ok) throw new Error("Parse failed");
-      const parsed: Record<string, { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }> = await res.json();
-      setRows((prev) => prev.map((r) => {
-        const filename = r.video_src.split("/").pop() || "";
-        const epMatch = filename.match(/_s(\d+)_ep(\d+)\./i);
-        if (!epMatch) return r;
-        const key = `s${epMatch[1].replace(/^0+/, "") || "0"}e${epMatch[2].replace(/^0+/, "") || "0"}`;
-        const timing = parsed[key.toLowerCase()]
-          || parsed[`s${epMatch[1]}e${epMatch[2]}`.toLowerCase()]
-          || parsed[`s${String(Number(epMatch[1])).padStart(2, "0")}e${String(Number(epMatch[2])).padStart(2, "0")}`.toLowerCase()];
-        if (!timing) return r;
-        return {
-          ...r,
-          introStart: secsToMmSs(timing.intro_start),
-          introEnd: secsToMmSs(timing.intro_end),
-          outroStart: secsToMmSs(timing.outro_start),
-          outroEnd: secsToMmSs(timing.outro_end),
-        };
-      }));
+      const parsed: Record<
+        string,
+        { intro_start: number | null; intro_end: number | null; outro_start: number | null; outro_end: number | null }
+      > = await res.json();
+      setRows((prev) =>
+        prev.map((r) => {
+          const filename = r.video_src.split("/").pop() || "";
+          const epMatch = filename.match(/_s(\d+)_ep(\d+)\./i);
+          if (!epMatch) return r;
+          const key = `s${epMatch[1].replace(/^0+/, "") || "0"}e${epMatch[2].replace(/^0+/, "") || "0"}`;
+          const timing =
+            parsed[key.toLowerCase()] ||
+            parsed[`s${epMatch[1]}e${epMatch[2]}`.toLowerCase()] ||
+            parsed[
+              `s${String(Number(epMatch[1])).padStart(2, "0")}e${String(Number(epMatch[2])).padStart(2, "0")}`.toLowerCase()
+            ];
+          if (!timing) return r;
+          return {
+            ...r,
+            introStart: secsToMmSs(timing.intro_start),
+            introEnd: secsToMmSs(timing.intro_end),
+            outroStart: secsToMmSs(timing.outro_start),
+            outroEnd: secsToMmSs(timing.outro_end),
+          };
+        }),
+      );
       setSaved(false);
     } catch {
       alert("Failed to parse timing file. Make sure it is a valid timing.toml.");
@@ -334,9 +453,15 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
   };
 
   const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "6px 8px", borderRadius: "6px", textAlign: "center",
-    border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)",
-    color: "#fff", fontSize: "0.85rem", outline: "none",
+    width: "100%",
+    padding: "6px 8px",
+    borderRadius: "6px",
+    textAlign: "center",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontSize: "0.85rem",
+    outline: "none",
   };
 
   return (
@@ -351,98 +476,127 @@ function TimingsModal({ show, videos, timingsMap, onSaveAll, onClearAll, onClose
       </ModalHeader>
       <ModalBody>
         <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.8rem", marginBottom: "16px" }}>
-          Set intro and outro timestamps for skip buttons during playback. Use m:ss format (e.g. 1:30 for 1 minute 30 seconds).
+          Set intro and outro timestamps for skip buttons during playback. Use m:ss format (e.g. 1:30 for 1 minute 30
+          seconds).
         </p>
 
         {/* Scrollable grid wrapper for mobile */}
         <div style={{ overflowX: "auto" }}>
-        <div style={{ minWidth: "600px" }}>
-        {/* Column headers */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: "10px",
-          padding: "0 0 8px", fontSize: "0.72rem", fontWeight: 600,
-          color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.5px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}>
-          <div>Episode</div>
-          <div style={{ textAlign: "center" }}>Intro Start</div>
-          <div style={{ textAlign: "center" }}>Intro End</div>
-          <div style={{ textAlign: "center" }}>Outro Start</div>
-          <div style={{ textAlign: "center" }}>Outro End</div>
-        </div>
-
-        {/* Episode rows */}
-        <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-          {rows.map((r, idx) => (
-            <div key={r.video_src} style={{
-              display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: "10px",
-              alignItems: "center", padding: "10px 0",
-              borderBottom: idx < rows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-            }}>
-              <div style={{
-                fontSize: "0.82rem", color: "#fff", fontWeight: 500,
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              }} title={parseEpisodeLabel(r.video_src)}>
-                {parseEpisodeLabel(r.video_src)}
-              </div>
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="0:00"
-                value={r.introStart}
-                onChange={(e) => updateRow(idx, "introStart", e.target.value)}
-              />
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="0:00"
-                value={r.introEnd}
-                onChange={(e) => updateRow(idx, "introEnd", e.target.value)}
-              />
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="0:00"
-                value={r.outroStart}
-                onChange={(e) => updateRow(idx, "outroStart", e.target.value)}
-              />
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="0:00"
-                value={r.outroEnd}
-                onChange={(e) => updateRow(idx, "outroEnd", e.target.value)}
-              />
+          <div style={{ minWidth: "600px" }}>
+            {/* Column headers */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.5fr repeat(4, 1fr)",
+                gap: "10px",
+                padding: "0 0 8px",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.35)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <div>Episode</div>
+              <div style={{ textAlign: "center" }}>Intro Start</div>
+              <div style={{ textAlign: "center" }}>Intro End</div>
+              <div style={{ textAlign: "center" }}>Outro Start</div>
+              <div style={{ textAlign: "center" }}>Outro End</div>
             </div>
-          ))}
-        </div>
-        </div>
+
+            {/* Episode rows */}
+            <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+              {rows.map((r, idx) => (
+                <div
+                  key={r.video_src}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.5fr repeat(4, 1fr)",
+                    gap: "10px",
+                    alignItems: "center",
+                    padding: "10px 0",
+                    borderBottom: idx < rows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.82rem",
+                      color: "#fff",
+                      fontWeight: 500,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={parseEpisodeLabel(r.video_src)}
+                  >
+                    {parseEpisodeLabel(r.video_src)}
+                  </div>
+                  <input
+                    style={inputStyle}
+                    type="text"
+                    placeholder="0:00"
+                    value={r.introStart}
+                    onChange={(e) => updateRow(idx, "introStart", e.target.value)}
+                  />
+                  <input
+                    style={inputStyle}
+                    type="text"
+                    placeholder="0:00"
+                    value={r.introEnd}
+                    onChange={(e) => updateRow(idx, "introEnd", e.target.value)}
+                  />
+                  <input
+                    style={inputStyle}
+                    type="text"
+                    placeholder="0:00"
+                    value={r.outroStart}
+                    onChange={(e) => updateRow(idx, "outroStart", e.target.value)}
+                  />
+                  <input
+                    style={inputStyle}
+                    type="text"
+                    placeholder="0:00"
+                    value={r.outroEnd}
+                    onChange={(e) => updateRow(idx, "outroEnd", e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </ModalBody>
       <ModalFooter style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-          <button className="oss-btn oss-btn-info-soft oss-btn-sm" onClick={handleImport} disabled={importing}>
+          <button
+            type="button"
+            className="oss-btn oss-btn-info-soft oss-btn-sm"
+            onClick={handleImport}
+            disabled={importing}
+          >
             {importing ? "Importing..." : "Import timing.toml"}
           </button>
           {dirPath && (
-            <button className="oss-btn oss-btn-info-soft oss-btn-sm" onClick={handleAutoDetect} disabled={autoDetecting}
+            <button
+              type="button"
+              className="oss-btn oss-btn-info-soft oss-btn-sm"
+              onClick={handleAutoDetect}
+              disabled={autoDetecting}
               title="Auto-detect intro/outro using audio fingerprinting (requires fpcalc)"
             >
               {autoDetecting ? autoDetectProgress || "Detecting..." : "Auto-detect"}
             </button>
           )}
-          <button className="oss-btn oss-btn-danger-soft oss-btn-sm" onClick={handleClearAll}>
+          <button type="button" className="oss-btn oss-btn-danger-soft oss-btn-sm" onClick={handleClearAll}>
             Clear All
           </button>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          {saved && (
-            <span style={{ color: "#22c55e", fontSize: "0.82rem", fontWeight: 600 }}>
-              &#10003; Saved
-            </span>
-          )}
-          <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onClose}>Cancel</button>
-          <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={handleSave} disabled={saving}>
+          {saved && <span style={{ color: "#22c55e", fontSize: "0.82rem", fontWeight: 600 }}>&#10003; Saved</span>}
+          <button type="button" className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="oss-btn oss-btn-primary oss-btn-sm" onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save All"}
           </button>
         </div>
@@ -488,8 +642,25 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [showTimingsModal, setShowTimingsModal] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const currentSeasonMeta = useMemo(() => {
+    if (!information) return null;
+    const metas = information.seasonsMeta || [];
+    if (metas.length === 0) return null;
+    const seasonMap = groupVideosBySeason(information.videos || []);
+    const onlyOneSeason = seasonMap.size <= 1;
+    const explicit = selectedSeason != null ? metas.find((m) => m.season === selectedSeason) : undefined;
+    if (explicit) return explicit;
+    if (onlyOneSeason && metas.length === 1) return metas[0];
+    return null;
+  }, [information, selectedSeason]);
+  const displayBanner = currentSeasonMeta?.logo || information?.bannerImage || null;
+  const displayDescription = currentSeasonMeta?.description || information?.description || "";
   // Feature 2: Sleep detection
-  const [sleepInfo, setSleepInfo] = useState<{ fellAsleep: boolean; resumeEpisode?: string; consecutiveCount?: number } | null>(null);
+  const [sleepInfo, setSleepInfo] = useState<{
+    fellAsleep: boolean;
+    resumeEpisode?: string;
+    consecutiveCount?: number;
+  } | null>(null);
   const [sleepDismissed, setSleepDismissed] = useState(false);
   // Feature 3: TMDB
   const [showTmdbModal, setShowTmdbModal] = useState(false);
@@ -546,13 +717,15 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(t),
-        })
-      )
-    ).then(() => {
-      const map: Record<string, EpisodeTiming> = {};
-      for (const t of timings) map[t.video_src] = t;
-      setTimingsMap(map);
-    }).catch(() => {});
+        }),
+      ),
+    )
+      .then(() => {
+        const map: Record<string, EpisodeTiming> = {};
+        for (const t of timings) map[t.video_src] = t;
+        setTimingsMap(map);
+      })
+      .catch(() => {});
   };
 
   const clearAllTimings = () => {
@@ -586,6 +759,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
       .catch(() => {});
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fetch callbacks are stable; depend only on show + dirPath
   useEffect(() => {
     if (show && dirPath) {
       setLoading(true);
@@ -637,7 +811,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     // Find in-progress entries (not completed) sorted by video order in the title
     const videos = information?.videos || [];
     const inProgress = Object.values(progressMap).filter(
-      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5)
+      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
     );
     if (inProgress.length > 0) {
       // Pick the latest one by position in the video list (most recent episode)
@@ -671,24 +845,26 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     }
   };
 
-  const hasResumable = Object.values(progressMap).some(
-    (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5)
-  ) || (() => {
-    // Also show resume if there are completed episodes and a next episode to play
-    const videos = information?.videos || [];
-    const completedSrcs = Object.values(progressMap)
-      .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
-      .map((e) => e.video_src);
-    if (completedSrcs.length > 0 && videos.length > 1) {
-      let lastCompletedIdx = -1;
-      for (const src of completedSrcs) {
-        const idx = videos.indexOf(src);
-        if (idx > lastCompletedIdx) lastCompletedIdx = idx;
+  const hasResumable =
+    Object.values(progressMap).some(
+      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
+    ) ||
+    (() => {
+      // Also show resume if there are completed episodes and a next episode to play
+      const videos = information?.videos || [];
+      const completedSrcs = Object.values(progressMap)
+        .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
+        .map((e) => e.video_src);
+      if (completedSrcs.length > 0 && videos.length > 1) {
+        let lastCompletedIdx = -1;
+        for (const src of completedSrcs) {
+          const idx = videos.indexOf(src);
+          if (idx > lastCompletedIdx) lastCompletedIdx = idx;
+        }
+        return lastCompletedIdx < videos.length - 1;
       }
-      return lastCompletedIdx < videos.length - 1;
-    }
-    return false;
-  })();
+      return false;
+    })();
 
   return (
     <>
@@ -704,6 +880,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
               <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
                 <ModalTitle>{information.name}</ModalTitle>
                 <button
+                  type="button"
                   onClick={toggleWatchlist}
                   title={inWatchlist ? "Remove from My List" : "Add to My List"}
                   aria-label={inWatchlist ? "Remove from My List" : "Add to My List"}
@@ -711,8 +888,12 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     background: inWatchlist ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.08)",
                     border: inWatchlist ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.12)",
                     color: inWatchlist ? "#60a5fa" : "var(--oss-text-muted)",
-                    padding: "4px 12px", borderRadius: "4px", fontSize: "0.75rem",
-                    fontWeight: 600, cursor: "pointer", transition: "all 0.2s ease",
+                    padding: "4px 12px",
+                    borderRadius: "4px",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
                     whiteSpace: "nowrap",
                   }}
                 >
@@ -721,56 +902,88 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
               </div>
             </ModalHeader>
             <ModalBody>
-              {information.bannerImage && (
-                <div className="oss-modal-banner" style={{ position: "relative", marginBottom: "1rem", borderRadius: "var(--oss-radius)", overflow: "hidden" }}>
+              {displayBanner && (
+                <div
+                  className="oss-modal-banner"
+                  style={{
+                    position: "relative",
+                    marginBottom: "1rem",
+                    borderRadius: "var(--oss-radius)",
+                    overflow: "hidden",
+                  }}
+                >
                   <img
-                    src={information.bannerImage}
+                    src={displayBanner}
                     alt={information.name}
                     style={{ width: "100%", height: "300px", objectFit: "cover", display: "block" }}
                   />
-                  <div style={{
-                    position: "absolute", inset: 0,
-                    background: "linear-gradient(transparent 50%, var(--oss-bg-card))",
-                  }} />
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: "linear-gradient(transparent 50%, var(--oss-bg-card))",
+                    }}
+                  />
                 </div>
               )}
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
-                <span style={{
-                  background: "var(--oss-accent)", color: "#fff",
-                  padding: "3px 10px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 600,
-                  textTransform: "uppercase",
-                }}>
+                <span
+                  style={{
+                    background: "var(--oss-accent)",
+                    color: "#fff",
+                    padding: "3px 10px",
+                    borderRadius: "4px",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                  }}
+                >
                   {information.type}
                 </span>
                 {information.genre?.map((g) => (
-                  <span key={g} style={{
-                    background: "rgba(255,255,255,0.08)", color: "var(--oss-text-muted)",
-                    padding: "3px 10px", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 500,
-                  }}>
+                  <span
+                    key={g}
+                    style={{
+                      background: "rgba(255,255,255,0.08)",
+                      color: "var(--oss-text-muted)",
+                      padding: "3px 10px",
+                      borderRadius: "4px",
+                      fontSize: "0.75rem",
+                      fontWeight: 500,
+                    }}
+                  >
                     {g}
                   </span>
                 ))}
               </div>
 
               <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1rem" }}>
-                {information.description}
+                {displayDescription}
               </p>
 
-              {information.cast && information.cast.filter(c => c).length > 0 && (
+              {information.cast && information.cast.filter((c) => c).length > 0 && (
                 <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
                   <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Cast: </span>
-                  {information.cast.filter(c => c).join(", ")}
+                  {information.cast.filter((c) => c).join(", ")}
                 </p>
               )}
 
               {/* Sleep detection banner */}
               {sleepInfo?.fellAsleep && !sleepDismissed && (
-                <div style={{
-                  padding: "12px 16px", borderRadius: "8px", marginBottom: "1rem",
-                  background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
-                  display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap",
-                }}>
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: "8px",
+                    marginBottom: "1rem",
+                    background: "rgba(251,191,36,0.1)",
+                    border: "1px solid rgba(251,191,36,0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                  }}
+                >
                   <div style={{ flex: 1, minWidth: "200px" }}>
                     <p style={{ margin: 0, fontSize: "0.85rem", color: "#fbbf24", fontWeight: 600 }}>
                       It looks like you fell asleep during {parseEpisodeLabel(sleepInfo.resumeEpisode || "")}.
@@ -781,12 +994,16 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   </div>
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button
+                      type="button"
                       className="oss-btn oss-btn-primary oss-btn-sm"
-                      onClick={() => { if (sleepInfo.resumeEpisode) handlePlay(sleepInfo.resumeEpisode, false); }}
+                      onClick={() => {
+                        if (sleepInfo.resumeEpisode) handlePlay(sleepInfo.resumeEpisode, false);
+                      }}
                     >
                       Resume from there
                     </button>
                     <button
+                      type="button"
                       className="oss-btn oss-btn-secondary oss-btn-sm"
                       onClick={() => setSleepDismissed(true)}
                     >
@@ -820,7 +1037,9 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                         }}
                       >
                         {seasonKeys.map((s) => (
-                          <option key={s} value={s}>Season {s}</option>
+                          <option key={s} value={s}>
+                            Season {s}
+                          </option>
                         ))}
                       </select>
                       <span style={{ color: "var(--oss-text-muted)", fontSize: "0.82rem" }}>
@@ -835,7 +1054,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
                       <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {seasonKeys[0]}</span>
                       {" · "}
-                      {seasonMap.get(seasonKeys[0])!.length} episode{seasonMap.get(seasonKeys[0])!.length !== 1 ? "s" : ""}
+                      {seasonMap.get(seasonKeys[0])!.length} episode
+                      {seasonMap.get(seasonKeys[0])!.length !== 1 ? "s" : ""}
                     </p>
                   );
                 } else if (information.season != null) {
@@ -850,136 +1070,195 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 return null;
               })()}
 
-              {information.videos?.length > 0 && (() => {
-                const seasonMap = groupVideosBySeason(information.videos);
-                const hasSeasons = seasonMap.size > 0;
-                const displayVideos = hasSeasons && selectedSeason != null
-                  ? (seasonMap.get(selectedSeason) || [])
-                  : information.videos;
+              {information.videos?.length > 0 &&
+                (() => {
+                  const seasonMap = groupVideosBySeason(information.videos);
+                  const hasSeasons = seasonMap.size > 0;
+                  const displayVideos =
+                    hasSeasons && selectedSeason != null ? seasonMap.get(selectedSeason) || [] : information.videos;
 
-                return (
-                <div style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}>
-                  {displayVideos.map((v) => {
-                    const prog = progressMap[v];
-                    const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
-                    const isInProgress = prog && prog.current_time > 0 && (prog.duration === 0 || prog.current_time < prog.duration - 5);
-                    const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
+                  return (
+                    <div style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}>
+                      {displayVideos.map((v) => {
+                        const prog = progressMap[v];
+                        const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
+                        const isInProgress =
+                          prog &&
+                          prog.current_time > 0 &&
+                          (prog.duration === 0 || prog.current_time < prog.duration - 5);
+                        const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
 
-                    const formatTime = (secs: number) => {
-                      const m = Math.floor(secs / 60);
-                      const s = Math.floor(secs % 60);
-                      return `${m}:${s.toString().padStart(2, "0")}`;
-                    };
+                        const formatTime = (secs: number) => {
+                          const m = Math.floor(secs / 60);
+                          const s = Math.floor(secs % 60);
+                          return `${m}:${s.toString().padStart(2, "0")}`;
+                        };
 
-                    return (
-                      <div key={v} style={{
-                        borderRadius: "var(--oss-radius)", overflow: "hidden",
-                        marginBottom: "4px",
-                        border: isInProgress ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
-                        background: isInProgress ? "rgba(59,130,246,0.05)" : "transparent",
-                        transition: "all 0.2s ease",
-                      }}>
-                        <div style={{ position: "relative" }}>
-                          <Episode
-                            filename={v.split("/").pop()!}
-                            thumbnail={information.bannerImage}
-                            onClick={() => handlePlay(v, !!isCompleted)}
-                          />
-                          {/* Status badges & actions */}
-                          <div className="oss-episode-status" style={{
-                            position: "absolute", top: "50%", right: "40px",
-                            transform: "translateY(-50%)",
-                            display: "flex", alignItems: "center", gap: "6px",
-                          }}>
-                            {isInProgress && (
-                              <span style={{
-                                fontSize: "0.7rem", fontWeight: 600,
-                                color: "var(--oss-accent)",
-                                background: "rgba(59,130,246,0.15)",
-                                padding: "2px 8px", borderRadius: "4px",
-                              }}>
-                                {formatTime(prog!.current_time)} / {formatTime(prog!.duration)}
-                              </span>
-                            )}
-                            {isCompleted && (
-                              <span style={{
-                                fontSize: "0.7rem", fontWeight: 600,
-                                color: "#22c55e",
-                                background: "rgba(34,197,94,0.15)",
-                                padding: "2px 8px", borderRadius: "4px",
-                              }}>
-                                &#10003; Watched
-                              </span>
-                            )}
-                            {isInProgress && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handlePlay(v, true); }}
+                        return (
+                          <div
+                            key={v}
+                            style={{
+                              borderRadius: "var(--oss-radius)",
+                              overflow: "hidden",
+                              marginBottom: "4px",
+                              border: isInProgress ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
+                              background: isInProgress ? "rgba(59,130,246,0.05)" : "transparent",
+                              transition: "all 0.2s ease",
+                            }}
+                          >
+                            <div style={{ position: "relative" }}>
+                              <Episode
+                                filename={v.split("/").pop()!}
+                                thumbnail={information.bannerImage}
+                                onClick={() => handlePlay(v, !!isCompleted)}
+                              />
+                              {/* Status badges & actions */}
+                              <div
+                                className="oss-episode-status"
                                 style={{
-                                  fontSize: "0.7rem", fontWeight: 600,
-                                  color: "var(--oss-text-muted)",
-                                  background: "rgba(255,255,255,0.08)",
-                                  padding: "2px 8px", borderRadius: "4px",
-                                  border: "none", cursor: "pointer",
-                                  transition: "all 0.15s ease",
+                                  position: "absolute",
+                                  top: "50%",
+                                  right: "40px",
+                                  transform: "translateY(-50%)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
                                 }}
-                                onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--oss-text-muted)"; e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                                title="Play from beginning"
                               >
-                                &#8634; Restart
-                              </button>
+                                {isInProgress && (
+                                  <span
+                                    style={{
+                                      fontSize: "0.7rem",
+                                      fontWeight: 600,
+                                      color: "var(--oss-accent)",
+                                      background: "rgba(59,130,246,0.15)",
+                                      padding: "2px 8px",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    {formatTime(prog!.current_time)} / {formatTime(prog!.duration)}
+                                  </span>
+                                )}
+                                {isCompleted && (
+                                  <span
+                                    style={{
+                                      fontSize: "0.7rem",
+                                      fontWeight: 600,
+                                      color: "#22c55e",
+                                      background: "rgba(34,197,94,0.15)",
+                                      padding: "2px 8px",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    &#10003; Watched
+                                  </span>
+                                )}
+                                {isInProgress && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePlay(v, true);
+                                    }}
+                                    style={{
+                                      fontSize: "0.7rem",
+                                      fontWeight: 600,
+                                      color: "var(--oss-text-muted)",
+                                      background: "rgba(255,255,255,0.08)",
+                                      padding: "2px 8px",
+                                      borderRadius: "4px",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      transition: "all 0.15s ease",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.color = "#fff";
+                                      e.currentTarget.style.background = "rgba(255,255,255,0.15)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.color = "var(--oss-text-muted)";
+                                      e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                                    }}
+                                    title="Play from beginning"
+                                  >
+                                    &#8634; Restart
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {/* Progress bar */}
+                            {pct > 0 && (
+                              <div
+                                style={{
+                                  height: "4px",
+                                  background: "rgba(255,255,255,0.08)",
+                                  borderRadius: "0 0 4px 4px",
+                                  overflow: "hidden",
+                                  margin: "0 12px 8px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    height: "100%",
+                                    width: `${Math.min(pct, 100)}%`,
+                                    background: isCompleted ? "#22c55e" : "var(--oss-accent)",
+                                    borderRadius: "2px",
+                                    transition: "width 0.3s ease",
+                                  }}
+                                />
+                              </div>
                             )}
                           </div>
-                        </div>
-                        {/* Progress bar */}
-                        {pct > 0 && (
-                          <div style={{
-                            height: "4px", background: "rgba(255,255,255,0.08)",
-                            borderRadius: "0 0 4px 4px", overflow: "hidden",
-                            margin: "0 12px 8px",
-                          }}>
-                            <div style={{
-                              height: "100%",
-                              width: `${Math.min(pct, 100)}%`,
-                              background: isCompleted ? "#22c55e" : "var(--oss-accent)",
-                              borderRadius: "2px",
-                              transition: "width 0.3s ease",
-                            }} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                );
-              })()}
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
             </ModalBody>
             <ModalFooter>
-              <button className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>Close</button>
+              <button type="button" className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>
+                Close
+              </button>
               {tmdbApiKey && (
                 <button
+                  type="button"
                   className="oss-btn oss-btn-success-soft oss-btn-sm"
-                  onClick={() => { setTmdbQuery(information.name); setShowTmdbModal(true); }}
+                  onClick={() => {
+                    setTmdbQuery(information.name);
+                    setShowTmdbModal(true);
+                  }}
                 >
                   Fetch from TMDB
                 </button>
               )}
               {information.videos?.length > 1 && (
                 <button
+                  type="button"
                   className="oss-btn oss-btn-info-soft oss-btn-sm"
                   onClick={() => setShowTimingsModal(true)}
                 >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: "-2px", marginRight: "4px" }}><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291a1.873 1.873 0 0 0-1.116-2.693l-.318-.094c-.835-.246-.835-1.428 0-1.674l.319-.094a1.873 1.873 0 0 0 1.115-2.693l-.16-.291c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116z"/></svg>Timings
+                  <svg
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    style={{ verticalAlign: "-2px", marginRight: "4px" }}
+                  >
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0" />
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291a1.873 1.873 0 0 0-1.116-2.693l-.318-.094c-.835-.246-.835-1.428 0-1.674l.319-.094a1.873 1.873 0 0 0 1.115-2.693l-.16-.291c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116z" />
+                  </svg>
+                  Timings
                 </button>
               )}
               {information.videos?.length > 0 && (
                 <>
                   {hasResumable && (
-                    <button className="oss-btn oss-btn-success oss-btn-sm" onClick={handleResume}>
+                    <button type="button" className="oss-btn oss-btn-success oss-btn-sm" onClick={handleResume}>
                       &#9654; Resume
                     </button>
                   )}
-                  <button className="oss-btn oss-btn-primary oss-btn-sm" onClick={() => handlePlay()}>
+                  <button type="button" className="oss-btn oss-btn-primary oss-btn-sm" onClick={() => handlePlay()}>
                     &#9654; Play
                   </button>
                 </>
@@ -1004,7 +1283,11 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
 
       <VideoPlayer
         show={!!playerSrc}
-        onHide={() => { setPlayerSrc(null); setRestartMode(false); fetchProgress(); }}
+        onHide={() => {
+          setPlayerSrc(null);
+          setRestartMode(false);
+          fetchProgress();
+        }}
         src={playerSrc || ""}
         title={information?.name || ""}
         dirPath={dirPath}
@@ -1014,7 +1297,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         nextSrc={(() => {
           if (!information?.videos || !playerSrc) return undefined;
           const idx = information.videos.indexOf(playerSrc);
-          return (idx >= 0 && idx < information.videos.length - 1) ? information.videos[idx + 1] : undefined;
+          return idx >= 0 && idx < information.videos.length - 1 ? information.videos[idx + 1] : undefined;
         })()}
         onNext={() => {
           if (!information?.videos || !playerSrc) return;
@@ -1033,7 +1316,9 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
             fetchProgress();
           }
         }}
-        hasNext={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)}
+        hasNext={
+          !!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)
+        }
         onPrev={() => {
           if (!information?.videos || !playerSrc) return;
           const currentIndex = information.videos.indexOf(playerSrc);
@@ -1080,12 +1365,18 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 }
               }}
               style={{
-                flex: 1, padding: "8px 14px", borderRadius: "8px",
-                border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)",
-                color: "#fff", fontSize: "0.85rem", outline: "none",
+                flex: 1,
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#fff",
+                fontSize: "0.85rem",
+                outline: "none",
               }}
             />
             <button
+              type="button"
               className="oss-btn oss-btn-primary oss-btn-sm"
               disabled={tmdbSearching || !tmdbQuery.trim()}
               onClick={() => {
@@ -1108,18 +1399,23 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
           {tmdbApplying && (
             <div style={{ textAlign: "center", padding: "2rem" }}>
               <Spinner animation="border" size="sm" />
-              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginTop: "8px" }}>Applying metadata...</p>
+              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginTop: "8px" }}>
+                Applying metadata...
+              </p>
             </div>
           )}
 
           {!tmdbApplying && tmdbResults.length > 0 && (
-            <div style={{ maxHeight: "400px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div
+              style={{ maxHeight: "400px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}
+            >
               {tmdbResults.slice(0, 10).map((r: any) => (
                 <button
+                  type="button"
                   key={r.id}
                   onClick={() => {
                     setTmdbApplying(true);
-                    const mediaType = (r.media_type === "tv" || r.name) ? "tv" : "movie";
+                    const mediaType = r.media_type === "tv" || r.name ? "tv" : "movie";
                     fetch("/api/tmdb/apply", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
@@ -1142,13 +1438,24 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                       .finally(() => setTmdbApplying(false));
                   }}
                   style={{
-                    display: "flex", gap: "12px", padding: "10px", borderRadius: "8px",
-                    border: "1px solid rgba(255,255,255,0.08)", background: "transparent",
-                    color: "var(--oss-text)", cursor: "pointer", textAlign: "left",
-                    transition: "background 0.15s ease", width: "100%",
+                    display: "flex",
+                    gap: "12px",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "transparent",
+                    color: "var(--oss-text)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "background 0.15s ease",
+                    width: "100%",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
                 >
                   {r.poster_path ? (
                     <img
@@ -1157,20 +1464,32 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                       style={{ width: "60px", height: "90px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }}
                     />
                   ) : (
-                    <div style={{ width: "60px", height: "90px", borderRadius: "4px", background: "var(--oss-bg-elevated)", flexShrink: 0 }} />
+                    <div
+                      style={{
+                        width: "60px",
+                        height: "90px",
+                        borderRadius: "4px",
+                        background: "var(--oss-bg-elevated)",
+                        flexShrink: 0,
+                      }}
+                    />
                   )}
                   <div>
-                    <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>
-                      {r.title || r.name}
-                    </p>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{r.title || r.name}</p>
                     <p style={{ margin: "2px 0", fontSize: "0.78rem", color: "var(--oss-text-muted)" }}>
                       {r.release_date || r.first_air_date || ""}
                     </p>
-                    <p style={{
-                      margin: 0, fontSize: "0.78rem", color: "var(--oss-text-muted)",
-                      display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as any,
-                      overflow: "hidden",
-                    }}>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "0.78rem",
+                        color: "var(--oss-text-muted)",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical" as any,
+                        overflow: "hidden",
+                      }}
+                    >
                       {r.overview}
                     </p>
                   </div>

@@ -4,7 +4,7 @@ import { describe, test, expect } from "bun:test";
 // These validate the logic without requiring DOM/React
 
 function formatTime(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -25,11 +25,7 @@ function isStreamedFormat(src: string): boolean {
 }
 
 // Replicate countdown trigger logic (3C: smarter timing)
-function getCountdownTrigger(
-  hasOutroTiming: boolean,
-  outroStart: number | null,
-  duration: number
-): number {
+function getCountdownTrigger(hasOutroTiming: boolean, outroStart: number | null, duration: number): number {
   if (hasOutroTiming && outroStart !== null) {
     // Start countdown at outro_start (not 10s before it)
     return outroStart;
@@ -46,7 +42,7 @@ function shouldPrefetch(
   nextSrc: string | undefined,
   currentTime: number,
   duration: number,
-  alreadyPrefetched: string | null
+  alreadyPrefetched: string | null,
 ): boolean {
   return !!(nextSrc && duration > 0 && currentTime >= duration * 0.5 && alreadyPrefetched !== nextSrc);
 }
@@ -99,13 +95,11 @@ describe("formatTime", () => {
 
 describe("parseEpisodeFromSrc", () => {
   test("parses standard episode name", () => {
-    expect(parseEpisodeFromSrc("/media/tvshows/show/Breaking_Bad_s1_ep3.mkv"))
-      .toBe("S1 E3 - Breaking Bad");
+    expect(parseEpisodeFromSrc("/media/tvshows/show/Breaking_Bad_s1_ep3.mkv")).toBe("S1 E3 - Breaking Bad");
   });
 
   test("parses with underscores in name", () => {
-    expect(parseEpisodeFromSrc("/media/tvshows/show/The_Walking_Dead_s2_ep10.mp4"))
-      .toBe("S2 E10 - The Walking Dead");
+    expect(parseEpisodeFromSrc("/media/tvshows/show/The_Walking_Dead_s2_ep10.mp4")).toBe("S2 E10 - The Walking Dead");
   });
 
   test("returns null for non-matching format", () => {
@@ -223,13 +217,7 @@ describe("Prefetch trigger logic (2C)", () => {
 });
 
 describe("Settings persistence keys (3A)", () => {
-  const EXPECTED_KEYS = [
-    "ossflix_volume",
-    "ossflix_muted",
-    "ossflix_playbackRate",
-    "ossflix_cc",
-    "ossflix_cc_track",
-  ];
+  const EXPECTED_KEYS = ["ossflix_volume", "ossflix_muted", "ossflix_playbackRate", "ossflix_cc", "ossflix_cc_track"];
 
   test("all expected localStorage keys are defined", () => {
     // This test documents the expected keys for regression
@@ -246,7 +234,7 @@ describe("Auto-skip intro logic (2D)", () => {
     autoSkipEnabled: boolean,
     currentTime: number,
     introStart: number | null,
-    introEnd: number | null
+    introEnd: number | null,
   ): boolean {
     if (!autoSkipEnabled) return false;
     if (introStart === null || introEnd === null) return false;

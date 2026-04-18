@@ -1,6 +1,8 @@
 import { readdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { readTomlFile } from "./tomlreader";
+import type { SeasonMeta } from "./tomlreader";
+import { compareVideoSrc } from "./episodeNaming";
 
 export const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]);
 export const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".avi", ".mov", ".wmv"]);
@@ -34,12 +36,25 @@ export interface ScannedMedia {
   dirPath: string;
   sourcePath: string;
   timings?: Record<string, EpisodeTimingEntry>;
+  seasons?: SeasonMeta[];
 }
 
 const LANG_NAMES: Record<string, string> = {
-  en: "English", es: "Spanish", fr: "French", de: "German", it: "Italian",
-  pt: "Portuguese", ja: "Japanese", ko: "Korean", zh: "Chinese", ru: "Russian",
-  ar: "Arabic", hi: "Hindi", nl: "Dutch", sv: "Swedish", pl: "Polish",
+  en: "English",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  it: "Italian",
+  pt: "Portuguese",
+  ja: "Japanese",
+  ko: "Korean",
+  zh: "Chinese",
+  ru: "Russian",
+  ar: "Arabic",
+  hi: "Hindi",
+  nl: "Dutch",
+  sv: "Swedish",
+  pl: "Polish",
 };
 
 export function parseSubtitleFilename(filename: string, servePath: string): SubtitleTrack {
@@ -48,7 +63,7 @@ export function parseSubtitleFilename(filename: string, servePath: string): Subt
   // Try to extract language code from patterns like "video.en.srt" or "video_en.srt"
   const langMatch = base.match(/[._]([a-z]{2,3})$/i);
   const language = langMatch ? langMatch[1].toLowerCase() : "";
-  const label = language && LANG_NAMES[language] ? LANG_NAMES[language] : (language || "Unknown");
+  const label = language && LANG_NAMES[language] ? LANG_NAMES[language] : language || "Unknown";
   return { label, language, src: `${servePath}/${filename}`, format: ext };
 }
 
@@ -83,12 +98,29 @@ async function parseTimingToml(filePath: string): Promise<Record<string, Episode
   }
 }
 
+/**
+ * Resolve per-season logo filenames to serve paths by matching against available image filenames.
+ * Returns a new array with logo fields rewritten, or the original if nothing changed.
+ */
+export function resolveSeasonLogos(
+  seasons: SeasonMeta[] | undefined,
+  resolveLogo: (logoRelative: string) => string | null,
+): SeasonMeta[] | undefined {
+  if (!seasons || seasons.length === 0) return seasons;
+  return seasons.map((s) => {
+    if (!s.logo) return s;
+    const resolved = resolveLogo(s.logo);
+    return resolved ? { ...s, logo: resolved } : s;
+  });
+}
+
 async function scanMediaDir(dirPath: string, servePath: string): Promise<ScannedMedia | null> {
   const entries = await readdir(dirPath, { withFileTypes: true });
 
   let metadataTomlFile: string | null = null;
   let timingTomlFile: string | null = null;
   let bannerImage: string | null = null;
+  const imageFiles: string[] = [];
   const videos: string[] = [];
   const subtitles: SubtitleTrack[] = [];
 
@@ -104,7 +136,8 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
         metadataTomlFile = join(dirPath, entry.name);
       }
     } else if (IMAGE_EXTS.has(ext)) {
-      bannerImage = `${servePath}/${entry.name}`;
+      imageFiles.push(entry.name);
+      if (!bannerImage) bannerImage = `${servePath}/${entry.name}`;
     } else if (VIDEO_EXTS.has(ext)) {
       videos.push(`${servePath}/${entry.name}`);
     } else if (SUBTITLE_EXTS.has(ext)) {
@@ -119,16 +152,12 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
 
   const timings = timingTomlFile ? await parseTimingToml(timingTomlFile) : undefined;
 
-  videos.sort((a, b) => {
-    const re = /_s(\d+)_ep(\d+)\.[^.]+$/i;
-    const ma = a.match(re);
-    const mb = b.match(re);
-    if (ma && mb) {
-      const seasonDiff = Number(ma[1]) - Number(mb[1]);
-      if (seasonDiff !== 0) return seasonDiff;
-      return Number(ma[2]) - Number(mb[2]);
-    }
-    return a.localeCompare(b, undefined, { numeric: true });
+  videos.sort(compareVideoSrc);
+
+  const seasonsRaw = (data as { seasons?: SeasonMeta[] }).seasons;
+  const imageSet = new Set(imageFiles);
+  const seasons = resolveSeasonLogos(seasonsRaw, (logoRel) => {
+    return imageSet.has(logoRel) ? `${servePath}/${logoRel}` : null;
   });
 
   return {
@@ -139,6 +168,7 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
     dirPath: servePath,
     sourcePath: dirPath,
     timings,
+    seasons,
   };
 }
 
@@ -148,7 +178,7 @@ export async function scanSingleMedia(dirPath: string, servePath: string): Promi
 
 export async function scanDirectory(basePath: string, servePrefix: string): Promise<ScannedMedia[]> {
   const results: ScannedMedia[] = [];
-  let mediaDirs;
+  let mediaDirs: Awaited<ReturnType<typeof readdir>>;
   try {
     mediaDirs = await readdir(basePath, { withFileTypes: true });
   } catch {

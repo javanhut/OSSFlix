@@ -774,6 +774,12 @@ body.modal-open #root {
   border-radius: var(--oss-radius);
   cursor: pointer;
   transition: background var(--oss-transition);
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
 }
 .oss-episode:hover {
   background: var(--oss-bg-hover);

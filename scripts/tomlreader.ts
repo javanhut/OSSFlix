@@ -1,50 +1,87 @@
-import * as toml from 'toml';
+import * as toml from "toml";
 
-interface MediaInfo {
+export interface MediaInfo {
   name: string;
   description: string;
   genre: string[];
   type: string;
   cast?: string[];
 }
-interface TvShowInfo extends MediaInfo {
+
+export interface SeasonMeta {
   season: number;
-  episodes: number;
+  description?: string;
+  logo?: string;
 }
 
-interface MovieInfo extends MediaInfo{};
+export interface TvShowInfo extends MediaInfo {
+  season?: number;
+  episodes?: number;
+  seasons?: SeasonMeta[];
+}
 
+export interface MovieInfo extends MediaInfo {}
 
-export function parseTomlString(content: string): MediaInfo | TvShowInfo | null {
-  let fileInformation: any = null;
+const TV_ALIASES = new Set(["tvshow", "tv", "series", "show", "tvseries"]);
+const MOVIE_ALIASES = new Set(["movie", "film"]);
+
+export function normalizeType(raw: unknown): "tv" | "movie" | null {
+  if (typeof raw !== "string") return null;
+  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!key) return null;
+  if (TV_ALIASES.has(key)) return "tv";
+  if (MOVIE_ALIASES.has(key)) return "movie";
+  return null;
+}
+
+function parseSeasonsArray(raw: unknown): SeasonMeta[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: SeasonMeta[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+    const seasonNum = typeof rec.season === "number" ? rec.season : Number(rec.season);
+    if (!Number.isFinite(seasonNum)) continue;
+    const meta: SeasonMeta = { season: Math.trunc(seasonNum) };
+    if (typeof rec.description === "string") meta.description = rec.description;
+    if (typeof rec.logo === "string") meta.logo = rec.logo;
+    out.push(meta);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+export function parseTomlString(content: string): TvShowInfo | MovieInfo | null {
   const parsed = toml.parse(content);
   const series = parsed.series;
   if (!series) return null;
-  const mediaName: string = series.name;
-  const description: string = series.description;
-  const genre: Array<string> = series.genre;
-  const type: string = series.type;
-  if (type.toLowerCase() === "tv show") {
+  const typeRaw: unknown = series.type;
+  const normalized = normalizeType(typeRaw);
+  if (!normalized) return null;
+  const typeStr = typeof typeRaw === "string" ? typeRaw : "";
+
+  if (normalized === "tv") {
+    // Accept [[seasons]] at the top level (idiomatic TOML) OR nested under [series].
+    const seasonsRaw = (parsed as { seasons?: unknown }).seasons ?? series.seasons;
     const show: TvShowInfo = {
-      name: mediaName,
-      description: description,
-      genre: genre,
-      type: type,
-      season: series.season,
-      episodes: series.episodes,
-    };
-    fileInformation = show;
-  } else if (type.toLowerCase() === "movie") {
-    const movie: MovieInfo = {
-      name: mediaName,
-      description: description,
-      genre: genre,
-      type: type,
+      name: series.name,
+      description: series.description,
+      genre: series.genre || [],
+      type: typeStr,
       cast: series.cast,
+      season: typeof series.season === "number" ? series.season : undefined,
+      episodes: typeof series.episodes === "number" ? series.episodes : undefined,
+      seasons: parseSeasonsArray(seasonsRaw),
     };
-    fileInformation = movie;
+    return show;
   }
-  return fileInformation;
+  const movie: MovieInfo = {
+    name: series.name,
+    description: series.description,
+    genre: series.genre || [],
+    type: typeStr,
+    cast: series.cast,
+  };
+  return movie;
 }
 
 export async function readTomlFile(filePath: string) {
@@ -58,6 +95,5 @@ export async function readTomlFile(filePath: string) {
   if (result) console.log(result);
   return result;
 }
-
 
 export default readTomlFile;

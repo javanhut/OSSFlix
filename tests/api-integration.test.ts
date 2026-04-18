@@ -52,7 +52,7 @@ describe("API Integration Tests", () => {
     if (!serverAvailable) return;
     const res = await fetch(`${BASE_URL}/api/media/search?q=test`);
     expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     expect(data).toHaveProperty("titles");
     expect(data).toHaveProperty("genres");
   });
@@ -61,7 +61,7 @@ describe("API Integration Tests", () => {
     if (!serverAvailable) return;
     const res = await fetch(`${BASE_URL}/api/media/search?q=`);
     expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     expect(data.titles).toEqual([]);
     expect(data.genres).toEqual([]);
   });
@@ -92,7 +92,7 @@ describe("API Integration Tests", () => {
     if (!serverAvailable) return;
     const res = await fetch(`${BASE_URL}/api/profile`);
     expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     expect(data).toHaveProperty("id");
     expect(data).toHaveProperty("name");
   });
@@ -101,7 +101,7 @@ describe("API Integration Tests", () => {
     if (!serverAvailable) return;
     const res = await fetch(`${BASE_URL}/api/global-settings`);
     expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     expect(data).toHaveProperty("movies_directory");
     expect(data).toHaveProperty("tvshows_directory");
   });
@@ -177,7 +177,7 @@ describe("API Integration Tests", () => {
 
     const getRes = await fetch(`${BASE_URL}/api/playback/progress?src=${encodeURIComponent(testSrc)}`);
     expect(getRes.status).toBe(200);
-    const data = await getRes.json() as any;
+    const data = (await getRes.json()) as any;
     expect(data).toBeTruthy();
     expect(data.current_time).toBe(42.5);
     expect(data.duration).toBe(1200);

@@ -61,7 +61,9 @@ export default function Genre() {
       .finally(() => setLoading(false));
   }, [genre]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const handler = () => loadData();
@@ -88,9 +90,7 @@ export default function Genre() {
           <SelectorMenu rows={rows} />
         </>
       )}
-      {rows.length === 0 && (
-        <p className="oss-empty">No titles found for "{decodedGenre}".</p>
-      )}
+      {rows.length === 0 && <p className="oss-empty">No titles found for "{decodedGenre}".</p>}
     </>
   );
 }

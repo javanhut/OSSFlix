@@ -26,39 +26,23 @@ export type TMDBDetails = {
   number_of_episodes?: number;
 };
 
-export async function searchTMDB(
-  query: string,
-  apiKey: string,
-  type?: "movie" | "tv"
-): Promise<TMDBSearchResult[]> {
-  const endpoint = type
-    ? `${TMDB_BASE}/search/${type}`
-    : `${TMDB_BASE}/search/multi`;
+export async function searchTMDB(query: string, apiKey: string, type?: "movie" | "tv"): Promise<TMDBSearchResult[]> {
+  const endpoint = type ? `${TMDB_BASE}/search/${type}` : `${TMDB_BASE}/search/multi`;
   const url = `${endpoint}?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(query)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB search failed: ${res.status}`);
   const data = await res.json();
-  return (data.results || []).filter(
-    (r: any) => r.media_type !== "person"
-  );
+  return (data.results || []).filter((r: any) => r.media_type !== "person");
 }
 
-export async function getTMDBDetails(
-  id: number,
-  mediaType: "movie" | "tv",
-  apiKey: string
-): Promise<TMDBDetails> {
+export async function getTMDBDetails(id: number, mediaType: "movie" | "tv", apiKey: string): Promise<TMDBDetails> {
   const url = `${TMDB_BASE}/${mediaType}/${id}?api_key=${encodeURIComponent(apiKey)}&append_to_response=credits`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB details failed: ${res.status}`);
   return await res.json();
 }
 
-export async function downloadImage(
-  tmdbPath: string,
-  destDir: string,
-  filename: string
-): Promise<string> {
+export async function downloadImage(tmdbPath: string, destDir: string, filename: string): Promise<string> {
   const url = `${TMDB_IMG_BASE}/w500${tmdbPath}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Image download failed: ${res.status}`);

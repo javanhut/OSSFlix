@@ -63,24 +63,38 @@ export default function ForYou() {
   return (
     <div style={{ minHeight: "100vh" }}>
       <div style={{ padding: "2rem 4% 0.25rem" }}>
-        <h2 style={{ color: "var(--oss-text)", marginBottom: "0.25rem", fontSize: "1.5rem" }}>
-          For You
-        </h2>
+        <h2 style={{ color: "var(--oss-text)", marginBottom: "0.25rem", fontSize: "1.5rem" }}>For You</h2>
         <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
           Recommendations based on your watch history.
         </p>
       </div>
 
       {recs.length === 0 && (
-        <div style={{
-          textAlign: "center", padding: "4rem 2rem", margin: "0 4%",
-          background: "rgba(255,255,255,0.03)", borderRadius: "12px",
-          border: "1px solid var(--oss-border)",
-        }}>
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--oss-text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: "16px", opacity: 0.5 }}>
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
+        <div
+          style={{
+            textAlign: "center",
+            padding: "4rem 2rem",
+            margin: "0 4%",
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: "12px",
+            border: "1px solid var(--oss-border)",
+          }}
+        >
+          <svg
+            aria-hidden="true"
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--oss-text-muted)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ marginBottom: "16px", opacity: 0.5 }}
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <p style={{ color: "var(--oss-text-muted)", fontSize: "0.95rem", margin: 0 }}>
             No recommendations yet. Start watching something and we'll suggest similar titles!
@@ -103,11 +117,19 @@ export default function ForYou() {
                 {rec.imagePath ? (
                   <img src={rec.imagePath} alt={rec.name} className="oss-card-img" loading="lazy" />
                 ) : (
-                  <div className="oss-card-img" style={{
-                    background: "var(--oss-bg-elevated)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "var(--oss-text-muted)", fontSize: "2rem",
-                  }}>?</div>
+                  <div
+                    className="oss-card-img"
+                    style={{
+                      background: "var(--oss-bg-elevated)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--oss-text-muted)",
+                      fontSize: "2rem",
+                    }}
+                  >
+                    ?
+                  </div>
                 )}
                 <div className="oss-card-title-bar">
                   <span>{rec.name}</span>
@@ -118,11 +140,7 @@ export default function ForYou() {
         </section>
       ))}
 
-      <Card
-        show={!!selectedDir}
-        onHide={() => setSelectedDir("")}
-        dirPath={selectedDir}
-      />
+      <Card show={!!selectedDir} onHide={() => setSelectedDir("")} dirPath={selectedDir} />
     </div>
   );
 }

@@ -26,33 +26,60 @@ export interface GlobalSettings {
 }
 
 export function getProfile(id: number): ProfileData | null {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE id = ?").get(id) as ProfileData | null;
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE id = ?",
+    )
+    .get(id) as ProfileData | null;
 }
 
 export function getAllProfiles(): ProfileData[] {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id").all() as ProfileData[];
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id",
+    )
+    .all() as ProfileData[];
 }
 
 export function getProfilesByEmail(email: string): ProfileData[] {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE LOWER(email) = LOWER(?) ORDER BY id").all(email.trim()) as ProfileData[];
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE LOWER(email) = LOWER(?) ORDER BY id",
+    )
+    .all(email.trim()) as ProfileData[];
 }
 
 export function getProfilesWithoutEmail(): ProfileData[] {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE email IS NULL OR email = '' ORDER BY id").all() as ProfileData[];
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE email IS NULL OR email = '' ORDER BY id",
+    )
+    .all() as ProfileData[];
 }
 
 export function createProfile(name: string, passwordHash?: string, email?: string): ProfileData {
   const normalizedEmail = email ? email.trim().toLowerCase() : null;
   if (passwordHash) {
-    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash, email) VALUES (?, 1, ?, ?)", [name, passwordHash, normalizedEmail]);
+    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash, email) VALUES (?, 1, ?, ?)", [
+      name,
+      passwordHash,
+      normalizedEmail,
+    ]);
     return getProfile(Number(result.lastInsertRowid))!;
   }
-  const result = db.run("INSERT INTO profiles (name, use_global_dirs, email) VALUES (?, 1, ?)", [name, normalizedEmail]);
+  const result = db.run("INSERT INTO profiles (name, use_global_dirs, email) VALUES (?, 1, ?)", [
+    name,
+    normalizedEmail,
+  ]);
   return getProfile(Number(result.lastInsertRowid))!;
 }
 
 export function getProfileWithHash(id: number): (ProfileData & { password_hash: string | null }) | null {
-  return db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs, password_hash FROM profiles WHERE id = ?").get(id) as (ProfileData & { password_hash: string | null }) | null;
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs, password_hash FROM profiles WHERE id = ?",
+    )
+    .get(id) as (ProfileData & { password_hash: string | null }) | null;
 }
 
 export function setProfilePassword(id: number, hash: string): void {
@@ -60,7 +87,9 @@ export function setProfilePassword(id: number, hash: string): void {
 }
 
 export function profileHasPassword(id: number): boolean {
-  const row = db.prepare("SELECT password_hash FROM profiles WHERE id = ?").get(id) as { password_hash: string | null } | null;
+  const row = db.prepare("SELECT password_hash FROM profiles WHERE id = ?").get(id) as {
+    password_hash: string | null;
+  } | null;
   return !!row?.password_hash;
 }
 
@@ -69,22 +98,33 @@ export function deleteProfile(id: number): void {
 }
 
 export function getOrCreateDefaultProfile(): ProfileData {
-  let profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1").get() as ProfileData | null;
+  let profile = db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1",
+    )
+    .get() as ProfileData | null;
   if (!profile) {
     db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", ["User"]);
-    profile = db.prepare("SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1").get() as ProfileData;
+    profile = db
+      .prepare(
+        "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1",
+      )
+      .get() as ProfileData;
   }
   return profile;
 }
 
-export function updateProfile(id: number, updates: {
-  name?: string;
-  email?: string;
-  image_path?: string;
-  movies_directory?: string;
-  tvshows_directory?: string;
-  use_global_dirs?: number;
-}): ProfileData | null {
+export function updateProfile(
+  id: number,
+  updates: {
+    name?: string;
+    email?: string;
+    image_path?: string;
+    movies_directory?: string;
+    tvshows_directory?: string;
+    use_global_dirs?: number;
+  },
+): ProfileData | null {
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -126,7 +166,11 @@ export function updateProfile(id: number, updates: {
 }
 
 export function getGlobalSettings(): GlobalSettings {
-  return db.prepare("SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from FROM global_settings WHERE id = 1").get() as GlobalSettings;
+  return db
+    .prepare(
+      "SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from FROM global_settings WHERE id = 1",
+    )
+    .get() as GlobalSettings;
 }
 
 export function updateGlobalSettings(updates: {
@@ -193,7 +237,10 @@ export function updateGlobalSettings(updates: {
 }
 
 // Get the effective directories for a profile (global or per-profile)
-export function getEffectiveDirs(profileId: number): { movies_directory: string | null; tvshows_directory: string | null } {
+export function getEffectiveDirs(profileId: number): {
+  movies_directory: string | null;
+  tvshows_directory: string | null;
+} {
   const profile = getProfile(profileId);
   if (!profile) return { movies_directory: null, tvshows_directory: null };
 

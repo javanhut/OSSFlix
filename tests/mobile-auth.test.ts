@@ -9,7 +9,11 @@ describe("mobile bearer auth", () => {
   });
 
   test("authenticates bearer tokens against the shared sessions table", async () => {
-    const profile = createProfile(`mobile-bearer-${Date.now()}`, await hashPassword("secret"), `mobile-${Date.now()}@test.local`);
+    const profile = createProfile(
+      `mobile-bearer-${Date.now()}`,
+      await hashPassword("secret"),
+      `mobile-${Date.now()}@test.local`,
+    );
     const token = createSession(profile.id, "OSSFlix-Mobile-Test");
     const req = new Request("http://localhost/api/mobile/auth/me", {
       headers: {
@@ -25,7 +29,11 @@ describe("mobile bearer auth", () => {
   });
 
   test("still authenticates cookie-backed sessions", async () => {
-    const profile = createProfile(`cookie-user-${Date.now()}`, await hashPassword("secret"), `cookie-${Date.now()}@test.local`);
+    const profile = createProfile(
+      `cookie-user-${Date.now()}`,
+      await hashPassword("secret"),
+      `cookie-${Date.now()}@test.local`,
+    );
     const token = createSession(profile.id, "OSSFlix-Web-Test");
     const req = new Request("http://localhost/api/auth/me", {
       headers: {

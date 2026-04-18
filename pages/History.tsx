@@ -15,7 +15,7 @@ type HistoryEntry = {
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
-  const then = new Date(dateStr + "Z").getTime();
+  const then = new Date(`${dateStr}Z`).getTime();
   const diff = Math.floor((now - then) / 1000);
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -50,7 +50,10 @@ export default function History() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadHistory(); }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
   const removeEntry = (videoSrc: string) => {
     fetch("/api/playback/history", {
@@ -58,9 +61,11 @@ export default function History() {
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({ video_src: videoSrc }),
-    }).then(() => {
-      setEntries((prev) => prev.filter((e) => e.video_src !== videoSrc));
-    }).catch(() => {});
+    })
+      .then(() => {
+        setEntries((prev) => prev.filter((e) => e.video_src !== videoSrc));
+      })
+      .catch(() => {});
   };
 
   const clearAll = () => {
@@ -69,7 +74,9 @@ export default function History() {
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({ clear_all: true }),
-    }).then(() => setEntries([])).catch(() => {});
+    })
+      .then(() => setEntries([]))
+      .catch(() => {});
   };
 
   if (loading) {
@@ -77,14 +84,29 @@ export default function History() {
       <div style={{ padding: "2rem 4%", maxWidth: "1200px", margin: "0 auto" }}>
         <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem" }}>Watch History</h2>
         {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} style={{
-            display: "flex", alignItems: "center", gap: "16px",
-            padding: "12px 16px", marginBottom: "4px", borderRadius: "var(--oss-radius, 8px)",
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
-          }}>
-            <div className="skeleton-shimmer" style={{ width: "80px", height: "48px", borderRadius: "4px", flexShrink: 0 }} />
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: loading skeleton; items are identical placeholders
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              padding: "12px 16px",
+              marginBottom: "4px",
+              borderRadius: "var(--oss-radius, 8px)",
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              className="skeleton-shimmer"
+              style={{ width: "80px", height: "48px", borderRadius: "4px", flexShrink: 0 }}
+            />
             <div style={{ flex: 1 }}>
-              <div className="skeleton-shimmer" style={{ width: "200px", height: "14px", borderRadius: "4px", marginBottom: "6px" }} />
+              <div
+                className="skeleton-shimmer"
+                style={{ width: "200px", height: "14px", borderRadius: "4px", marginBottom: "6px" }}
+              />
               <div className="skeleton-shimmer" style={{ width: "120px", height: "10px", borderRadius: "4px" }} />
             </div>
           </div>
@@ -97,20 +119,28 @@ export default function History() {
     <>
       <div style={{ padding: "2rem 4%", maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-          <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>
-            Watch History
-          </h2>
+          <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Watch History</h2>
           {entries.length > 0 && (
             <button
+              type="button"
               onClick={clearAll}
               style={{
-                background: "rgba(239,68,68,0.12)", color: "#ef4444",
-                border: "1px solid rgba(239,68,68,0.25)", borderRadius: "6px",
-                padding: "6px 16px", fontSize: "0.82rem", fontWeight: 600,
-                cursor: "pointer", transition: "all 0.2s ease",
+                background: "rgba(239,68,68,0.12)",
+                color: "#ef4444",
+                border: "1px solid rgba(239,68,68,0.25)",
+                borderRadius: "6px",
+                padding: "6px 16px",
+                fontSize: "0.82rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.12)"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(239,68,68,0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(239,68,68,0.12)";
+              }}
             >
               Clear All
             </button>
@@ -129,28 +159,62 @@ export default function History() {
             const isCompleted = entry.duration > 0 && entry.current_time >= entry.duration - 5;
 
             return (
-              <div key={entry.video_src} className="oss-history-entry" style={{
-                display: "flex", alignItems: "center", gap: "16px",
-                padding: "12px 16px", borderRadius: "var(--oss-radius, 8px)",
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
-                cursor: "pointer", transition: "all 0.2s ease",
-              }}
-              onClick={() => entry.dir_path && setSelectedDir(entry.dir_path)}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+              <div
+                key={entry.video_src}
+                className="oss-history-entry"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "16px",
+                  padding: "12px 16px",
+                  borderRadius: "var(--oss-radius, 8px)",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onClick={() => entry.dir_path && setSelectedDir(entry.dir_path)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                }}
               >
                 {/* Thumbnail */}
-                <div className="oss-history-thumb" style={{
-                  width: "80px", height: "48px", borderRadius: "4px", overflow: "hidden",
-                  flexShrink: 0, background: "rgba(255,255,255,0.08)",
-                }}>
+                <div
+                  className="oss-history-thumb"
+                  style={{
+                    width: "80px",
+                    height: "48px",
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    background: "rgba(255,255,255,0.08)",
+                  }}
+                >
                   {entry.imagePath ? (
                     <img src={entry.imagePath} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
-                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2">
-                        <polygon points="5,3 19,12 5,21"/>
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <svg
+                        aria-hidden="true"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="rgba(255,255,255,0.3)"
+                        strokeWidth="2"
+                      >
+                        <polygon points="5,3 19,12 5,21" />
                       </svg>
                     </div>
                   )}
@@ -161,7 +225,15 @@ export default function History() {
                   <div style={{ color: "#fff", fontSize: "0.9rem", fontWeight: 600, marginBottom: "2px" }}>
                     {entry.name || "Unknown Title"}
                   </div>
-                  <div style={{ color: "var(--oss-text-muted)", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      color: "var(--oss-text-muted)",
+                      fontSize: "0.78rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
                     <span>{parseEpisodeInfo(entry.video_src)}</span>
                     {entry.type && (
                       <>
@@ -172,16 +244,24 @@ export default function History() {
                   </div>
                   {/* Progress bar */}
                   {pct > 0 && (
-                    <div style={{
-                      height: "3px", background: "rgba(255,255,255,0.08)",
-                      borderRadius: "2px", marginTop: "6px", width: "200px", maxWidth: "100%",
-                    }}>
-                      <div style={{
-                        height: "100%",
-                        width: `${Math.min(pct, 100)}%`,
-                        background: isCompleted ? "#22c55e" : "var(--oss-accent, #3b82f6)",
+                    <div
+                      style={{
+                        height: "3px",
+                        background: "rgba(255,255,255,0.08)",
                         borderRadius: "2px",
-                      }} />
+                        marginTop: "6px",
+                        width: "200px",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${Math.min(pct, 100)}%`,
+                          background: isCompleted ? "#22c55e" : "var(--oss-accent, #3b82f6)",
+                          borderRadius: "2px",
+                        }}
+                      />
                     </div>
                   )}
                 </div>
@@ -200,16 +280,29 @@ export default function History() {
 
                 {/* Remove button */}
                 <button
+                  type="button"
                   className="oss-history-remove"
-                  onClick={(e) => { e.stopPropagation(); removeEntry(entry.video_src); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeEntry(entry.video_src);
+                  }}
                   title="Remove from history"
                   style={{
-                    background: "none", border: "none", color: "rgba(255,255,255,0.25)",
-                    cursor: "pointer", padding: "4px", fontSize: "1.1rem", lineHeight: 1,
+                    background: "none",
+                    border: "none",
+                    color: "rgba(255,255,255,0.25)",
+                    cursor: "pointer",
+                    padding: "4px",
+                    fontSize: "1.1rem",
+                    lineHeight: 1,
                     transition: "color 0.2s ease",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.25)"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "#ef4444";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.25)";
+                  }}
                 >
                   &#10005;
                 </button>
@@ -222,10 +315,13 @@ export default function History() {
       {createPortal(
         <Card
           show={!!selectedDir}
-          onHide={() => { setSelectedDir(""); loadHistory(); }}
+          onHide={() => {
+            setSelectedDir("");
+            loadHistory();
+          }}
           dirPath={selectedDir}
         />,
-        document.body
+        document.body,
       )}
     </>
   );

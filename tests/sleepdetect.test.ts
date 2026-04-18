@@ -64,9 +64,24 @@ describe("detectSleepPattern", () => {
 
   test("ignores episodes not in the video list", () => {
     const entries = [
-      { video_src: "/media/tvshows/other/ep1.mkv", current_time: 1195, duration: 1200, updated_at: "2026-01-01 10:00:00" },
-      { video_src: "/media/tvshows/other/ep2.mkv", current_time: 1195, duration: 1200, updated_at: "2026-01-01 10:20:00" },
-      { video_src: "/media/tvshows/other/ep3.mkv", current_time: 1195, duration: 1200, updated_at: "2026-01-01 10:40:00" },
+      {
+        video_src: "/media/tvshows/other/ep1.mkv",
+        current_time: 1195,
+        duration: 1200,
+        updated_at: "2026-01-01 10:00:00",
+      },
+      {
+        video_src: "/media/tvshows/other/ep2.mkv",
+        current_time: 1195,
+        duration: 1200,
+        updated_at: "2026-01-01 10:20:00",
+      },
+      {
+        video_src: "/media/tvshows/other/ep3.mkv",
+        current_time: 1195,
+        duration: 1200,
+        updated_at: "2026-01-01 10:40:00",
+      },
     ];
     const result = detectSleepPattern(entries, videos);
     expect(result.fellAsleep).toBe(false);

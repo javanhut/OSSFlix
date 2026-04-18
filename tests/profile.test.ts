@@ -64,8 +64,11 @@ describe("Profile CRUD operations", () => {
 
   test("updates profile directories", () => {
     const id = (db.prepare("SELECT id FROM profiles LIMIT 1").get() as any).id;
-    db.run("UPDATE profiles SET movies_directory = ?, tvshows_directory = ? WHERE id = ?",
-      ["/custom/movies", "/custom/tvshows", id]);
+    db.run("UPDATE profiles SET movies_directory = ?, tvshows_directory = ? WHERE id = ?", [
+      "/custom/movies",
+      "/custom/tvshows",
+      id,
+    ]);
     const profile = db.prepare("SELECT * FROM profiles WHERE id = ?").get(id) as any;
     expect(profile.movies_directory).toBe("/custom/movies");
     expect(profile.tvshows_directory).toBe("/custom/tvshows");
@@ -92,8 +95,10 @@ describe("Profile CRUD operations", () => {
   });
 
   test("global settings CRUD", () => {
-    db.run("UPDATE global_settings SET movies_directory = ?, tvshows_directory = ? WHERE id = 1",
-      ["/global/movies", "/global/tvshows"]);
+    db.run("UPDATE global_settings SET movies_directory = ?, tvshows_directory = ? WHERE id = 1", [
+      "/global/movies",
+      "/global/tvshows",
+    ]);
     const settings = db.prepare("SELECT * FROM global_settings WHERE id = 1").get() as any;
     expect(settings.movies_directory).toBe("/global/movies");
     expect(settings.tvshows_directory).toBe("/global/tvshows");
