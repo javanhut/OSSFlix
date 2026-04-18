@@ -30,6 +30,8 @@ import {
   getProfileWithHash,
   setProfilePassword,
   profileHasPassword,
+  getGuestProfile,
+  seedGuestProfile,
 } from "./scripts/profile";
 import { detectSleepPattern } from "./scripts/sleepdetect";
 import { searchTMDB, getTMDBDetails, downloadImage } from "./scripts/tmdb";
@@ -115,6 +117,9 @@ function createMobileAuthResponse(profileId: number, userAgent?: string): Respon
     expiresAt: getSessionExpiry(),
   });
 }
+
+// Seed the Guest profile on startup (idempotent)
+seedGuestProfile().catch((err) => console.error("[ossflix] failed to seed guest profile:", err));
 
 // Hourly session cleanup
 setInterval(() => cleanExpiredSessions(), 3600_000);
@@ -641,6 +646,20 @@ Bun.serve({
           has_password: profileHasPassword(p.id),
         }));
         return Response.json({ profiles });
+      },
+    },
+    "/api/auth/guest-profile": {
+      GET() {
+        const guest = getGuestProfile();
+        if (!guest) return Response.json({ error: "Guest profile not available" }, { status: 404 });
+        return Response.json({
+          profile: {
+            id: guest.id,
+            name: guest.name,
+            image_path: guest.image_path,
+            has_password: profileHasPassword(guest.id),
+          },
+        });
       },
     },
     "/api/auth/login": {

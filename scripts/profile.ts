@@ -1,4 +1,8 @@
 import db from "./db";
+import { hashPassword } from "./auth";
+
+export const GUEST_NAME = "Guest";
+export const GUEST_PASSWORD = "guest";
 
 export interface ProfileData {
   id: number;
@@ -91,6 +95,33 @@ export function profileHasPassword(id: number): boolean {
     password_hash: string | null;
   } | null;
   return !!row?.password_hash;
+}
+
+/** Find the singleton Guest profile (name="Guest", no email). */
+export function getGuestProfile(): ProfileData | null {
+  return db
+    .prepare(
+      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE name = ? AND (email IS NULL OR email = '') ORDER BY id LIMIT 1",
+    )
+    .get(GUEST_NAME) as ProfileData | null;
+}
+
+/** Ensure the Guest profile exists with password "guest". Idempotent — safe to call on every startup. */
+export async function seedGuestProfile(): Promise<ProfileData> {
+  const existing = getGuestProfile();
+  if (existing) {
+    // Make sure it still has the canonical password (heals manual tampering)
+    const row = db.prepare("SELECT password_hash FROM profiles WHERE id = ?").get(existing.id) as {
+      password_hash: string | null;
+    } | null;
+    if (!row?.password_hash) {
+      const hash = await hashPassword(GUEST_PASSWORD);
+      setProfilePassword(existing.id, hash);
+    }
+    return existing;
+  }
+  const hash = await hashPassword(GUEST_PASSWORD);
+  return createProfile(GUEST_NAME, hash);
 }
 
 export function deleteProfile(id: number): void {

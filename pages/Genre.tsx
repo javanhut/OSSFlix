@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Navigate } from "react-router-dom";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
+
+const ANIME_ALIASES = new Set(["anime", "animation"]);
 
 type TitleInfo = {
   name: string;
@@ -26,6 +28,9 @@ export default function Genre() {
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const decodedGenre = genre ? decodeURIComponent(genre) : "";
+  const shouldRedirectToAnime = ANIME_ALIASES.has(decodedGenre.toLowerCase());
 
   const loadData = useCallback(() => {
     if (!genre) return;
@@ -62,16 +67,20 @@ export default function Genre() {
   }, [genre]);
 
   useEffect(() => {
+    if (shouldRedirectToAnime) return;
     loadData();
-  }, [loadData]);
+  }, [loadData, shouldRedirectToAnime]);
 
   useEffect(() => {
+    if (shouldRedirectToAnime) return;
     const handler = () => loadData();
     window.addEventListener("ossflix-media-updated", handler);
     return () => window.removeEventListener("ossflix-media-updated", handler);
-  }, [loadData]);
+  }, [loadData, shouldRedirectToAnime]);
 
-  const decodedGenre = genre ? decodeURIComponent(genre) : "";
+  if (shouldRedirectToAnime) {
+    return <Navigate to="/anime" replace />;
+  }
 
   if (loading) {
     return (

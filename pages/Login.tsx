@@ -102,6 +102,24 @@ export default function Login() {
     setLoading(false);
   };
 
+  const handleContinueAsGuest = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/guest-profile");
+      const data = await res.json();
+      if (data.error || !data.profile) {
+        setError(data.error || "Guest profile unavailable");
+        setLoading(false);
+        return;
+      }
+      handleProfileClick(data.profile);
+    } catch {
+      setError("Failed to load guest profile");
+    }
+    setLoading(false);
+  };
+
   const handleBackToEmail = () => {
     setEmailSubmitted(false);
     setProfiles([]);
@@ -904,6 +922,27 @@ export default function Login() {
           }}
         >
           {loading ? "Looking up..." : "Continue"}
+        </button>
+        <button
+          type="button"
+          onClick={handleContinueAsGuest}
+          disabled={loading}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            marginTop: "10px",
+            borderRadius: "10px",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.04)",
+            color: "rgba(255,255,255,0.75)",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            cursor: loading ? "wait" : "pointer",
+            opacity: loading ? 0.7 : 1,
+            transition: "background 0.2s ease, border-color 0.2s ease",
+          }}
+        >
+          Continue as Guest
         </button>
         {hasUnclaimed && (
           <button

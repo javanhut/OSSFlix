@@ -1,5 +1,6 @@
 import { Modal, ModalHeader, ModalBody, ModalTitle, ModalFooter, Spinner } from "react-bootstrap";
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
@@ -630,6 +631,7 @@ function groupVideosBySeason(videos: string[]): Map<number, string[]> {
 }
 
 export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
+  const navigate = useNavigate();
   const { profile } = useProfile();
   const pid = profile?.id;
   const [information, setInformation] = useState<MediaInfo | null>(null);
@@ -942,8 +944,15 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   {information.type}
                 </span>
                 {information.genre?.map((g) => (
-                  <span
+                  <button
+                    type="button"
                     key={g}
+                    onClick={() => {
+                      onHide();
+                      navigate(`/genre/${encodeURIComponent(g)}`);
+                    }}
+                    title={`Browse ${g}`}
+                    className="oss-genre-pill"
                     style={{
                       background: "rgba(255,255,255,0.08)",
                       color: "var(--oss-text-muted)",
@@ -951,10 +960,13 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                       borderRadius: "4px",
                       fontSize: "0.75rem",
                       fontWeight: 500,
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "background 0.15s ease, color 0.15s ease",
                     }}
                   >
                     {g}
-                  </span>
+                  </button>
                 ))}
               </div>
 
