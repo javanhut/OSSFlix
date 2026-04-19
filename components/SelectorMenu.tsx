@@ -6,6 +6,7 @@ type TitleInfo = {
   name: string;
   imagePath: string;
   pathToDir: string;
+  progressPct?: number;
 };
 
 type MenuRow = {
@@ -100,6 +101,11 @@ function TitleCard({
         >
           {inWatchlist ? "\u2713" : "+"}
         </button>
+      )}
+      {title.progressPct != null && title.progressPct > 0 && (
+        <div className="oss-card-progress" aria-hidden="true">
+          <div className="oss-card-progress-fill" style={{ width: `${title.progressPct}%` }} />
+        </div>
       )}
     </div>
   );

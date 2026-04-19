@@ -1777,9 +1777,11 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
-        const titles = db
+        const rows = db
           .query(`
-          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir,
+                 pp.current_time AS currentTime, pp.duration,
+                 MAX(pp.updated_at) AS lastUpdated
           FROM playback_progress pp
           JOIN titles t ON t.dir_path = pp.dir_path
           WHERE pp.profile_id = ?
@@ -1789,7 +1791,19 @@ Bun.serve({
           ORDER BY MAX(pp.updated_at) DESC
           LIMIT 20
         `)
-          .all(profile.id) as any[];
+          .all(profile.id) as Array<{
+          name: string;
+          imagePath: string;
+          pathToDir: string;
+          currentTime: number;
+          duration: number;
+        }>;
+        const titles = rows.map((r) => ({
+          name: r.name,
+          imagePath: r.imagePath,
+          pathToDir: r.pathToDir,
+          progressPct: r.duration > 0 ? Math.min(100, Math.round((r.currentTime / r.duration) * 100)) : 0,
+        }));
         return Response.json({ genre: "Continue Watching", titles });
       },
     },
