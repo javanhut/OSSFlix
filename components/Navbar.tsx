@@ -27,7 +27,7 @@ export function NavBar() {
   const [selectedDir, setSelectedDir] = useState("");
   const [rescanning, setRescanning] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [genreOpen, setGenreOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<null | "movies" | "tv">(null);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -54,9 +54,9 @@ export function NavBar() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Lock body scroll when mobile menu or genre dropdown is open
+  // Lock body scroll when mobile menu or any type dropdown is open
   useEffect(() => {
-    if (navOpen || genreOpen) {
+    if (navOpen || openMenu) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -64,7 +64,7 @@ export function NavBar() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [navOpen, genreOpen]);
+  }, [navOpen, openMenu]);
 
   // Close search on outside click
   useEffect(() => {
@@ -203,7 +203,7 @@ export function NavBar() {
                   type="button"
                   onClick={() => {
                     setNavOpen(false);
-                    setGenreOpen(false);
+                    setOpenMenu(null);
                   }}
                   style={{
                     background: "none",
@@ -238,64 +238,25 @@ export function NavBar() {
                 Home
               </Link>
             </li>
-            <li>
-              <Link to="/movies" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                Movies
-              </Link>
-            </li>
-            <li>
-              <Link to="/tvshows" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                TV Shows
-              </Link>
-            </li>
-            <li>
-              <Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                Anime
-              </Link>
-            </li>
-            <li>
-              <Link to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                My List
-              </Link>
-            </li>
-            <li>
-              <Link to="/foryou" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                For You
-              </Link>
-            </li>
-            <li>
-              <Link to="/history" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                History
-              </Link>
-            </li>
-            <li>
-              <Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                Explore
-              </Link>
-            </li>
-            <li>
-              <Link to="/stats" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                Stats
-              </Link>
-            </li>
             <li
-              className={`oss-genre-trigger${genreOpen ? " oss-genre-open" : ""}`}
+              className={`oss-genre-trigger${openMenu === "movies" ? " oss-genre-open" : ""}`}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest(".oss-genre-dropdown")) return;
-                setGenreOpen((v) => !v);
+                setOpenMenu((v) => (v === "movies" ? null : "movies"));
               }}
             >
-              <span className="oss-nav-link">Genres</span>
+              <span className="oss-nav-link">Movies</span>
               <div className="oss-genre-dropdown">
                 <div className="oss-genre-header">
-                  <span>Genres</span>
+                  <span>Movies</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setGenreOpen(false);
+                      setOpenMenu(null);
                     }}
                     className="oss-genre-close"
+                    aria-label="Close menu"
                   >
                     <svg
                       aria-hidden="true"
@@ -312,20 +273,110 @@ export function NavBar() {
                     </svg>
                   </button>
                 </div>
+                <Link
+                  to="/movies"
+                  className="oss-genre-item"
+                  onClick={() => {
+                    setNavOpen(false);
+                    setOpenMenu(null);
+                  }}
+                >
+                  Browse All Movies
+                </Link>
                 {movieGenres.map((genre) => (
                   <Link
                     key={genre}
-                    to={`/genre/${encodeURIComponent(genre)}`}
+                    to={`/genre/${encodeURIComponent(genre)}?type=Movie`}
                     className="oss-genre-item"
                     onClick={() => {
                       setNavOpen(false);
-                      setGenreOpen(false);
+                      setOpenMenu(null);
                     }}
                   >
                     {genre}
                   </Link>
                 ))}
               </div>
+            </li>
+            <li
+              className={`oss-genre-trigger${openMenu === "tv" ? " oss-genre-open" : ""}`}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest(".oss-genre-dropdown")) return;
+                setOpenMenu((v) => (v === "tv" ? null : "tv"));
+              }}
+            >
+              <span className="oss-nav-link">TV Shows</span>
+              <div className="oss-genre-dropdown">
+                <div className="oss-genre-header">
+                  <span>TV Shows</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenu(null);
+                    }}
+                    className="oss-genre-close"
+                    aria-label="Close menu"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+                <Link
+                  to="/tvshows"
+                  className="oss-genre-item"
+                  onClick={() => {
+                    setNavOpen(false);
+                    setOpenMenu(null);
+                  }}
+                >
+                  Browse All TV Shows
+                </Link>
+                {movieGenres.map((genre) => (
+                  <Link
+                    key={genre}
+                    to={`/genre/${encodeURIComponent(genre)}?type=tv%20show`}
+                    className="oss-genre-item"
+                    onClick={() => {
+                      setNavOpen(false);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    {genre}
+                  </Link>
+                ))}
+              </div>
+            </li>
+            <li>
+              <Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+                Anime
+              </Link>
+            </li>
+            <li>
+              <Link to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+                My List
+              </Link>
+            </li>
+            <li>
+              <Link to="/foryou" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+                Recommendations
+              </Link>
+            </li>
+            <li>
+              <Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+                Explore
+              </Link>
             </li>
 
             {/* Rescan — inside overlay on mobile, visible in navbar on desktop */}

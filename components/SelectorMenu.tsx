@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { Card } from "./Card";
 import { RowCarousel } from "./RowCarousel";
+
+function seeAllHrefFor(genre: string, isContinueWatching?: boolean): string | null {
+  if (isContinueWatching) return null;
+  if (genre === "Continue Watching") return null;
+  if (genre === "Watchlist") return "/mylist";
+  if (genre.startsWith("Because you watch")) return null;
+  return `/genre/${encodeURIComponent(genre)}`;
+}
 
 type TitleInfo = {
   name: string;
@@ -131,6 +140,14 @@ export function SelectorMenu({ rows, isContinueWatching, onWatchlistChange }: Se
           <h2 className="oss-section-title">
             {row.genre}
             {isContinueWatching && <span className="oss-resume-badge">Resume</span>}
+            {(() => {
+              const href = seeAllHrefFor(row.genre, isContinueWatching);
+              return href ? (
+                <Link to={href} className="oss-section-title-link">
+                  See all &rarr;
+                </Link>
+              ) : null;
+            })()}
           </h2>
           <RowCarousel role="list">
             {row.titles.map((title) => (

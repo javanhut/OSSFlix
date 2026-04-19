@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Navigate } from "react-router-dom";
+import { useParams, useSearchParams, Navigate } from "react-router-dom";
 import MediaCarousel from "../components/MediaCarousel";
 import SelectorMenu from "../components/SelectorMenu";
 
@@ -25,6 +25,8 @@ type MediaItem = {
 
 export default function Genre() {
   const { genre } = useParams<{ genre: string }>();
+  const [searchParams] = useSearchParams();
+  const typeFilter = searchParams.get("type");
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +37,11 @@ export default function Genre() {
   const loadData = useCallback(() => {
     if (!genre) return;
     const decodedGenre = decodeURIComponent(genre);
+    const endpoint = typeFilter
+      ? `/api/media/categories/type?type=${encodeURIComponent(typeFilter)}`
+      : "/api/media/categories";
 
-    fetch("/api/media/categories")
+    fetch(endpoint)
       .then((res) => res.json())
       .then((categories: MenuRow[]) => {
         const genreRow = categories.find((r) => r.genre === decodedGenre);
@@ -64,7 +69,7 @@ export default function Genre() {
       })
       .catch((err) => console.error("Failed to load genre:", err))
       .finally(() => setLoading(false));
-  }, [genre]);
+  }, [genre, typeFilter]);
 
   useEffect(() => {
     if (shouldRedirectToAnime) return;
@@ -95,7 +100,14 @@ export default function Genre() {
       {mediaList.length > 0 && <MediaCarousel mediaList={mediaList} />}
       {rows.length > 0 && (
         <>
-          <h1 className="oss-page-title">{decodedGenre}</h1>
+          <h1 className="oss-page-title">
+            {decodedGenre}
+            {typeFilter && (
+              <span style={{ color: "var(--oss-text-muted)", fontSize: "0.65em", marginLeft: "0.5em" }}>
+                {typeFilter.toLowerCase().includes("tv") ? "TV Shows" : "Movies"}
+              </span>
+            )}
+          </h1>
           <SelectorMenu rows={rows} />
         </>
       )}

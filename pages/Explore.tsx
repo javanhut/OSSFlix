@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PREDEFINED_GENRES } from "../constants/Genres";
 import Card from "../components/Card";
 
@@ -8,6 +8,14 @@ type TitleResult = {
   pathToDir: string;
   type: string;
 };
+
+const SUGGESTED_COMBOS: string[][] = [
+  ["Action", "Thriller"],
+  ["Drama", "Romance"],
+  ["Science Fiction", "Adventure"],
+  ["Comedy", "Family"],
+  ["Crime", "Mystery"],
+];
 
 export default function Explore() {
   const [allGenres, setAllGenres] = useState<string[]>([]);
@@ -46,205 +54,165 @@ export default function Explore() {
     });
   };
 
-  const customGenres = allGenres.filter((g) => !PREDEFINED_GENRES.has(g));
-  const predefined = allGenres.filter((g) => PREDEFINED_GENRES.has(g));
+  const applyCombo = (combo: string[]) => {
+    setSelectedGenres(new Set(combo));
+  };
+
+  const customGenres = useMemo(() => allGenres.filter((g) => !PREDEFINED_GENRES.has(g)), [allGenres]);
+  const predefined = useMemo(() => allGenres.filter((g) => PREDEFINED_GENRES.has(g)), [allGenres]);
+  const validCombos = useMemo(
+    () => SUGGESTED_COMBOS.filter((combo) => combo.every((g) => allGenres.includes(g))),
+    [allGenres],
+  );
+
+  const hasResults = selectedGenres.size > 0;
 
   return (
-    <div style={{ padding: "2rem 4%", minHeight: "100vh" }}>
-      <h2 style={{ color: "var(--oss-text)", marginBottom: "0.5rem", fontSize: "1.5rem" }}>Explore Tags</h2>
-      <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
-        Select one or more genres to find titles matching all of them.
-      </p>
+    <div className="explore-page">
+      {/* Hero */}
+      <header className="explore-hero">
+        <h1 className="explore-hero-title">Explore</h1>
+        <p className="explore-hero-tagline">Mix and match tags to find your next watch.</p>
+      </header>
 
-      {customGenres.length > 0 && (
-        <div style={{ marginBottom: "1.5rem" }}>
-          <h4 style={{ color: "var(--oss-text)", fontSize: "0.9rem", marginBottom: "10px", fontWeight: 600 }}>
-            Custom Tags
-          </h4>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {customGenres.map((g) => (
+      {/* Selected chips strip */}
+      {hasResults && (
+        <div className="explore-chips-bar">
+          <span className="explore-chips-label">Filtering by</span>
+          <div className="explore-chips">
+            {[...selectedGenres].map((g) => (
               <button
                 type="button"
                 key={g}
+                className="explore-chip"
                 onClick={() => toggleGenre(g)}
-                style={{
-                  padding: "6px 16px",
-                  borderRadius: "20px",
-                  border: selectedGenres.has(g) ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
-                  background: selectedGenres.has(g) ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.06)",
-                  color: selectedGenres.has(g) ? "#60a5fa" : "var(--oss-text-muted)",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
+                aria-label={`Remove ${g}`}
               >
                 {g}
+                <span className="explore-chip-x" aria-hidden="true">
+                  &times;
+                </span>
               </button>
             ))}
           </div>
+          <button type="button" className="explore-clear" onClick={() => setSelectedGenres(new Set())}>
+            Clear all
+          </button>
         </div>
       )}
 
+      {/* Genre groups */}
       {predefined.length > 0 && (
-        <div style={{ marginBottom: "1.5rem" }}>
-          <h4 style={{ color: "var(--oss-text)", fontSize: "0.9rem", marginBottom: "10px", fontWeight: 600 }}>
-            Standard Genres
-          </h4>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        <section className="oss-section explore-section">
+          <h2 className="oss-section-title">Standard Genres</h2>
+          <div className="explore-tag-grid">
             {predefined.map((g) => (
               <button
                 type="button"
                 key={g}
+                className={`explore-tag${selectedGenres.has(g) ? " active" : ""}`}
                 onClick={() => toggleGenre(g)}
-                style={{
-                  padding: "6px 16px",
-                  borderRadius: "20px",
-                  border: selectedGenres.has(g) ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
-                  background: selectedGenres.has(g) ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.06)",
-                  color: selectedGenres.has(g) ? "#60a5fa" : "var(--oss-text-muted)",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
+                aria-pressed={selectedGenres.has(g)}
               >
                 {g}
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {selectedGenres.size > 0 && (
-        <div style={{ marginBottom: "1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "1rem" }}>
-            <h3 style={{ color: "var(--oss-text)", fontSize: "1.1rem", margin: 0 }}>Results</h3>
-            <button
-              type="button"
-              onClick={() => setSelectedGenres(new Set())}
-              style={{
-                background: "rgba(239,68,68,0.12)",
-                color: "#f87171",
-                border: "1px solid rgba(239,68,68,0.25)",
-                padding: "4px 12px",
-                borderRadius: "6px",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Clear All
-            </button>
+      {customGenres.length > 0 && (
+        <section className="oss-section explore-section">
+          <h2 className="oss-section-title">Custom Tags</h2>
+          <div className="explore-tag-grid">
+            {customGenres.map((g) => (
+              <button
+                type="button"
+                key={g}
+                className={`explore-tag${selectedGenres.has(g) ? " active" : ""}`}
+                onClick={() => toggleGenre(g)}
+                aria-pressed={selectedGenres.has(g)}
+              >
+                {g}
+              </button>
+            ))}
           </div>
+        </section>
+      )}
+
+      {/* Empty state — suggested combos */}
+      {!hasResults && validCombos.length > 0 && (
+        <section className="oss-section explore-section">
+          <h2 className="oss-section-title">Try a combo</h2>
+          <div className="explore-combos">
+            {validCombos.map((combo) => (
+              <button type="button" key={combo.join("+")} className="explore-combo" onClick={() => applyCombo(combo)}>
+                <span className="explore-combo-text">
+                  {combo.map((g, i) => (
+                    <span key={g}>
+                      {i > 0 && <span className="explore-combo-plus"> + </span>}
+                      {g}
+                    </span>
+                  ))}
+                </span>
+                <span className="explore-combo-arrow" aria-hidden="true">
+                  &rarr;
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Results */}
+      {hasResults && (
+        <section className="oss-section explore-section">
+          <h2 className="oss-section-title">
+            Results
+            {!loading && (
+              <span className="explore-results-count">
+                {results.length} {results.length === 1 ? "title" : "titles"}
+              </span>
+            )}
+          </h2>
 
           {loading && (
-            <div style={{ textAlign: "center", padding: "2rem" }}>
-              <div
-                style={{
-                  width: "32px",
-                  height: "32px",
-                  margin: "0 auto",
-                  border: "3px solid rgba(255,255,255,0.1)",
-                  borderTopColor: "#3b82f6",
-                  borderRadius: "50%",
-                  animation: "vpSpin 0.8s linear infinite",
-                }}
-              />
+            <div className="explore-loading">
+              <div className="explore-spinner" />
             </div>
           )}
 
           {!loading && results.length === 0 && (
-            <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", textAlign: "center", padding: "2rem" }}>
-              No titles match all selected genres.
-            </p>
+            <div className="explore-empty">
+              <p>No titles match all selected tags.</p>
+              <p className="explore-empty-hint">Try removing a tag or picking a different combination.</p>
+            </div>
           )}
 
           {!loading && results.length > 0 && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                gap: "16px",
-              }}
-            >
+            <div className="explore-grid">
               {results.map((r) => (
-                <div
+                <button
+                  type="button"
                   key={r.pathToDir}
+                  className="explore-card"
                   onClick={() => setSelectedDir(r.pathToDir)}
-                  style={{
-                    cursor: "pointer",
-                    borderRadius: "var(--oss-radius)",
-                    overflow: "hidden",
-                    background: "var(--oss-bg-card)",
-                    border: "1px solid var(--oss-border)",
-                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "scale(1.03)";
-                    e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "scale(1)";
-                    e.currentTarget.style.boxShadow = "none";
-                  }}
+                  aria-label={r.name}
                 >
                   {r.imagePath ? (
-                    <img
-                      src={r.imagePath}
-                      alt={r.name}
-                      style={{
-                        width: "100%",
-                        height: "220px",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
+                    <img src={r.imagePath} alt="" className="explore-card-img" loading="lazy" decoding="async" />
                   ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "220px",
-                        background: "var(--oss-bg-elevated)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "var(--oss-text-muted)",
-                        fontSize: "2rem",
-                      }}
-                    >
-                      ?
-                    </div>
+                    <div className="explore-card-img explore-card-img-placeholder">?</div>
                   )}
-                  <div style={{ padding: "10px 12px" }}>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "0.85rem",
-                        fontWeight: 600,
-                        color: "var(--oss-text)",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {r.name}
-                    </p>
-                    <p
-                      style={{
-                        margin: "2px 0 0",
-                        fontSize: "0.72rem",
-                        color: "var(--oss-text-muted)",
-                      }}
-                    >
-                      {r.type}
-                    </p>
+                  <div className="explore-card-meta">
+                    <p className="explore-card-title">{r.name}</p>
+                    <p className="explore-card-type">{r.type}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       <Card show={!!selectedDir} onHide={() => setSelectedDir("")} dirPath={selectedDir} />

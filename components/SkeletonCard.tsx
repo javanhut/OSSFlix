@@ -10,12 +10,18 @@ export function SkeletonCard() {
 export function SkeletonRow({ count = 8 }: { count?: number }) {
   return (
     <div className="oss-section">
-      <div className="skeleton-section-title skeleton-shimmer" />
-      <div className="oss-row">
-        {Array.from({ length: count }, (_, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: placeholders are identical; index IS the identity
-          <SkeletonCard key={i} />
-        ))}
+      <h2 className="oss-section-title">
+        <span className="skeleton-shimmer skeleton-section-title-text" />
+      </h2>
+      <div className="oss-row-wrapper">
+        <div className="oss-row">
+          <div className="oss-row-track">
+            {Array.from({ length: count }, (_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: placeholders are identical; index IS the identity
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
