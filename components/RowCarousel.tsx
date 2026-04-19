@@ -117,7 +117,7 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <div className="oss-row" ref={rowRef}>
+      <div className={`oss-row${canScrollLeft ? " fade-left" : ""}${canScrollRight ? " fade-right" : ""}`} ref={rowRef}>
         <div className="oss-row-track" role={role} ref={trackRef}>
           {children}
         </div>

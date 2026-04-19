@@ -530,6 +530,20 @@ html, body, #root {
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
+/* Edge fade: dissolves the row's content at whichever side has more to scroll.
+   The mask matches the chevron width (56px) so the icon sits in the faded area. */
+.oss-row.fade-left.fade-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+.oss-row.fade-left:not(.fade-right) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px);
+  mask-image: linear-gradient(to right, transparent, #000 56px);
+}
+.oss-row.fade-right:not(.fade-left) {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 56px);
+  mask-image: linear-gradient(to left, transparent, #000 56px);
+}
 @media (hover: hover) {
   .oss-row { overflow: hidden; }
 }
@@ -557,14 +571,11 @@ html, body, #root {
   pointer-events: none;
   transition: opacity 0.2s ease, background-color 0.2s ease;
 }
-.oss-row-chevron.left {
-  left: 0;
-  background: linear-gradient(to right, rgba(0,0,0,0.75), rgba(0,0,0,0));
+.oss-row-chevron {
+  background: transparent;
 }
-.oss-row-chevron.right {
-  right: 0;
-  background: linear-gradient(to left, rgba(0,0,0,0.75), rgba(0,0,0,0));
-}
+.oss-row-chevron.left { left: 0; }
+.oss-row-chevron.right { right: 0; }
 .oss-row-chevron.visible {
   opacity: 1;
   pointer-events: auto;
