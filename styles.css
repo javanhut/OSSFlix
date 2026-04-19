@@ -872,35 +872,78 @@ body.modal-open #root {
   color: var(--oss-accent) !important;
 }
 
-/* ── Episode list item ── */
-.oss-episode {
+/* ── Episode list item (compact row) ── */
+.oss-episode-list {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 12px;
-  border-radius: var(--oss-radius);
-  cursor: pointer;
-  transition: background var(--oss-transition);
-  background: transparent;
-  border: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  width: 100%;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--oss-border);
+}
+.oss-episode {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  transition: background 0.15s ease, opacity 0.2s ease;
+}
+.oss-episode:not(:last-child) {
+  border-bottom: 1px solid var(--oss-border);
 }
 .oss-episode:hover {
   background: var(--oss-bg-hover);
 }
-.oss-episode-thumb {
-  width: 110px;
-  height: 62px;
-  border-radius: 6px;
-  object-fit: cover;
+/* When any episode is hovered, dim the others to focus attention. */
+.oss-episode-list:has(.oss-episode:hover) .oss-episode:not(:hover) {
+  opacity: 0.45;
+}
+.oss-episode-list:has(.oss-episode:hover) .oss-episode:not(:hover) .oss-episode-title {
+  color: var(--oss-text-muted);
+}
+.oss-episode-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.oss-episode-num {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--oss-text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.oss-episode-num-check {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+.oss-episode.in-progress .oss-episode-num {
+  color: var(--oss-accent);
+  background: rgba(229, 9, 20, 0.18);
+}
+.oss-episode.watched .oss-episode-num {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.18);
 }
 .oss-episode-info {
   flex: 1;
   min-width: 0;
+  display: flex;
 }
 .oss-episode-title {
   font-size: 0.9rem;
@@ -911,19 +954,70 @@ body.modal-open #root {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.oss-episode-sub {
-  font-size: 0.78rem;
+.oss-episode.watched .oss-episode-title {
   color: var(--oss-text-muted);
-  margin: 2px 0 0;
+}
+.oss-episode-meta {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--oss-text-muted);
 }
 .oss-episode-play {
-  font-size: 1.2rem;
-  color: var(--oss-accent);
   flex-shrink: 0;
-  transition: transform var(--oss-transition);
+  font-size: 0.85rem;
+  color: var(--oss-text-muted);
+  transition: color 0.15s ease, transform 0.15s ease;
 }
-.oss-episode:hover .oss-episode-play {
+.oss-episode:hover .oss-episode-main .oss-episode-play {
+  color: var(--oss-accent);
   transform: scale(1.2);
+}
+.oss-episode-restart {
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: var(--oss-text-muted);
+  font-size: 0.95rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.oss-episode:hover .oss-episode-restart {
+  opacity: 1;
+}
+.oss-episode-restart:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.oss-episode-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.oss-episode-progress-fill {
+  height: 100%;
+  background: var(--oss-accent);
+  transition: width 0.3s ease;
+}
+.oss-episode-progress-fill.complete {
+  background: #22c55e;
+}
+@media (hover: none) {
+  .oss-episode-restart {
+    opacity: 1;
+  }
 }
 
 /* ── Progress bar (episode) ── */
@@ -1520,18 +1614,9 @@ body.modal-open #root {
   .modal-footer { flex-wrap: wrap; }
   .oss-modal-banner { height: 180px !important; }
 
-  /* Episode thumbnails */
-  .oss-episode-thumb { width: 80px; height: 45px; }
-
-  /* Episode status badges: stacked on mobile */
-  .oss-episode-status {
-    position: static !important;
-    transform: none !important;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-  }
+  /* Episode rows on mobile: keep meta visible */
+  .oss-episode-main { gap: 10px; padding: 9px 12px; }
+  .oss-episode-meta { font-size: 0.7rem; }
 
 
   /* History entries */

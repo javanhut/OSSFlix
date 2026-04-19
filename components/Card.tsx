@@ -1090,137 +1090,21 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     hasSeasons && selectedSeason != null ? seasonMap.get(selectedSeason) || [] : information.videos;
 
                   return (
-                    <div style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}>
+                    <div
+                      className="oss-episode-list"
+                      style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}
+                    >
                       {displayVideos.map((v) => {
                         const prog = progressMap[v];
-                        const pct = prog && prog.duration > 0 ? (prog.current_time / prog.duration) * 100 : 0;
-                        const isInProgress =
-                          prog &&
-                          prog.current_time > 0 &&
-                          (prog.duration === 0 || prog.current_time < prog.duration - 5);
-                        const isCompleted = prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
-
-                        const formatTime = (secs: number) => {
-                          const m = Math.floor(secs / 60);
-                          const s = Math.floor(secs % 60);
-                          return `${m}:${s.toString().padStart(2, "0")}`;
-                        };
-
+                        const isCompleted = !!prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
                         return (
-                          <div
+                          <Episode
                             key={v}
-                            style={{
-                              borderRadius: "var(--oss-radius)",
-                              overflow: "hidden",
-                              marginBottom: "4px",
-                              border: isInProgress ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent",
-                              background: isInProgress ? "rgba(59,130,246,0.05)" : "transparent",
-                              transition: "all 0.2s ease",
-                            }}
-                          >
-                            <div style={{ position: "relative" }}>
-                              <Episode
-                                filename={v.split("/").pop()!}
-                                thumbnail={information.bannerImage}
-                                onClick={() => handlePlay(v, !!isCompleted)}
-                              />
-                              {/* Status badges & actions */}
-                              <div
-                                className="oss-episode-status"
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  right: "40px",
-                                  transform: "translateY(-50%)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                }}
-                              >
-                                {isInProgress && (
-                                  <span
-                                    style={{
-                                      fontSize: "0.7rem",
-                                      fontWeight: 600,
-                                      color: "var(--oss-accent)",
-                                      background: "rgba(59,130,246,0.15)",
-                                      padding: "2px 8px",
-                                      borderRadius: "4px",
-                                    }}
-                                  >
-                                    {formatTime(prog!.current_time)} / {formatTime(prog!.duration)}
-                                  </span>
-                                )}
-                                {isCompleted && (
-                                  <span
-                                    style={{
-                                      fontSize: "0.7rem",
-                                      fontWeight: 600,
-                                      color: "#22c55e",
-                                      background: "rgba(34,197,94,0.15)",
-                                      padding: "2px 8px",
-                                      borderRadius: "4px",
-                                    }}
-                                  >
-                                    &#10003; Watched
-                                  </span>
-                                )}
-                                {isInProgress && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePlay(v, true);
-                                    }}
-                                    style={{
-                                      fontSize: "0.7rem",
-                                      fontWeight: 600,
-                                      color: "var(--oss-text-muted)",
-                                      background: "rgba(255,255,255,0.08)",
-                                      padding: "2px 8px",
-                                      borderRadius: "4px",
-                                      border: "none",
-                                      cursor: "pointer",
-                                      transition: "all 0.15s ease",
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.color = "#fff";
-                                      e.currentTarget.style.background = "rgba(255,255,255,0.15)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.color = "var(--oss-text-muted)";
-                                      e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-                                    }}
-                                    title="Play from beginning"
-                                  >
-                                    &#8634; Restart
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            {/* Progress bar */}
-                            {pct > 0 && (
-                              <div
-                                style={{
-                                  height: "4px",
-                                  background: "rgba(255,255,255,0.08)",
-                                  borderRadius: "0 0 4px 4px",
-                                  overflow: "hidden",
-                                  margin: "0 12px 8px",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    height: "100%",
-                                    width: `${Math.min(pct, 100)}%`,
-                                    background: isCompleted ? "#22c55e" : "var(--oss-accent)",
-                                    borderRadius: "2px",
-                                    transition: "width 0.3s ease",
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
+                            filename={v.split("/").pop()!}
+                            progress={prog || null}
+                            onPlay={() => handlePlay(v, !!isCompleted)}
+                            onRestart={() => handlePlay(v, true)}
+                          />
                         );
                       })}
                     </div>
