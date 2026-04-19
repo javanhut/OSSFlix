@@ -512,10 +512,10 @@ html, body, #root {
   color: var(--oss-text);
 }
 
-/* ── Title card row (horizontal scroll) ── */
+/* ── Title card row ── */
+/* On touch devices the row scrolls natively; on hover devices it clips and the
+   inner .oss-row-track is GPU-translated for a fully composited glide. */
 .oss-row {
-  display: flex;
-  gap: 14px;
   overflow-x: auto;
   overflow-y: visible;
   padding: 10px 0 20px;
@@ -524,6 +524,65 @@ html, body, #root {
   scrollbar-width: none;
 }
 .oss-row::-webkit-scrollbar { display: none; }
+.oss-row-track {
+  display: flex;
+  gap: 14px;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+@media (hover: hover) {
+  .oss-row { overflow: hidden; }
+}
+
+/* ── Row carousel chevrons ── */
+.oss-row-wrapper {
+  position: relative;
+  /* Cap the row to ~6 cards (200px × 6 + 14px × 5 gaps), left-aligned in the section */
+  max-width: 1270px;
+}
+.oss-row-chevron {
+  position: absolute;
+  top: 10px;
+  bottom: 20px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  padding: 0;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+.oss-row-chevron.left {
+  left: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.75), rgba(0,0,0,0));
+}
+.oss-row-chevron.right {
+  right: 0;
+  background: linear-gradient(to left, rgba(0,0,0,0.75), rgba(0,0,0,0));
+}
+.oss-row-chevron.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.oss-row-chevron:hover { background-color: rgba(0,0,0,0.35); }
+.oss-row-chevron:focus-visible {
+  outline: 2px solid var(--oss-accent, #fff);
+  outline-offset: -4px;
+}
+.oss-row-chevron svg {
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.7));
+  transition: transform 0.2s ease;
+}
+.oss-row-chevron:hover svg { transform: scale(1.25); }
+
+@media (hover: none) {
+  .oss-row-chevron { display: none; }
+}
 
 /* ── Title card ── */
 .oss-card {
@@ -534,7 +593,6 @@ html, body, #root {
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
-  will-change: transform;
 }
 .oss-card:hover {
   transform: scale(1.08);
@@ -1150,10 +1208,14 @@ body.modal-open #root {
   .skeleton-card-img { height: 250px; }
   .oss-hero { height: 60vh; }
   .oss-hero-title { font-size: 2.2rem; }
+  /* 6 cards × 170px + 5 × 14px gap */
+  .oss-row-wrapper { max-width: 1090px; }
 }
 
 /* ── Responsive: 768px (small tablets / large phones) ── */
 @media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  /* Mobile: drop the desktop 5-card cap, let row span full width with native swipe */
+  .oss-row-wrapper { max-width: 100%; }
   .oss-navbar { padding: 0 0.75rem; height: 56px; }
   .oss-page { padding-top: 56px; }
 
@@ -1452,7 +1514,7 @@ body.modal-open #root {
   .oss-hero { height: 40vh; min-height: 280px; }
   .oss-hero-title { font-size: 1.4rem; }
   .oss-section-title { font-size: 1.1rem; }
-  .oss-row { gap: 10px; }
+  .oss-row-track { gap: 10px; }
   .oss-login-logo { font-size: 2rem !important; }
 }
 

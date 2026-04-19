@@ -19,6 +19,7 @@ export interface GlobalSettings {
   tvshows_directory: string | null;
   tmdb_api_key: string | null;
   kaidadb_url: string | null;
+  kaidadb_password: string | null;
   kaidadb_movies_prefix: string | null;
   kaidadb_tvshows_prefix: string | null;
   kaidadb_root_prefix: string | null;
@@ -199,7 +200,7 @@ export function updateProfile(
 export function getGlobalSettings(): GlobalSettings {
   return db
     .prepare(
-      "SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from FROM global_settings WHERE id = 1",
+      "SELECT movies_directory, tvshows_directory, tmdb_api_key, kaidadb_url, kaidadb_password, kaidadb_movies_prefix, kaidadb_tvshows_prefix, kaidadb_root_prefix, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from FROM global_settings WHERE id = 1",
     )
     .get() as GlobalSettings;
 }
@@ -226,6 +227,10 @@ export function updateGlobalSettings(updates: {
   if ((updates as any).kaidadb_url !== undefined) {
     fields.push("kaidadb_url = ?");
     values.push((updates as any).kaidadb_url || null);
+  }
+  if ((updates as any).kaidadb_password !== undefined) {
+    fields.push("kaidadb_password = ?");
+    values.push((updates as any).kaidadb_password || null);
   }
   if ((updates as any).kaidadb_movies_prefix !== undefined) {
     fields.push("kaidadb_movies_prefix = ?");

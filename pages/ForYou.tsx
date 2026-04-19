@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Card from "../components/Card";
+import { RowCarousel } from "../components/RowCarousel";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type Recommendation = {
@@ -105,7 +106,7 @@ export default function ForYou() {
       {[...grouped.entries()].map(([groupLabel, groupRecs]) => (
         <section key={groupLabel} className="oss-section">
           <h2 className="oss-section-title">{groupLabel}</h2>
-          <div className="oss-row" role="list">
+          <RowCarousel role="list">
             {groupRecs.map((rec) => (
               <div
                 key={rec.pathToDir}
@@ -115,7 +116,7 @@ export default function ForYou() {
                 onClick={() => setSelectedDir(rec.pathToDir)}
               >
                 {rec.imagePath ? (
-                  <img src={rec.imagePath} alt={rec.name} className="oss-card-img" loading="lazy" />
+                  <img src={rec.imagePath} alt={rec.name} className="oss-card-img" loading="lazy" decoding="async" />
                 ) : (
                   <div
                     className="oss-card-img"
@@ -136,7 +137,7 @@ export default function ForYou() {
                 </div>
               </div>
             ))}
-          </div>
+          </RowCarousel>
         </section>
       ))}
 

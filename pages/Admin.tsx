@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { MigratorTab, AddMediaTab, css } from "../components/ProfileSettings";
+import { PasswordInput } from "../components/PasswordInput";
 
 type AdminTab = "media" | "addmedia" | "migrator" | "accounts";
 
@@ -32,6 +33,7 @@ export default function Admin() {
   const [tmdbTesting, setTmdbTesting] = useState(false);
   const [tmdbTestResult, setTmdbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [kaidadbUrl, setKaidadbUrl] = useState("");
+  const [kaidadbPassword, setKaidadbPassword] = useState("");
   const [kaidadbTesting, setKaidadbTesting] = useState(false);
   const [kaidadbTestResult, setKaidadbTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [kaidadbRootPrefix, setKaidadbRootPrefix] = useState("");
@@ -77,6 +79,7 @@ export default function Admin() {
         setTvshowsDir(data.tvshows_directory ?? "");
         setTmdbKey(data.tmdb_api_key ?? "");
         setKaidadbUrl(data.kaidadb_url ?? "");
+        setKaidadbPassword(data.kaidadb_password ?? "");
         setKaidadbRootPrefix(data.kaidadb_root_prefix ?? "");
         setKaidadbMoviesPrefix(data.kaidadb_movies_prefix ?? "");
         setKaidadbTvshowsPrefix(data.kaidadb_tvshows_prefix ?? "");
@@ -171,6 +174,7 @@ export default function Admin() {
         tvshows_directory: tvshowsDir || null,
         tmdb_api_key: tmdbKey || null,
         kaidadb_url: kaidadbUrl || null,
+        kaidadb_password: kaidadbUrl.trim() ? kaidadbPassword || null : null,
         kaidadb_root_prefix: kaidadbUrl.trim() ? kaidadbRootPrefix : null,
         kaidadb_movies_prefix: kaidadbMoviesPrefix || null,
         kaidadb_tvshows_prefix: kaidadbTvshowsPrefix || null,
@@ -306,8 +310,7 @@ export default function Admin() {
             >
               Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               placeholder={setup ? "Admin password" : "Create admin password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -316,9 +319,13 @@ export default function Admin() {
                   setup ? handleLogin() : handleSetup();
                 }
               }}
-              style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(245,158,11,0.5)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+              inputStyle={inputStyle}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "rgba(245,158,11,0.5)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+              }}
             />
           </div>
 
@@ -335,17 +342,20 @@ export default function Admin() {
               >
                 Confirm Password
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 placeholder="Confirm password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSetup();
                 }}
-                style={inputStyle}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(245,158,11,0.5)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                inputStyle={inputStyle}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(245,158,11,0.5)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                }}
               />
             </div>
           )}
@@ -542,15 +552,15 @@ export default function Admin() {
                 subtitle="Optional. Enables auto-fetching metadata from TMDB."
               />
               <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-                <input
-                  type="password"
+                <PasswordInput
                   value={tmdbKey}
                   onChange={(e) => {
                     setTmdbKey(e.target.value);
                     setTmdbTestResult(null);
                   }}
                   placeholder="Enter your TMDB API key"
-                  style={{ ...css.input, flex: 1, fontFamily: "monospace", fontSize: "0.82rem" }}
+                  style={{ flex: 1 }}
+                  inputStyle={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
                 />
                 <button
                   type="button"
@@ -618,7 +628,10 @@ export default function Admin() {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
                       credentials: "same-origin",
-                      body: JSON.stringify({ kaidadb_url: kaidadbUrl || null }),
+                      body: JSON.stringify({
+                        kaidadb_url: kaidadbUrl || null,
+                        kaidadb_password: kaidadbPassword || null,
+                      }),
                     })
                       .then(() => fetch("/api/kaidadb/health", { credentials: "same-origin" }))
                       .then((r) => r.json())
@@ -650,6 +663,28 @@ export default function Admin() {
               )}
               {kaidadbUrl.trim() && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
+                  <div>
+                    <label
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "rgba(255,255,255,0.4)",
+                        marginBottom: "2px",
+                        display: "block",
+                      }}
+                    >
+                      Server Password
+                    </label>
+                    <PasswordInput
+                      value={kaidadbPassword}
+                      onChange={(e) => {
+                        setKaidadbPassword(e.target.value);
+                        setKaidadbTestResult(null);
+                      }}
+                      placeholder="X-Server-Pass (only needed for remote access)"
+                      autoComplete="new-password"
+                      inputStyle={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
+                    />
+                  </div>
                   <div>
                     <label
                       style={{
@@ -798,12 +833,11 @@ export default function Admin() {
                   >
                     Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={smtpPass}
                     onChange={(e) => setSmtpPass(e.target.value)}
                     placeholder="app password"
-                    style={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
+                    inputStyle={{ ...css.input, fontFamily: "monospace", fontSize: "0.82rem" }}
                   />
                 </div>
               </div>

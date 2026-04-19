@@ -8,6 +8,7 @@ import {
   SUBTITLE_EXTS,
   parseSubtitleFilename,
   resolveSeasonLogos,
+  autoDiscoverSeasonBanners,
   type ScannedMedia,
   type EpisodeTimingEntry,
 } from "./mediascanner";
@@ -110,7 +111,9 @@ export async function scanKaidaDBPrefix(prefix: string, servePrefix: string): Pr
   const groups = groupByTitleDir(items, prefix);
   const results: ScannedMedia[] = [];
   const normalizedPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
-  console.log(`[KaidaDB] prefix scan "${prefix}" → ${items.length} items, ${groups.size} title dirs: ${[...groups.keys()].slice(0, 10).join(", ")}${groups.size > 10 ? ", ..." : ""}`);
+  console.log(
+    `[KaidaDB] prefix scan "${prefix}" → ${items.length} items, ${groups.size} title dirs: ${[...groups.keys()].slice(0, 10).join(", ")}${groups.size > 10 ? ", ..." : ""}`,
+  );
 
   for (const [titleDir, titleItems] of groups) {
     let metadataKey: string | null = null;
@@ -201,8 +204,16 @@ export async function scanKaidaDBPrefix(prefix: string, servePrefix: string): Pr
       imageByRel.set(rel, img);
       imageByBasename.set(rel.split("/").pop()!, img);
     }
-    const seasons = resolveSeasonLogos((data as { seasons?: SeasonMeta[] }).seasons, (logoRel) => {
+    const seasonsResolved = resolveSeasonLogos((data as { seasons?: SeasonMeta[] }).seasons, (logoRel) => {
       const img = imageByRel.get(logoRel) ?? imageByBasename.get(logoRel);
+      if (!img) return null;
+      const filename = fallbackFlatten(relativeInsideTitle(img.key, prefix, titleDir));
+      const logoServe = `${servePath}/${filename}`;
+      setKaidadbMapping(logoServe, img.key, img.content_type, img.total_size, img.checksum);
+      return logoServe;
+    });
+    const seasons = autoDiscoverSeasonBanners(seasonsResolved, [...imageByBasename.keys()], (basename) => {
+      const img = imageByBasename.get(basename);
       if (!img) return null;
       const filename = fallbackFlatten(relativeInsideTitle(img.key, prefix, titleDir));
       const logoServe = `${servePath}/${filename}`;
@@ -279,7 +290,9 @@ export async function scanKaidaDBRoot(
   for (const [category, categoryItems] of categoryGroups) {
     const categoryPrefix = `${normalizedRoot}${category}`;
     const titleGroups = groupByTitleDir(categoryItems, categoryPrefix);
-    console.log(`[KaidaDB]   category "${category}" → ${titleGroups.size} title dirs: ${[...titleGroups.keys()].slice(0, 10).join(", ")}${titleGroups.size > 10 ? ", ..." : ""}`);
+    console.log(
+      `[KaidaDB]   category "${category}" → ${titleGroups.size} title dirs: ${[...titleGroups.keys()].slice(0, 10).join(", ")}${titleGroups.size > 10 ? ", ..." : ""}`,
+    );
 
     for (const [titleDir, titleItems] of titleGroups) {
       // Find metadata.toml to determine type
@@ -302,7 +315,9 @@ export async function scanKaidaDBRoot(
 
       const data = parseTomlString(metadataContent);
       if (!data) {
-        console.log(`[KaidaDB]     "${titleDir}" skipped: TOML parse failed or unrecognized type. File: ${metadataItem.key}`);
+        console.log(
+          `[KaidaDB]     "${titleDir}" skipped: TOML parse failed or unrecognized type. File: ${metadataItem.key}`,
+        );
         continue;
       }
 
@@ -403,8 +418,17 @@ async function scanSingleRemoteTitle(
     imageByRel.set(rel, img);
     imageByBasename.set(rel.split("/").pop()!, img);
   }
-  const seasons = resolveSeasonLogos((data as { seasons?: SeasonMeta[] }).seasons, (logoRel) => {
+  const seasonsResolved = resolveSeasonLogos((data as { seasons?: SeasonMeta[] }).seasons, (logoRel) => {
     const img = imageByRel.get(logoRel) ?? imageByBasename.get(logoRel);
+    if (!img) return null;
+    const rel = img.key.slice(titlePrefixSlash.length);
+    const filename = fallbackFlatten(rel);
+    const logoServe = `${servePath}/${filename}`;
+    setKaidadbMapping(logoServe, img.key, img.content_type, img.total_size, img.checksum);
+    return logoServe;
+  });
+  const seasons = autoDiscoverSeasonBanners(seasonsResolved, [...imageByBasename.keys()], (basename) => {
+    const img = imageByBasename.get(basename);
     if (!img) return null;
     const rel = img.key.slice(titlePrefixSlash.length);
     const filename = fallbackFlatten(rel);

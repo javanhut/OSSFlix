@@ -181,6 +181,11 @@ try {
 } catch {
   // column already exists
 }
+try {
+  db.run("ALTER TABLE global_settings ADD COLUMN kaidadb_password TEXT");
+} catch {
+  // column already exists
+}
 
 db.run(`
   CREATE TABLE IF NOT EXISTS kaidadb_media (

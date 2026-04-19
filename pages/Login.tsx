@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useProfile, type PublicProfile } from "../context/ProfileContext";
 import { useNavigate } from "react-router-dom";
+import { PasswordInput } from "../components/PasswordInput";
 
 export default function Login() {
   const { login, register, setPassword } = useProfile();
@@ -424,14 +425,17 @@ export default function Login() {
                   >
                     New Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder="New password (min 4 characters)"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                    inputStyle={inputStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    }}
                   />
                 </div>
                 <div style={{ marginBottom: "16px" }}>
@@ -446,17 +450,20 @@ export default function Login() {
                   >
                     Confirm Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder="Confirm new password"
                     value={confirmNewPassword}
                     onChange={(e) => setConfirmNewPassword(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleResetPassword();
                     }}
-                    style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                    inputStyle={inputStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    }}
                   />
                 </div>
                 {error && <p style={{ margin: "0 0 12px", color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>}
@@ -571,14 +578,17 @@ export default function Login() {
                   >
                     New Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder="Set a password (min 4 characters)"
                     value={password}
                     onChange={(e) => setPasswordVal(e.target.value)}
-                    style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                    inputStyle={inputStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    }}
                   />
                 </div>
                 <div style={{ marginBottom: "16px" }}>
@@ -593,17 +603,20 @@ export default function Login() {
                   >
                     Confirm Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder="Confirm password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleSetPassword();
                     }}
-                    style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                    inputStyle={inputStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    }}
                   />
                 </div>
               </>
@@ -659,17 +672,20 @@ export default function Login() {
                 >
                   Password
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPasswordVal(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleSignIn();
                   }}
-                  style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                  inputStyle={inputStyle}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
                 />
               </div>
               <button
@@ -1132,14 +1148,17 @@ export default function Login() {
                 >
                   Password
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   placeholder="Create a password"
                   value={password}
                   onChange={(e) => setPasswordVal(e.target.value)}
-                  style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                  inputStyle={inputStyle}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
                 />
               </div>
               <div style={{ marginBottom: "16px" }}>
@@ -1154,17 +1173,20 @@ export default function Login() {
                 >
                   Confirm Password
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   placeholder="Confirm your password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleRegister();
                   }}
-                  style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
+                  inputStyle={inputStyle}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
                 />
               </div>
               {error && <p style={{ margin: "0 0 12px", color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>}

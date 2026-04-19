@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Card } from "./Card";
+import { RowCarousel } from "./RowCarousel";
 
 type TitleInfo = {
   name: string;
@@ -83,7 +84,7 @@ function TitleCard({
       onMouseLeave={() => setHovered(false)}
       onClick={onClick}
     >
-      <img src={title.imagePath} alt={title.name} className="oss-card-img" loading="lazy" />
+      <img src={title.imagePath} alt={title.name} className="oss-card-img" loading="lazy" decoding="async" />
       <div className="oss-card-overlay">
         <p>{hovered ? (description ?? "Loading...") : ""}</p>
       </div>
@@ -125,7 +126,7 @@ export function SelectorMenu({ rows, isContinueWatching, onWatchlistChange }: Se
             {row.genre}
             {isContinueWatching && <span className="oss-resume-badge">Resume</span>}
           </h2>
-          <div className="oss-row" role="list">
+          <RowCarousel role="list">
             {row.titles.map((title) => (
               <TitleCard
                 key={title.pathToDir}
@@ -135,7 +136,7 @@ export function SelectorMenu({ rows, isContinueWatching, onWatchlistChange }: Se
                 onWatchlistChange={onWatchlistChange}
               />
             ))}
-          </div>
+          </RowCarousel>
         </section>
       ))}
       <Card

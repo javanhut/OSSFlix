@@ -6,11 +6,19 @@ function getBaseUrl(): string | null {
   return settings.kaidadb_url || null;
 }
 
+export function kaidadbAuthHeaders(): Record<string, string> {
+  const password = getGlobalSettings().kaidadb_password;
+  return password ? { "X-Server-Pass": password } : {};
+}
+
 export async function kaidadbHealthCheck(): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return { ok: false, error: "KaidaDB URL not configured" };
   try {
-    const res = await fetch(`${baseUrl}/v1/health`);
+    const res = await fetch(`${baseUrl}/v1/health`, { headers: kaidadbAuthHeaders() });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: `Auth failed (HTTP ${res.status})` };
+    }
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     return { ok: true };
   } catch (e: any) {
@@ -21,7 +29,7 @@ export async function kaidadbHealthCheck(): Promise<{ ok: boolean; error?: strin
 export async function kaidadbStream(key: string, rangeHeader?: string | null): Promise<Response> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...kaidadbAuthHeaders() };
   if (rangeHeader) headers.Range = rangeHeader;
   return fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers });
 }
@@ -40,7 +48,7 @@ export async function kaidadbUpload(
 ): Promise<{ key: string; total_size: number; checksum: string }> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
-  const headers: Record<string, string> = { "Content-Type": contentType };
+  const headers: Record<string, string> = { "Content-Type": contentType, ...kaidadbAuthHeaders() };
   if (metadata) {
     for (const [k, v] of Object.entries(metadata)) {
       headers[`X-KaidaDB-Meta-${k}`] = v;
@@ -68,12 +76,13 @@ export interface KaidaDBListItem {
 export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
+  const authHeaders = kaidadbAuthHeaders();
   const allItems: KaidaDBListItem[] = [];
   let cursor: string | null = null;
   do {
     const params = new URLSearchParams({ prefix, limit: "200" });
     if (cursor) params.set("cursor", cursor);
-    const res = await fetch(`${baseUrl}/v1/media?${params}`);
+    const res = await fetch(`${baseUrl}/v1/media?${params}`, { headers: authHeaders });
     if (!res.ok) throw new Error(`KaidaDB list failed: ${res.status}`);
     const data = (await res.json()) as { items: KaidaDBListItem[]; next_cursor: string | null };
     allItems.push(...data.items);
@@ -85,7 +94,7 @@ export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
 export async function kaidadbFetchText(key: string): Promise<string> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
-  const res = await fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`);
+  const res = await fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers: kaidadbAuthHeaders() });
   if (!res.ok) throw new Error(`KaidaDB fetch failed for ${key}: ${res.status}`);
   return res.text();
 }

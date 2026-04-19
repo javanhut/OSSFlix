@@ -114,6 +114,41 @@ export function resolveSeasonLogos(
   });
 }
 
+export const SEASON_IMAGE_PATTERN = /^(?:s|season[\s_-]?)0*(\d+)\.[a-z0-9]+$/i;
+
+/**
+ * Auto-discover per-season banner images from a list of basenames using filename
+ * patterns like `s1.jpg`, `s01.png`, `season1.jpg`, `season_2.png`. TOML-supplied
+ * entries take precedence — a discovered banner only fills in when `logo` is empty.
+ * `resolveLogo` is called with each matched basename and returns the serve URL
+ * (or null to skip), letting callers register kaidadb mappings as a side effect.
+ */
+export function autoDiscoverSeasonBanners(
+  seasons: SeasonMeta[] | undefined,
+  imageBasenames: string[],
+  resolveLogo: (basename: string) => string | null,
+): SeasonMeta[] | undefined {
+  const bySeason = new Map<number, SeasonMeta>();
+  for (const s of seasons ?? []) bySeason.set(s.season, { ...s });
+
+  const seenSeasons = new Set<number>();
+  for (const file of imageBasenames) {
+    const m = file.match(SEASON_IMAGE_PATTERN);
+    if (!m) continue;
+    const seasonNum = Number(m[1]);
+    if (!Number.isFinite(seasonNum) || seenSeasons.has(seasonNum)) continue;
+    seenSeasons.add(seasonNum);
+    const existing = bySeason.get(seasonNum);
+    if (existing?.logo) continue;
+    const resolved = resolveLogo(file);
+    if (!resolved) continue;
+    if (existing) existing.logo = resolved;
+    else bySeason.set(seasonNum, { season: seasonNum, logo: resolved });
+  }
+  if (bySeason.size === 0) return seasons;
+  return Array.from(bySeason.values()).sort((a, b) => a.season - b.season);
+}
+
 async function scanMediaDir(dirPath: string, servePath: string): Promise<ScannedMedia | null> {
   const entries = await readdir(dirPath, { withFileTypes: true });
 
@@ -156,9 +191,10 @@ async function scanMediaDir(dirPath: string, servePath: string): Promise<Scanned
 
   const seasonsRaw = (data as { seasons?: SeasonMeta[] }).seasons;
   const imageSet = new Set(imageFiles);
-  const seasons = resolveSeasonLogos(seasonsRaw, (logoRel) => {
+  const seasonsResolved = resolveSeasonLogos(seasonsRaw, (logoRel) => {
     return imageSet.has(logoRel) ? `${servePath}/${logoRel}` : null;
   });
+  const seasons = autoDiscoverSeasonBanners(seasonsResolved, imageFiles, (file) => `${servePath}/${file}`);
 
   return {
     ...data,

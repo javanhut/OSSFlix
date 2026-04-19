@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProfile, type PublicProfile } from "../context/ProfileContext";
+import { PasswordInput } from "../components/PasswordInput";
 
 export default function ProfileSelect() {
   const { login, setPassword, logout, profile: currentProfile } = useProfile();
@@ -419,15 +420,14 @@ export default function ProfileSelect() {
                 onChange={(e) => setNewName(e.target.value)}
                 style={inputStyle}
               />
-              <input
-                type="password"
+              <PasswordInput
                 placeholder="Password (min 4 characters)"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleCreate();
                 }}
-                style={inputStyle}
+                inputStyle={inputStyle}
               />
               {error && <p style={{ margin: 0, color: "#ef4444", fontSize: "0.8rem" }}>{error}</p>}
               <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
@@ -522,22 +522,22 @@ export default function ProfileSelect() {
                       <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.85rem", margin: "0 0 14px" }}>
                         Identity verified. Set a password for this profile.
                       </p>
-                      <input
-                        type="password"
+                      <PasswordInput
                         placeholder="New password (min 4 characters)"
                         value={password}
                         onChange={(e) => setPasswordVal(e.target.value)}
-                        style={{ ...inputStyle, marginBottom: "10px" }}
+                        style={{ marginBottom: "10px" }}
+                        inputStyle={inputStyle}
                       />
-                      <input
-                        type="password"
+                      <PasswordInput
                         placeholder="Confirm password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") handleSetPw();
                         }}
-                        style={{ ...inputStyle, marginBottom: "14px" }}
+                        style={{ marginBottom: "14px" }}
+                        inputStyle={inputStyle}
                       />
                     </>
                   ) : (
@@ -558,15 +558,15 @@ export default function ProfileSelect() {
                     </>
                   )
                 ) : (
-                  <input
-                    type="password"
+                  <PasswordInput
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPasswordVal(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleLogin();
                     }}
-                    style={{ ...inputStyle, marginBottom: "14px" }}
+                    style={{ marginBottom: "14px" }}
+                    inputStyle={inputStyle}
                   />
                 )}
 
