@@ -27,7 +27,11 @@ RUN cd /temp/dev && bun install --frozen-lockfile
 FROM base AS release
 
 # ffmpeg is needed for the /api/stream transcoding endpoint
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# upgrade pulls security updates from the base image's apt sources (e.g. CVE-2026-28390 in libssl3t64)
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
 
 # Copy dependencies from install stage
 COPY --from=install /temp/dev/node_modules node_modules
