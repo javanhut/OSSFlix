@@ -1015,7 +1015,9 @@ Bun.serve({
           if (isWebSafe) {
             try {
               const rangeHeader = req.headers.get("range");
-              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+              // Forward the client's abort signal so closing the tab or
+              // seeking tears down the upstream KaidaDB fetch immediately.
+              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader, req.signal);
               if (kaidaRes.ok || kaidaRes.status === 206) {
                 const headers: Record<string, string> = {
                   "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",
@@ -1030,7 +1032,7 @@ Bun.serve({
                 return new Response(kaidaRes.body, { status: kaidaRes.status, headers });
               }
               if (kaidaRes.status === 416 && rangeHeader) {
-                const retryRes = await kaidadbStream(kaidadbKey, null);
+                const retryRes = await kaidadbStream(kaidadbKey, null, req.signal);
                 if (retryRes.ok) {
                   const headers: Record<string, string> = {
                     "Content-Type": retryRes.headers.get("content-type") || "video/mp4",
@@ -1448,7 +1450,7 @@ Bun.serve({
           }
           const tmpPath = join(CACHE_DIR, `probe_${createHash("md5").update(kaidadbKey).digest("hex")}.tmp`);
           try {
-            const partial = await kaidadbStream(kaidadbKey, "bytes=0-2097151");
+            const partial = await kaidadbStream(kaidadbKey, "bytes=0-2097151", AbortSignal.timeout(30_000));
             if (!partial.ok && partial.status !== 206) {
               return Response.json({ error: "KaidaDB probe unavailable" }, { status: 502 });
             }
@@ -2713,7 +2715,7 @@ Bun.serve({
             const rangeHeader = req.headers.get("range");
             // For non-range requests, include total size from DB so the browser knows the file size
             const kStatus = getKaidadbStatus(servePath);
-            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+            const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader, req.signal);
             if (!kaidaRes.ok && kaidaRes.status !== 206) {
               return new Response("Not found", { status: 404 });
             }
@@ -2756,7 +2758,7 @@ Bun.serve({
           if (kaidadbKey) {
             try {
               const rangeHeader = req.headers.get("range");
-              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader);
+              const kaidaRes = await kaidadbStream(kaidadbKey, rangeHeader, req.signal);
               if (kaidaRes.ok || kaidaRes.status === 206) {
                 const headers: Record<string, string> = {
                   "Content-Type": kaidaRes.headers.get("content-type") || "video/mp4",

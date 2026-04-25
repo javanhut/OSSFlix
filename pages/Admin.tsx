@@ -635,13 +635,22 @@ export default function Admin() {
                     })
                       .then(() => fetch("/api/kaidadb/health", { credentials: "same-origin" }))
                       .then((r) => r.json())
-                      .then((d) =>
-                        setKaidadbTestResult(
-                          d.ok !== false
-                            ? { ok: true, message: "Connected!" }
-                            : { ok: false, message: d.error || "Failed" },
-                        ),
-                      )
+                      .then((d) => {
+                        if (d.ok !== false) {
+                          setKaidadbTestResult({ ok: true, message: "Connected!" });
+                          return;
+                        }
+                        const trimmedUrl = kaidadbUrl.trim();
+                        const msg =
+                          d.error_kind === "timeout"
+                            ? `No response from ${trimmedUrl} within 3s. Is the service up?`
+                            : d.error_kind === "unreachable"
+                              ? `Cannot reach ${trimmedUrl}. Check the service is running (journalctl --user -u kaidadb -n 50).`
+                              : d.error_kind === "http"
+                                ? `${trimmedUrl} responded with ${d.error}.`
+                                : d.error || "Failed";
+                        setKaidadbTestResult({ ok: false, message: msg });
+                      })
                       .catch(() => setKaidadbTestResult({ ok: false, message: "Connection failed" }))
                       .finally(() => setKaidadbTesting(false));
                   }}
@@ -661,6 +670,16 @@ export default function Admin() {
                   {kaidadbTestResult.message}
                 </p>
               )}
+              <p
+                style={{
+                  marginTop: "-8px",
+                  marginBottom: "12px",
+                  fontSize: "0.72rem",
+                  color: "rgba(255,255,255,0.4)",
+                }}
+              >
+                Running OSSFlix in Docker? Use <code style={{ fontFamily: "monospace" }}>http://host.docker.internal:8080</code> instead of <code style={{ fontFamily: "monospace" }}>localhost</code>.
+              </p>
               {kaidadbUrl.trim() && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
                   <div>

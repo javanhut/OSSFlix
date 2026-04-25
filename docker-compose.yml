@@ -11,6 +11,11 @@ services:
     environment:
       - OSSFLIX_DATA_DIR=/usr/src/app/data
       - NODE_ENV=production
+    extra_hosts:
+      # Lets `host.docker.internal` resolve to the Docker host so OSSFlix
+      # can reach a KaidaDB running on the host at :8080. Set the Admin
+      # "KaidaDB URL" to http://host.docker.internal:8080 in that case.
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
