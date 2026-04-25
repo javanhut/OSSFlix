@@ -6,18 +6,15 @@ function getBaseUrl(): string | null {
   return settings.kaidadb_url || null;
 }
 
-<<<<<<< HEAD
 export function kaidadbAuthHeaders(): Record<string, string> {
   const password = getGlobalSettings().kaidadb_password;
   return password ? { "X-Server-Pass": password } : {};
 }
 
-export async function kaidadbHealthCheck(): Promise<{ ok: boolean; error?: string }> {
-=======
 // Classify a fetch() failure so callers can surface a useful message.
 // Bun's "Unable to connect. Is the computer able to access the url?" ends up
 // as a TypeError here; an AbortSignal.timeout firing shows up as AbortError.
-type ErrorKind = "timeout" | "unreachable" | "not_configured" | "http" | "other";
+type ErrorKind = "timeout" | "unreachable" | "not_configured" | "auth" | "http" | "other";
 function classifyError(e: any): ErrorKind {
   if (e?.name === "AbortError" || e?.name === "TimeoutError") return "timeout";
   if (e?.name === "TypeError") return "unreachable";
@@ -25,20 +22,17 @@ function classifyError(e: any): ErrorKind {
 }
 
 export async function kaidadbHealthCheck(): Promise<{ ok: boolean; error?: string; error_kind?: ErrorKind }> {
->>>>>>> eeed6b4 (feat: fixed the website to be more robutst)
   const baseUrl = getBaseUrl();
   if (!baseUrl) return { ok: false, error: "KaidaDB URL not configured", error_kind: "not_configured" };
   try {
-<<<<<<< HEAD
-    const res = await fetch(`${baseUrl}/v1/health`, { headers: kaidadbAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/health`, {
+      headers: kaidadbAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: `Auth failed (HTTP ${res.status})` };
+      return { ok: false, error: `Auth failed (HTTP ${res.status})`, error_kind: "auth" };
     }
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-=======
-    const res = await fetch(`${baseUrl}/v1/health`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, error_kind: "http" };
->>>>>>> eeed6b4 (feat: fixed the website to be more robutst)
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e.message, error_kind: classifyError(e) };
@@ -52,15 +46,9 @@ export async function kaidadbStream(
 ): Promise<Response> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
-<<<<<<< HEAD
   const headers: Record<string, string> = { ...kaidadbAuthHeaders() };
   if (rangeHeader) headers.Range = rangeHeader;
-  return fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers });
-=======
-  const headers: Record<string, string> = {};
-  if (rangeHeader) headers["Range"] = rangeHeader;
   return fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers, signal });
->>>>>>> eeed6b4 (feat: fixed the website to be more robutst)
 }
 
 export function kaidadbMediaUrl(key: string): string | null {
@@ -113,11 +101,10 @@ export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
   do {
     const params = new URLSearchParams({ prefix, limit: "200" });
     if (cursor) params.set("cursor", cursor);
-<<<<<<< HEAD
-    const res = await fetch(`${baseUrl}/v1/media?${params}`, { headers: authHeaders });
-=======
-    const res = await fetch(`${baseUrl}/v1/media?${params}`, { signal: AbortSignal.timeout(10_000) });
->>>>>>> eeed6b4 (feat: fixed the website to be more robutst)
+    const res = await fetch(`${baseUrl}/v1/media?${params}`, {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) throw new Error(`KaidaDB list failed: ${res.status}`);
     const data = (await res.json()) as { items: KaidaDBListItem[]; next_cursor: string | null };
     allItems.push(...data.items);
@@ -129,13 +116,10 @@ export async function kaidadbList(prefix: string): Promise<KaidaDBListItem[]> {
 export async function kaidadbFetchText(key: string): Promise<string> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
-<<<<<<< HEAD
-  const res = await fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, { headers: kaidadbAuthHeaders() });
-=======
   const res = await fetch(`${baseUrl}/v1/media/${encodeURIComponent(key)}`, {
+    headers: kaidadbAuthHeaders(),
     signal: AbortSignal.timeout(10_000),
   });
->>>>>>> eeed6b4 (feat: fixed the website to be more robutst)
   if (!res.ok) throw new Error(`KaidaDB fetch failed for ${key}: ${res.status}`);
   return res.text();
 }
