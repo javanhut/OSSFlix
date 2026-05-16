@@ -16,6 +16,7 @@
   --oss-radius: 10px;
   --oss-radius-lg: 14px;
   --oss-transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --oss-episode-row-h: 46px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -824,6 +825,24 @@ body.modal-open #root {
 .modal-body {
   overflow-y: auto !important;
   flex: 1 !important;
+}
+.oss-detail-modal .modal-content {
+  height: min(760px, calc(100vh - 32px)) !important;
+}
+.oss-detail-modal .oss-detail-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden !important;
+}
+.oss-detail-modal .oss-modal-banner {
+  flex: 0 0 auto;
+}
+.oss-detail-modal .oss-episode-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(var(--oss-episode-row-h, 46px) * 5 + 12px);
+  overflow-y: auto;
 }
 
 /* Bootstrap form overrides */
@@ -2007,6 +2026,7 @@ body.modal-open #root {
   /* Full-screen modals */
   .modal-dialog { max-width: 100vw !important; margin: 0 !important; }
   .modal-content { border-radius: 0 !important; max-height: 100vh !important; }
+  .oss-detail-modal .modal-content { height: 100vh !important; }
   .modal-footer { flex-wrap: wrap; }
   .oss-modal-banner { height: 180px !important; }
 

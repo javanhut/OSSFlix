@@ -1,5 +1,5 @@
 import index from "./index.html";
-import { resolve, join, dirname, extname, basename } from "node:path";
+import { resolve, join, dirname, extname, basename, relative } from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import {
@@ -14,6 +14,8 @@ import {
   getAllGenreNames,
   getTitlesByMultipleGenres,
   getMediaDirectories,
+  listAllTitles,
+  updateTitleMaturity,
 } from "./scripts/autoresolver";
 import { copyFile, mkdir, unlink, rename } from "node:fs/promises";
 import { watch as fsWatch, existsSync, type FSWatcher } from "node:fs";
@@ -57,6 +59,7 @@ import {
   kaidadbHealthCheck,
   kaidadbStream,
   kaidadbUpload,
+  kaidadbList,
   getKaidadbKey,
   setKaidadbMapping,
   getKaidadbStatus,
@@ -79,6 +82,7 @@ import {
   verifyResetToken,
   cleanExpiredResetTokens,
 } from "./scripts/email";
+import { allowedMaturityLevels, normalizeMaturityLevel, normalizeMaturityPreference } from "./scripts/maturity";
 import {
   isAdminSetup,
   setupAdmin,
@@ -121,51 +125,213 @@ function createMobileAuthResponse(profileId: number, userAgent?: string): Respon
   });
 }
 
+function profileMaturityParams(profile: ProfileData): string[] {
+  return allowedMaturityLevels(profile.maturity_preference);
+}
+
+function maturitySql(alias = "t", profile: ProfileData): { condition: string; params: string[] } {
+  const params = profileMaturityParams(profile);
+  return {
+    condition: `${alias}.maturity_level IN (${params.map(() => "?").join(", ")})`,
+    params,
+  };
+}
+
 // Seed the Guest profile on startup (idempotent)
 seedGuestProfile().catch((err) => console.error("[ossflix] failed to seed guest profile:", err));
 
 // Hourly session cleanup
 setInterval(() => cleanExpiredSessions(), 3600_000);
 
-// Auto-rescan: trigger a library rescan whenever the watched media directories change.
-// Filesystem events are bursty (a single file copy can fire many events), so debounce.
+// Auto-rescan: trigger a library rescan whenever local media directories or KaidaDB contents change.
+// Filesystem events are bursty (a single file copy can fire many events), so debounce. Polling is kept as
+// a fallback because recursive fs.watch support varies by platform/runtime and KaidaDB has no push signal.
+const AUTO_RESCAN_DEBOUNCE_MS = 3000;
+const configuredAutoRescanPollMs = Number(process.env.OSSFLIX_AUTO_RESCAN_POLL_MS || 30_000);
+const AUTO_RESCAN_POLL_MS = Number.isFinite(configuredAutoRescanPollMs)
+  ? Math.max(10_000, configuredAutoRescanPollMs)
+  : 30_000;
 let autoRescanInFlight = false;
 let rescanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingAutoRescanReason: string | null = null;
+let watchedMediaDirsKey = "";
+let autoRescanPollInFlight = false;
+let lastLocalMediaSignature: string | null = null;
+let lastKaidaDbSignature: string | null = null;
+let lastKaidaDbPollError: string | null = null;
 function scheduleAutoRescan(reason: string) {
   if (rescanDebounceTimer) clearTimeout(rescanDebounceTimer);
   rescanDebounceTimer = setTimeout(async () => {
     rescanDebounceTimer = null;
-    if (autoRescanInFlight) return;
+    if (autoRescanInFlight) {
+      pendingAutoRescanReason = reason;
+      return;
+    }
     autoRescanInFlight = true;
     try {
       await resolveToDb();
+      refreshAutoRescanWatchers();
+      await updateAutoRescanSnapshots(false);
       console.log(`[ossflix] auto-rescan complete (${reason})`);
     } catch (err) {
       console.error("[ossflix] auto-rescan failed:", err);
     } finally {
       autoRescanInFlight = false;
+      if (pendingAutoRescanReason) {
+        const pending = pendingAutoRescanReason;
+        pendingAutoRescanReason = null;
+        scheduleAutoRescan(pending);
+      }
     }
-  }, 3000);
+  }, AUTO_RESCAN_DEBOUNCE_MS);
 }
 
 const mediaWatchers: FSWatcher[] = [];
-function watchMediaDir(dir: string | null | undefined, label: string) {
-  if (!dir || !existsSync(dir)) return;
+function watchMediaDir(dir: string | null | undefined, label: string): FSWatcher | null {
+  if (!dir || !existsSync(dir)) return null;
   try {
     const watcher = fsWatch(dir, { recursive: true, persistent: false }, (_event, filename) => {
       scheduleAutoRescan(`${label}: ${filename ?? "<unknown>"}`);
     });
     watcher.on("error", (err) => console.error(`[ossflix] ${label} watcher error:`, err));
-    mediaWatchers.push(watcher);
     console.log(`[ossflix] watching ${label} for changes: ${dir}`);
+    return watcher;
   } catch (err) {
-    console.error(`[ossflix] failed to watch ${label} (${dir}):`, err);
+    try {
+      const watcher = fsWatch(dir, { persistent: false }, (_event, filename) => {
+        scheduleAutoRescan(`${label}: ${filename ?? "<unknown>"}`);
+      });
+      watcher.on("error", (watchErr) => console.error(`[ossflix] ${label} watcher error:`, watchErr));
+      console.log(`[ossflix] watching ${label} root for changes: ${dir}`);
+      return watcher;
+    } catch (fallbackErr) {
+      console.error(`[ossflix] failed to watch ${label} (${dir}):`, fallbackErr || err);
+    }
+  }
+  return null;
+}
+
+function refreshAutoRescanWatchers() {
+  const dirs = getMediaDirectories();
+  const targets = [
+    { label: "movies", dir: dirs.moviesDir },
+    { label: "tvshows", dir: dirs.tvshowsDir },
+  ].filter((target) => target.dir && existsSync(target.dir));
+  const nextKey = targets.map((target) => `${target.label}:${target.dir}`).join("|");
+  if (nextKey === watchedMediaDirsKey) return;
+
+  for (const watcher of mediaWatchers.splice(0)) {
+    try {
+      watcher.close();
+    } catch {}
+  }
+
+  watchedMediaDirsKey = nextKey;
+  for (const target of targets) {
+    const watcher = watchMediaDir(target.dir, target.label);
+    if (watcher) mediaWatchers.push(watcher);
   }
 }
 
-const initialDirs = getMediaDirectories();
-watchMediaDir(initialDirs.moviesDir, "movies");
-watchMediaDir(initialDirs.tvshowsDir, "tvshows");
+async function collectLocalDirSignature(dir: string, root = dir): Promise<string> {
+  if (!existsSync(dir)) return `${relative(process.cwd(), root)}:<missing>`;
+  const entries = await readdir(dir, { withFileTypes: true });
+  const parts: string[] = [];
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    const rel = relative(root, path);
+    if (entry.isDirectory()) {
+      parts.push(`d:${rel}`);
+      parts.push(await collectLocalDirSignature(path, root));
+      continue;
+    }
+    const s = await stat(path);
+    parts.push(`f:${rel}:${s.size}:${Math.round(s.mtimeMs)}`);
+  }
+
+  return parts.join("\n");
+}
+
+async function collectLocalMediaSignature(): Promise<string> {
+  const dirs = getMediaDirectories();
+  const [movies, tvshows] = await Promise.all([
+    collectLocalDirSignature(dirs.moviesDir).catch((err) => `movies:<error:${err?.message || err}>`),
+    collectLocalDirSignature(dirs.tvshowsDir).catch((err) => `tvshows:<error:${err?.message || err}>`),
+  ]);
+  return `movies:${dirs.moviesDir}\n${movies}\ntvshows:${dirs.tvshowsDir}\n${tvshows}`;
+}
+
+function getKaidaDbScanPrefixes(): string[] {
+  const settings = getGlobalSettings();
+  if (!settings.kaidadb_url) return [];
+  const hasExplicitPrefix = settings.kaidadb_movies_prefix || settings.kaidadb_tvshows_prefix;
+  const useRoot = settings.kaidadb_root_prefix != null || !hasExplicitPrefix;
+  if (useRoot) return [settings.kaidadb_root_prefix ?? ""];
+  return [settings.kaidadb_movies_prefix, settings.kaidadb_tvshows_prefix].filter((p): p is string => !!p);
+}
+
+async function collectKaidaDbSignature(): Promise<string> {
+  const settings = getGlobalSettings();
+  if (!settings.kaidadb_url) return "kaidadb:<disabled>";
+  const prefixes = [...new Set(getKaidaDbScanPrefixes())].sort();
+  const parts = [`url:${settings.kaidadb_url}`, `prefixes:${prefixes.join("|")}`];
+
+  for (const prefix of prefixes) {
+    const items = await kaidadbList(prefix);
+    items.sort((a, b) => a.key.localeCompare(b.key));
+    parts.push(
+      `prefix:${prefix}`,
+      ...items.map((item) => `${item.key}:${item.total_size}:${item.checksum}:${item.created_at}`),
+    );
+  }
+
+  return parts.join("\n");
+}
+
+async function updateAutoRescanSnapshots(scheduleChanges = true) {
+  if (autoRescanPollInFlight) return;
+  autoRescanPollInFlight = true;
+  try {
+    refreshAutoRescanWatchers();
+
+    const localSignature = await collectLocalMediaSignature();
+    if (scheduleChanges && lastLocalMediaSignature !== null && localSignature !== lastLocalMediaSignature) {
+      scheduleAutoRescan("local media poll");
+    }
+    lastLocalMediaSignature = localSignature;
+
+    try {
+      const kaidaSignature = await collectKaidaDbSignature();
+      if (scheduleChanges && lastKaidaDbSignature !== null && kaidaSignature !== lastKaidaDbSignature) {
+        scheduleAutoRescan("KaidaDB poll");
+      }
+      lastKaidaDbSignature = kaidaSignature;
+      lastKaidaDbPollError = null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message !== lastKaidaDbPollError) {
+        console.error("[ossflix] KaidaDB auto-rescan poll failed:", err);
+        lastKaidaDbPollError = message;
+      }
+    }
+  } finally {
+    autoRescanPollInFlight = false;
+  }
+}
+
+async function resolveMediaLibraryAndRefreshWatchers() {
+  await resolveToDb();
+  refreshAutoRescanWatchers();
+  await updateAutoRescanSnapshots(false);
+}
+
+function startAutoRescanPoller() {
+  refreshAutoRescanWatchers();
+  void updateAutoRescanSnapshots(false);
+  setInterval(() => void updateAutoRescanSnapshots(true), AUTO_RESCAN_POLL_MS);
+}
 
 // Graceful shutdown — flush WAL to main database file
 function gracefulShutdown(signal: string) {
@@ -562,7 +728,8 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
 }
 
 // Resolve media into SQLite on startup using profile-stored directories
-await resolveToDb();
+await resolveMediaLibraryAndRefreshWatchers();
+startAutoRescanPoller();
 
 Bun.serve({
   port: 3000,
@@ -1604,14 +1771,14 @@ Bun.serve({
     "/api/media/resolve": {
       async GET(req) {
         if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
-        await resolveToDb();
-        const rows = getCategoriesFromDb();
+        await resolveMediaLibraryAndRefreshWatchers();
+        const rows = getCategoriesFromDb(getProfileFromReq(req).maturity_preference);
         return Response.json(rows);
       },
     },
     "/api/media/categories": {
-      GET() {
-        const rows = getCategoriesFromDb();
+      GET(req) {
+        const rows = getCategoriesFromDb(getProfileFromReq(req).maturity_preference);
         return Response.json(rows);
       },
     },
@@ -1623,7 +1790,7 @@ Bun.serve({
           return Response.json({ error: "Missing type parameter" }, { status: 400 });
         }
         const types = type.split(",").map((t) => t.trim());
-        const rows = getCategoriesByType(types);
+        const rows = getCategoriesByType(types, getProfileFromReq(req).maturity_preference);
         return Response.json(rows);
       },
     },
@@ -1635,7 +1802,7 @@ Bun.serve({
           return Response.json({ error: "Missing tags parameter" }, { status: 400 });
         }
         const tagList = tags.split(",").map((t) => t.trim());
-        const rows = getCategoriesByGenreTag(tagList);
+        const rows = getCategoriesByGenreTag(tagList, getProfileFromReq(req).maturity_preference);
         return Response.json(rows);
       },
     },
@@ -1646,7 +1813,7 @@ Bun.serve({
         if (!q || q.length < 1) {
           return Response.json({ titles: [], genres: [] });
         }
-        const titles = searchTitles(q);
+        const titles = searchTitles(q, getProfileFromReq(req).maturity_preference);
         const genres = searchGenres(q);
         return Response.json({ titles, genres });
       },
@@ -1658,7 +1825,7 @@ Bun.serve({
         if (!dirParam) {
           return Response.json({ error: "Missing dir parameter" }, { status: 400 });
         }
-        const title = getTitleFromDb(dirParam);
+        const title = getTitleFromDb(dirParam, getProfileFromReq(req).maturity_preference);
         if (!title) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
@@ -1675,7 +1842,28 @@ Bun.serve({
           videos: title.videos ? JSON.parse(title.videos) : [],
           subtitles: title.subtitles ? JSON.parse(title.subtitles) : [],
           seasonsMeta: title.seasonsMeta ? JSON.parse(title.seasonsMeta) : [],
+          maturityLevel: title.maturityLevel,
         });
+      },
+    },
+    "/api/admin/media/maturity": {
+      GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
+        return Response.json({ titles: listAllTitles() });
+      },
+      async PUT(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
+        try {
+          const body = await req.json();
+          const dirPath = body.dirPath || body.dir_path;
+          if (!dirPath) return Response.json({ error: "Missing dirPath" }, { status: 400 });
+          const maturityLevel = normalizeMaturityLevel(body.maturityLevel || body.maturity_level);
+          const updated = updateTitleMaturity(dirPath, maturityLevel);
+          if (!updated) return Response.json({ error: "Title not found" }, { status: 404 });
+          return Response.json({ ok: true, maturityLevel });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
       },
     },
     "/api/profile": {
@@ -1691,7 +1879,7 @@ Bun.serve({
 
           // Re-scan if directories changed
           if (body.movies_directory !== undefined || body.tvshows_directory !== undefined) {
-            await resolveToDb();
+            await resolveMediaLibraryAndRefreshWatchers();
           }
 
           return Response.json(updated);
@@ -1734,6 +1922,43 @@ Bun.serve({
           if (all.length <= 1) return Response.json({ error: "Cannot delete the last profile" }, { status: 400 });
           deleteProfile(id);
           return Response.json({ ok: true });
+        } catch (err: any) {
+          return Response.json({ error: err.message }, { status: 400 });
+        }
+      },
+    },
+    "/api/profiles/create": {
+      async POST(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const email = auth.profile.email;
+        if (!email) {
+          return Response.json({ error: "Current profile has no email" }, { status: 400 });
+        }
+        try {
+          const body = await req.json();
+          const { name, password, age, maturity_preference } = body;
+          if (!name || typeof name !== "string" || name.trim().length < 1 || name.trim().length > 25) {
+            return Response.json({ error: "Name must be between 1 and 25 characters" }, { status: 400 });
+          }
+          if (!password || password.length < 4) {
+            return Response.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+          }
+          let parsedAge: number | null = null;
+          if (age !== undefined && age !== null && age !== "") {
+            const n = typeof age === "number" ? age : parseInt(String(age), 10);
+            if (!Number.isFinite(n) || n < 0 || n > 120) {
+              return Response.json({ error: "Age must be between 0 and 120" }, { status: 400 });
+            }
+            parsedAge = Math.floor(n);
+          }
+          const maturity = normalizeMaturityPreference(maturity_preference);
+          const hash = await hashPassword(password);
+          const profile = createProfile(name.trim(), hash, email, {
+            age: parsedAge,
+            maturity_preference: maturity,
+          });
+          return Response.json({ profile });
         } catch (err: any) {
           return Response.json({ error: err.message }, { status: 400 });
         }
@@ -1821,7 +2046,7 @@ Bun.serve({
             body.kaidadb_tvshows_prefix !== undefined ||
             body.kaidadb_root_prefix !== undefined
           ) {
-            await resolveToDb();
+            await resolveMediaLibraryAndRefreshWatchers();
           }
 
           return Response.json(updated);
@@ -1897,6 +2122,7 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
+        const maturity = maturitySql("t", profile);
         const rows = db
           .query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir,
@@ -1907,11 +2133,12 @@ Bun.serve({
           WHERE pp.profile_id = ?
             AND pp.current_time > 0
             AND (pp.duration = 0 OR pp.current_time < pp.duration - 5)
+            AND ${maturity.condition}
           GROUP BY pp.dir_path
           ORDER BY MAX(pp.updated_at) DESC
           LIMIT 20
         `)
-          .all(profile.id) as Array<{
+          .all(profile.id, ...maturity.params) as Array<{
           name: string;
           imagePath: string;
           pathToDir: string;
@@ -1932,17 +2159,18 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
+        const maturity = maturitySql("t", profile);
         const rows = db
           .query(`
           SELECT pp.video_src, pp.dir_path, pp.current_time, pp.duration, pp.updated_at,
                  t.name, t.image_path AS imagePath, t.type
           FROM playback_progress pp
-          LEFT JOIN titles t ON t.dir_path = pp.dir_path
-          WHERE pp.profile_id = ?
+          JOIN titles t ON t.dir_path = pp.dir_path
+          WHERE pp.profile_id = ? AND ${maturity.condition}
           ORDER BY pp.updated_at DESC
           LIMIT 100
         `)
-          .all(profile.id) as any[];
+          .all(profile.id, ...maturity.params) as any[];
         return Response.json(rows);
       },
       async DELETE(req) {
@@ -1967,15 +2195,16 @@ Bun.serve({
         const auth = authenticateRequest(req);
         if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = auth.profile;
+        const maturity = maturitySql("t", profile);
         const titles = db
           .query(`
           SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM watchlist w
           JOIN titles t ON t.dir_path = w.dir_path
-          WHERE w.profile_id = ?
+          WHERE w.profile_id = ? AND ${maturity.condition}
           ORDER BY w.added_at DESC
         `)
-          .all(profile.id) as any[];
+          .all(profile.id, ...maturity.params) as any[];
         return Response.json({ genre: "My List", titles });
       },
       async POST(req) {
@@ -2235,7 +2464,7 @@ Bun.serve({
           }
 
           // Re-scan
-          await resolveToDb();
+          await resolveMediaLibraryAndRefreshWatchers();
 
           return Response.json({
             message: `Added ${fileList.length} file(s) to ${sourcePath}`,
@@ -2306,7 +2535,7 @@ Bun.serve({
           }
 
           // Re-scan media library
-          await resolveToDb();
+          await resolveMediaLibraryAndRefreshWatchers();
 
           return Response.json({
             message: `Successfully created "${tomlData.name}" with ${fileList.length} file(s) in ${destDir}`,
@@ -2452,6 +2681,7 @@ Bun.serve({
         const type = url.searchParams.get("type");
         const sort = url.searchParams.get("sort") || "name";
         const genre = url.searchParams.get("genre");
+        const maturity = maturitySql("t", getProfileFromReq(req));
 
         // Anime is a genre tag, not a type in the DB
         const isAnimeFilter = type && type.toLowerCase() === "anime";
@@ -2474,6 +2704,8 @@ Bun.serve({
           conditions.push("LOWER(t.type) = ?");
           params.push(type.toLowerCase());
         }
+        conditions.push(maturity.condition);
+        params.push(...maturity.params);
 
         let query = `SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at FROM titles t${joins}`;
         if (conditions.length > 0) {
@@ -2510,7 +2742,7 @@ Bun.serve({
         if (genreNames.length === 0) {
           return Response.json([]);
         }
-        const titles = getTitlesByMultipleGenres(genreNames);
+        const titles = getTitlesByMultipleGenres(genreNames, getProfileFromReq(req).maturity_preference);
         return Response.json(titles);
       },
     },
@@ -2626,7 +2858,7 @@ Bun.serve({
           }
 
           // Re-resolve library
-          await resolveToDb();
+          await resolveMediaLibraryAndRefreshWatchers();
 
           return Response.json({ ok: true, name });
         } catch (err: any) {

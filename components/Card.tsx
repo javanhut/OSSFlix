@@ -969,7 +969,13 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
 
   return (
     <>
-      <Modal show={show && !playerSrc && !showTimingsModal} onHide={onHide} size="lg" centered>
+      <Modal
+        show={show && !playerSrc && !showTimingsModal}
+        onHide={onHide}
+        size="lg"
+        centered
+        dialogClassName="oss-detail-modal"
+      >
         {loading && (
           <ModalBody className="text-center py-5">
             <Spinner animation="border" />
@@ -1002,7 +1008,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 </button>
               </div>
             </ModalHeader>
-            <ModalBody style={{ overflow: "hidden" }}>
+            <ModalBody className="oss-detail-body">
               {displayBanner && (
                 <div
                   className="oss-modal-banner"
@@ -1439,10 +1445,6 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                         borderTop: "1px solid var(--oss-border)",
                         paddingTop: "12px",
                         marginTop: "8px",
-                        // Cap to exactly 5 episode rows; the list scrolls, the modal body does not.
-                        // Row min-height is locked in CSS (.oss-episode) to keep this math reliable.
-                        maxHeight: "calc(var(--oss-episode-row-h, 46px) * 5 + 12px)",
-                        overflowY: "auto",
                       }}
                     >
                       {displayVideos.map((v) => {

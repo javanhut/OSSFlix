@@ -1,4 +1,6 @@
 import db from "./db";
+import { allowedMaturityLevels } from "./maturity";
+import { getProfile } from "./profile";
 
 type TitleInfo = {
   name: string;
@@ -13,6 +15,8 @@ type Recommendation = TitleInfo & {
 };
 
 export function getRecommendations(profileId: number, limit = 5): Recommendation[] {
+  const maturityLevels = allowedMaturityLevels(getProfile(profileId)?.maturity_preference);
+  const maturityPlaceholders = maturityLevels.map(() => "?").join(", ");
   // 1. Get all titles the user has watched (any progress at all)
   const watchedDirs = db
     .prepare(`
@@ -63,8 +67,9 @@ export function getRecommendations(profileId: number, limit = 5): Recommendation
     .prepare(`
     SELECT t.id, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
+    WHERE t.maturity_level IN (${maturityPlaceholders})
   `)
-    .all() as (TitleInfo & { id: number })[];
+    .all(...maturityLevels) as (TitleInfo & { id: number })[];
 
   const unwatchedTitles = allTitles.filter((t) => !watchedSet.has(t.pathToDir));
   const scored: Recommendation[] = [];

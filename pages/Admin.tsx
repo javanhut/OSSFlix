@@ -2,12 +2,26 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { MigratorTab, AddMediaTab, css } from "../components/ProfileSettings";
 import { PasswordInput } from "../components/PasswordInput";
+import {
+  MATURITY_LEVEL_LABELS,
+  MATURITY_LEVELS,
+  normalizeMaturityLevel,
+  type MaturityLevel,
+} from "../scripts/maturity";
 
 type AdminTab = "media" | "addmedia" | "migrator" | "accounts" | "backup";
 
 interface AccountGroup {
   email: string;
   profiles: { id: number; name: string; image_path: string | null; has_password: boolean }[];
+}
+
+interface MaturityTitle {
+  name: string;
+  type: string;
+  imagePath: string | null;
+  dirPath: string;
+  maturityLevel: MaturityLevel;
 }
 
 export default function Admin() {
@@ -47,6 +61,9 @@ export default function Admin() {
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [maturityTitles, setMaturityTitles] = useState<MaturityTitle[]>([]);
+  const [maturityLoading, setMaturityLoading] = useState(false);
+  const [maturitySavingDir, setMaturitySavingDir] = useState<string | null>(null);
 
   // Accounts
   const [accounts, setAccounts] = useState<AccountGroup[]>([]);
@@ -68,6 +85,7 @@ export default function Admin() {
     if (authenticated) {
       loadSettings();
       loadAccounts();
+      loadMaturityTitles();
     }
   }, [authenticated]);
 
@@ -99,6 +117,38 @@ export default function Admin() {
       .then((data) => setAccounts(data.accounts || []))
       .catch(() => {})
       .finally(() => setAccountsLoading(false));
+  };
+
+  const loadMaturityTitles = () => {
+    setMaturityLoading(true);
+    fetch("/api/admin/media/maturity", { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((data) =>
+        setMaturityTitles(
+          (data.titles || []).map((title: any) => ({
+            ...title,
+            maturityLevel: normalizeMaturityLevel(title.maturityLevel),
+          })),
+        ),
+      )
+      .catch(() => {})
+      .finally(() => setMaturityLoading(false));
+  };
+
+  const updateMaturity = (dirPath: string, maturityLevel: MaturityLevel) => {
+    setMaturitySavingDir(dirPath);
+    setMaturityTitles((prev) => prev.map((title) => (title.dirPath === dirPath ? { ...title, maturityLevel } : title)));
+    fetch("/api/admin/media/maturity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ dirPath, maturityLevel }),
+    })
+      .then((r) => {
+        if (!r.ok) loadMaturityTitles();
+      })
+      .catch(loadMaturityTitles)
+      .finally(() => setMaturitySavingDir(null));
   };
 
   const handleSetup = async () => {
@@ -159,7 +209,10 @@ export default function Admin() {
   const handleRescan = () => {
     setRescanning(true);
     fetch("/api/media/resolve", { credentials: "same-origin" })
-      .then(() => setRescanning(false))
+      .then(() => {
+        setRescanning(false);
+        loadMaturityTitles();
+      })
       .catch(() => setRescanning(false));
   };
 
@@ -926,6 +979,86 @@ export default function Admin() {
               )}
             </div>
 
+            {/* Maturity */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "20px", marginTop: "20px" }}>
+              <SectionHeader
+                icon="users"
+                color="#f59e0b"
+                title="Title Maturity"
+                subtitle="Set which profiles should see each title."
+              />
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  maxHeight: "360px",
+                  overflowY: "auto",
+                  paddingRight: "4px",
+                  marginBottom: "20px",
+                }}
+              >
+                {maturityLoading && (
+                  <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.82rem", margin: 0 }}>Loading titles...</p>
+                )}
+                {!maturityLoading && maturityTitles.length === 0 && (
+                  <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.82rem", margin: 0 }}>
+                    No titles found. Rescan the library first.
+                  </p>
+                )}
+                {maturityTitles.map((title) => (
+                  <div
+                    key={title.dirPath}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) 170px",
+                      gap: "12px",
+                      alignItems: "center",
+                      padding: "10px 12px",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: "10px",
+                      background: "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: "0.88rem",
+                          fontWeight: 600,
+                          color: "#fff",
+                        }}
+                      >
+                        {title.name}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.42)", marginTop: "2px" }}>
+                        {title.type}
+                      </div>
+                    </div>
+                    <select
+                      value={title.maturityLevel}
+                      disabled={maturitySavingDir === title.dirPath}
+                      onChange={(e) => updateMaturity(title.dirPath, normalizeMaturityLevel(e.target.value))}
+                      style={{
+                        ...css.input,
+                        padding: "8px 10px",
+                        fontSize: "0.82rem",
+                        opacity: maturitySavingDir === title.dirPath ? 0.7 : 1,
+                      }}
+                    >
+                      {MATURITY_LEVELS.map((level) => (
+                        <option key={level} value={level}>
+                          {MATURITY_LEVEL_LABELS[level]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Save */}
             <div
               style={{
@@ -1331,6 +1464,24 @@ function SectionHeader({
       >
         <rect x="2" y="4" width="20" height="16" rx="2" />
         <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+      </svg>
+    ),
+    users: (
+      <svg
+        aria-hidden="true"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
   };

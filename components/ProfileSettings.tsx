@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../context/ProfileContext";
+import { PasswordInput } from "./PasswordInput";
+import {
+  MATURITY_PREFERENCES,
+  MATURITY_PREFERENCE_LABELS,
+  normalizeMaturityPreference,
+  type MaturityPreference,
+} from "../scripts/maturity";
 
 interface ProfileData {
   id: number;
@@ -10,6 +17,7 @@ interface ProfileData {
   image_path: string | null;
   movies_directory: string | null;
   tvshows_directory: string | null;
+  maturity_preference: MaturityPreference;
 }
 
 interface BrowseResult {
@@ -2487,13 +2495,23 @@ export function AddMediaTab() {
 function SettingsModal({
   show,
   onHide,
+  profile,
+  onProfileUpdate,
 }: {
   show: boolean;
   onHide: () => void;
   profile: ProfileData;
   onProfileUpdate: (p: ProfileData) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"devices" | "about">("devices");
+  const [activeTab, setActiveTab] = useState<"display" | "devices" | "about">("display");
+  const [maturityPreference, setMaturityPreference] = useState<MaturityPreference>(
+    normalizeMaturityPreference(profile.maturity_preference),
+  );
+  const [savingMaturity, setSavingMaturity] = useState(false);
+
+  useEffect(() => {
+    if (show) setMaturityPreference(normalizeMaturityPreference(profile.maturity_preference));
+  }, [show, profile.maturity_preference]);
 
   if (!show) return null;
 
@@ -2532,6 +2550,11 @@ function SettingsModal({
             borderBottom: "1px solid var(--oss-border)",
           }}
         >
+          <button type="button" style={tabStyle(activeTab === "display")} onClick={() => setActiveTab("display")}>
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <IconSettings /> Display
+            </span>
+          </button>
           <button type="button" style={tabStyle(activeTab === "devices")} onClick={() => setActiveTab("devices")}>
             <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <IconDevices /> Devices
@@ -2545,6 +2568,47 @@ function SettingsModal({
         </div>
 
         <div style={css.body}>
+          {activeTab === "display" && (
+            <div>
+              <h3 style={{ margin: "0 0 6px", fontSize: "1rem", fontWeight: 700, color: "var(--oss-text)" }}>
+                Maturity Filter
+              </h3>
+              <p style={{ margin: "0 0 16px", fontSize: "0.82rem", color: "var(--oss-text-muted)" }}>
+                Choose which maturity levels are shown while using this profile.
+              </p>
+              <div style={{ display: "grid", gap: "8px" }}>
+                {MATURITY_PREFERENCES.map((pref) => (
+                  <label
+                    key={pref}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "12px 14px",
+                      borderRadius: "10px",
+                      border:
+                        maturityPreference === pref
+                          ? "1px solid var(--oss-accent)"
+                          : "1px solid var(--oss-border)",
+                      background: maturityPreference === pref ? "rgba(59,130,246,0.12)" : "var(--oss-bg-elevated)",
+                      color: "var(--oss-text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="maturity_preference"
+                      value={pref}
+                      checked={maturityPreference === pref}
+                      onChange={() => setMaturityPreference(pref)}
+                    />
+                    <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>{MATURITY_PREFERENCE_LABELS[pref]}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeTab === "devices" && <DevicesTab />}
 
           {activeTab === "about" && (
@@ -2596,6 +2660,32 @@ function SettingsModal({
         </div>
 
         <div style={css.footer}>
+          {activeTab === "display" && (
+            <button
+              type="button"
+              style={{ ...css.btn, ...css.btnPrimary, opacity: savingMaturity ? 0.7 : 1 }}
+              disabled={savingMaturity}
+              onClick={() => {
+                setSavingMaturity(true);
+                fetch("/api/profile", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "same-origin",
+                  body: JSON.stringify({ maturity_preference: maturityPreference }),
+                })
+                  .then((r) => r.json())
+                  .then((updated) => {
+                    if (!updated?.error) {
+                      onProfileUpdate(updated);
+                      window.location.reload();
+                    }
+                  })
+                  .finally(() => setSavingMaturity(false));
+              }}
+            >
+              {savingMaturity ? "Saving..." : "Save Display"}
+            </button>
+          )}
           <button type="button" style={{ ...css.btn, ...css.btnSecondary }} onClick={onHide}>
             Close
           </button>
@@ -2651,6 +2741,555 @@ function BrowseItem({
   );
 }
 
+// ── Switch Profile Modal ──
+interface SwitchProfileItem {
+  id: number;
+  name: string;
+  image_path: string | null;
+  has_password: boolean;
+}
+
+function SwitchProfileModal({
+  show,
+  onHide,
+  email,
+  currentProfileId,
+}: {
+  show: boolean;
+  onHide: () => void;
+  email: string;
+  currentProfileId: number;
+}) {
+  const { login, setPassword: setPasswordCtx } = useProfile();
+  const navigate = useNavigate();
+
+  const [profiles, setProfiles] = useState<SwitchProfileItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Login-prompt state
+  const [selected, setSelected] = useState<SwitchProfileItem | null>(null);
+  const [password, setPasswordVal] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [needsSetPassword, setNeedsSetPassword] = useState(false);
+  const [nameConfirm, setNameConfirm] = useState("");
+  const [nameVerified, setNameVerified] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Create-profile state
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPassword, setNewPasswordVal] = useState("");
+  const [newAge, setNewAge] = useState("");
+  const [newMaturity, setNewMaturity] = useState<MaturityPreference>("adults");
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+
+  const loadProfiles = () => {
+    setLoading(true);
+    fetch("/api/auth/lookup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ email }),
+    })
+      .then((r) => r.json())
+      .then((data) => setProfiles(data.profiles || []))
+      .catch(() => setError("Failed to load profiles"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!show) return;
+    loadProfiles();
+    setSelected(null);
+    setCreating(false);
+    setError("");
+    setPasswordVal("");
+    setConfirmPassword("");
+    setNeedsSetPassword(false);
+    setNameConfirm("");
+    setNameVerified(false);
+    setNewName("");
+    setNewPasswordVal("");
+    setNewAge("");
+    setNewMaturity("adults");
+    // biome-ignore lint/correctness/useExhaustiveDependencies: only react to show toggle
+  }, [show]);
+
+  const handleSelect = (p: SwitchProfileItem) => {
+    if (p.id === currentProfileId) {
+      onHide();
+      return;
+    }
+    setSelected(p);
+    setPasswordVal("");
+    setConfirmPassword("");
+    setNameConfirm("");
+    setNameVerified(false);
+    setError("");
+    setNeedsSetPassword(!p.has_password);
+  };
+
+  const handleVerifyName = () => {
+    if (!selected) return;
+    if (nameConfirm.trim().toLowerCase() !== selected.name.toLowerCase()) {
+      setError("Name does not match this profile");
+      return;
+    }
+    setError("");
+    setNameVerified(true);
+  };
+
+  const handleLogin = async () => {
+    if (!selected) return;
+    if (!password) {
+      setError("Please enter your password");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    const result = await login(selected.id, password);
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    onHide();
+    navigate("/home");
+  };
+
+  const handleSetPw = async () => {
+    if (!selected) return;
+    if (!password || password.length < 4) {
+      setError("Password must be at least 4 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    const result = await setPasswordCtx(selected.id, password);
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    onHide();
+    navigate("/home");
+  };
+
+  const handleCreate = async () => {
+    const trimmed = newName.trim();
+    if (trimmed.length < 1 || trimmed.length > 25) {
+      setError("Name must be between 1 and 25 characters");
+      return;
+    }
+    if (!newPassword || newPassword.length < 4) {
+      setError("Password must be at least 4 characters");
+      return;
+    }
+    let ageNum: number | null = null;
+    if (newAge.trim() !== "") {
+      const n = parseInt(newAge, 10);
+      if (!Number.isFinite(n) || n < 0 || n > 120) {
+        setError("Age must be between 0 and 120");
+        return;
+      }
+      ageNum = n;
+    }
+    setError("");
+    setCreateSubmitting(true);
+    try {
+      const res = await fetch("/api/profiles/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          name: trimmed,
+          password: newPassword,
+          age: ageNum,
+          maturity_preference: newMaturity,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || "Failed to create profile");
+        return;
+      }
+      setCreating(false);
+      setNewName("");
+      setNewPasswordVal("");
+      setNewAge("");
+      setNewMaturity("adults");
+      loadProfiles();
+    } catch {
+      setError("Failed to create profile");
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  if (!show) return null;
+
+  return (
+    <div
+      style={css.overlay}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onHide();
+      }}
+    >
+      <div style={css.panel}>
+        <div style={css.header}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={css.headerTitle}>Switch Profile</span>
+            <span style={{ fontSize: "0.78rem", color: "var(--oss-text-muted)", marginTop: "2px" }}>{email}</span>
+          </div>
+          <button type="button" style={css.closeBtn} onClick={onHide} aria-label="Close">
+            <IconX />
+          </button>
+        </div>
+        <div style={css.body}>
+          {loading ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  border: "3px solid rgba(255,255,255,0.1)",
+                  borderTopColor: "#3b82f6",
+                  borderRadius: "50%",
+                  animation: "vpSpin 0.8s linear infinite",
+                }}
+              />
+            </div>
+          ) : selected ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "20px" }}>
+                <img
+                  src={selected.image_path || "/images/profileicon.png"}
+                  alt={selected.name}
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    border: "2px solid var(--oss-border)",
+                  }}
+                />
+                <div>
+                  <p style={{ margin: 0, color: "var(--oss-text)", fontSize: "1rem", fontWeight: 600 }}>
+                    {selected.name}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelected(null);
+                      setError("");
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--oss-text-muted)",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontSize: "0.78rem",
+                      marginTop: "2px",
+                    }}
+                  >
+                    ← Choose another
+                  </button>
+                </div>
+              </div>
+
+              {needsSetPassword ? (
+                nameVerified ? (
+                  <>
+                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
+                      Identity verified. Set a password for this profile.
+                    </p>
+                    <PasswordInput
+                      placeholder="New password (min 4 characters)"
+                      value={password}
+                      onChange={(e) => setPasswordVal(e.target.value)}
+                      style={{ marginBottom: "10px" }}
+                      inputStyle={css.input}
+                    />
+                    <PasswordInput
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSetPw();
+                      }}
+                      style={{ marginBottom: "12px" }}
+                      inputStyle={css.input}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
+                      This profile has no password. Type the profile name to verify your identity.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder={`Type "${selected.name}" to confirm`}
+                      value={nameConfirm}
+                      onChange={(e) => setNameConfirm(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleVerifyName();
+                      }}
+                      style={{ ...css.input, marginBottom: "12px" }}
+                    />
+                  </>
+                )
+              ) : (
+                <PasswordInput
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(e) => setPasswordVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleLogin();
+                  }}
+                  style={{ marginBottom: "12px" }}
+                  inputStyle={css.input}
+                />
+              )}
+
+              {error && <p style={{ margin: "0 0 12px", color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>}
+
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button type="button" style={{ ...css.btn, ...css.btnSecondary }} onClick={onHide}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  style={{ ...css.btn, ...css.btnPrimary, opacity: submitting ? 0.6 : 1 }}
+                  onClick={needsSetPassword ? (nameVerified ? handleSetPw : handleVerifyName) : handleLogin}
+                  disabled={submitting}
+                >
+                  {submitting ? "..." : needsSetPassword ? (nameVerified ? "Set Password" : "Verify") : "Continue"}
+                </button>
+              </div>
+            </div>
+          ) : creating ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <p style={{ margin: 0, color: "var(--oss-text-muted)", fontSize: "0.85rem" }}>
+                New profile under <strong style={{ color: "var(--oss-text)" }}>{email}</strong>
+              </p>
+
+              <div>
+                <label style={css.label}>Profile name</label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Kids"
+                  maxLength={25}
+                  style={css.input}
+                />
+              </div>
+
+              <div>
+                <label style={css.label}>Password</label>
+                <PasswordInput
+                  value={newPassword}
+                  onChange={(e) => setNewPasswordVal(e.target.value)}
+                  placeholder="At least 4 characters"
+                  inputStyle={css.input}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: "0 0 110px" }}>
+                  <label style={css.label}>
+                    Age <span style={{ fontWeight: 400, color: "var(--oss-text-muted)" }}>(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={newAge}
+                    onChange={(e) => setNewAge(e.target.value.replace(/\D/g, ""))}
+                    placeholder="e.g. 10"
+                    style={css.input}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={css.label}>Maturity</label>
+                  <select
+                    value={newMaturity}
+                    onChange={(e) => setNewMaturity(normalizeMaturityPreference(e.target.value))}
+                    style={{ ...css.input, appearance: "auto" }}
+                  >
+                    {MATURITY_PREFERENCES.map((pref) => (
+                      <option key={pref} value={pref}>
+                        {MATURITY_PREFERENCE_LABELS[pref]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {error && <p style={{ margin: 0, color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>}
+
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
+                <button
+                  type="button"
+                  style={{ ...css.btn, ...css.btnSecondary }}
+                  onClick={() => {
+                    setCreating(false);
+                    setError("");
+                  }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  style={{ ...css.btn, ...css.btnPrimary, opacity: createSubmitting ? 0.6 : 1 }}
+                  onClick={handleCreate}
+                  disabled={createSubmitting}
+                >
+                  {createSubmitting ? "Creating..." : "Create Profile"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                  gap: "12px",
+                  marginBottom: "8px",
+                }}
+              >
+                {profiles.map((p) => {
+                  const isCurrent = p.id === currentProfileId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleSelect(p)}
+                      title={isCurrent ? `${p.name} (current)` : `Switch to ${p.name}`}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "14px 8px",
+                        border: `2px solid ${isCurrent ? "var(--oss-accent)" : "transparent"}`,
+                        borderRadius: "12px",
+                        background: "var(--oss-bg-elevated)",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isCurrent) e.currentTarget.style.borderColor = "var(--oss-border)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isCurrent) e.currentTarget.style.borderColor = "transparent";
+                      }}
+                    >
+                      <img
+                        src={p.image_path || "/images/profileicon.png"}
+                        alt={p.name}
+                        style={{
+                          width: "56px",
+                          height: "56px",
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "2px solid var(--oss-border)",
+                        }}
+                      />
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 600,
+                          color: "var(--oss-text)",
+                          maxWidth: "100px",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          textAlign: "center",
+                        }}
+                      >
+                        {p.name}
+                      </span>
+                      {isCurrent && (
+                        <span style={{ fontSize: "0.68rem", color: "var(--oss-accent)", fontWeight: 600 }}>
+                          Current
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreating(true);
+                    setError("");
+                  }}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    padding: "14px 8px",
+                    border: "2px dashed var(--oss-border)",
+                    borderRadius: "12px",
+                    background: "transparent",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    minHeight: "108px",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--oss-accent)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--oss-border)")}
+                >
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "50%",
+                      background: "var(--oss-bg-elevated)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--oss-text-muted)",
+                    }}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </div>
+                  <span style={{ fontSize: "0.78rem", color: "var(--oss-text-muted)", fontWeight: 600 }}>
+                    Add Profile
+                  </span>
+                </button>
+              </div>
+
+              {error && <p style={{ margin: "8px 0 0", color: "#ef4444", fontSize: "0.82rem" }}>{error}</p>}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Profile Dropdown ──
 export function Profile() {
   const { profile: ctxProfile, setProfile: setCtxProfile, logout } = useProfile();
@@ -2658,6 +3297,7 @@ export function Profile() {
   const [profile, setProfileLocal] = useState<ProfileData | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSwitchProfile, setShowSwitchProfile] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -2847,8 +3487,12 @@ export function Profile() {
             <DropdownItem
               onClick={() => {
                 setDropdownOpen(false);
-                logout();
-                navigate("/profiles");
+                if (profile.email) {
+                  setShowSwitchProfile(true);
+                } else {
+                  logout();
+                  navigate("/profiles");
+                }
               }}
             >
               <IconUser /> Switch Profile
@@ -2885,6 +3529,16 @@ export function Profile() {
         />,
         document.body,
       )}
+      {profile.email &&
+        createPortal(
+          <SwitchProfileModal
+            show={showSwitchProfile}
+            onHide={() => setShowSwitchProfile(false)}
+            email={profile.email}
+            currentProfileId={profile.id}
+          />,
+          document.body,
+        )}
     </>
   );
 }

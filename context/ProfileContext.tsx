@@ -8,6 +8,8 @@ export interface ProfileData {
   movies_directory: string | null;
   tvshows_directory: string | null;
   use_global_dirs: number;
+  maturity_preference: "kids_only" | "everyone" | "teens" | "adults";
+  age: number | null;
 }
 
 export interface PublicProfile {

@@ -1,5 +1,6 @@
 import db from "./db";
 import { hashPassword } from "./auth";
+import { normalizeMaturityPreference, type MaturityPreference } from "./maturity";
 
 export const GUEST_NAME = "Guest";
 export const GUEST_PASSWORD = "guest";
@@ -12,7 +13,12 @@ export interface ProfileData {
   movies_directory: string | null;
   tvshows_directory: string | null;
   use_global_dirs: number;
+  maturity_preference: MaturityPreference;
+  age: number | null;
 }
+
+const PROFILE_COLS =
+  "id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs, maturity_preference, age";
 
 export interface GlobalSettings {
   movies_directory: string | null;
@@ -31,59 +37,56 @@ export interface GlobalSettings {
 }
 
 export function getProfile(id: number): ProfileData | null {
-  return db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE id = ?",
-    )
-    .get(id) as ProfileData | null;
+  return db.prepare(`SELECT ${PROFILE_COLS} FROM profiles WHERE id = ?`).get(id) as ProfileData | null;
 }
 
 export function getAllProfiles(): ProfileData[] {
-  return db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id",
-    )
-    .all() as ProfileData[];
+  return db.prepare(`SELECT ${PROFILE_COLS} FROM profiles ORDER BY id`).all() as ProfileData[];
 }
 
 export function getProfilesByEmail(email: string): ProfileData[] {
   return db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE LOWER(email) = LOWER(?) ORDER BY id",
-    )
+    .prepare(`SELECT ${PROFILE_COLS} FROM profiles WHERE LOWER(email) = LOWER(?) ORDER BY id`)
     .all(email.trim()) as ProfileData[];
 }
 
 export function getProfilesWithoutEmail(): ProfileData[] {
   return db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE email IS NULL OR email = '' ORDER BY id",
-    )
+    .prepare(`SELECT ${PROFILE_COLS} FROM profiles WHERE email IS NULL OR email = '' ORDER BY id`)
     .all() as ProfileData[];
 }
 
-export function createProfile(name: string, passwordHash?: string, email?: string): ProfileData {
+export function createProfile(
+  name: string,
+  passwordHash?: string,
+  email?: string,
+  opts?: { age?: number | null; maturity_preference?: string | null },
+): ProfileData {
   const normalizedEmail = email ? email.trim().toLowerCase() : null;
+  const age = opts?.age != null ? opts.age : null;
+  const maturity = opts?.maturity_preference
+    ? normalizeMaturityPreference(opts.maturity_preference)
+    : null;
+  const cols = ["name", "use_global_dirs", "email", "age"];
+  const placeholders = ["?", "1", "?", "?"];
+  const values: any[] = [name, normalizedEmail, age];
   if (passwordHash) {
-    const result = db.run("INSERT INTO profiles (name, use_global_dirs, password_hash, email) VALUES (?, 1, ?, ?)", [
-      name,
-      passwordHash,
-      normalizedEmail,
-    ]);
-    return getProfile(Number(result.lastInsertRowid))!;
+    cols.push("password_hash");
+    placeholders.push("?");
+    values.push(passwordHash);
   }
-  const result = db.run("INSERT INTO profiles (name, use_global_dirs, email) VALUES (?, 1, ?)", [
-    name,
-    normalizedEmail,
-  ]);
+  if (maturity) {
+    cols.push("maturity_preference");
+    placeholders.push("?");
+    values.push(maturity);
+  }
+  const result = db.run(`INSERT INTO profiles (${cols.join(", ")}) VALUES (${placeholders.join(", ")})`, values);
   return getProfile(Number(result.lastInsertRowid))!;
 }
 
 export function getProfileWithHash(id: number): (ProfileData & { password_hash: string | null }) | null {
   return db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs, password_hash FROM profiles WHERE id = ?",
-    )
+    .prepare(`SELECT ${PROFILE_COLS}, password_hash FROM profiles WHERE id = ?`)
     .get(id) as (ProfileData & { password_hash: string | null }) | null;
 }
 
@@ -102,7 +105,7 @@ export function profileHasPassword(id: number): boolean {
 export function getGuestProfile(): ProfileData | null {
   return db
     .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles WHERE name = ? AND (email IS NULL OR email = '') ORDER BY id LIMIT 1",
+      `SELECT ${PROFILE_COLS} FROM profiles WHERE name = ? AND (email IS NULL OR email = '') ORDER BY id LIMIT 1`,
     )
     .get(GUEST_NAME) as ProfileData | null;
 }
@@ -130,18 +133,10 @@ export function deleteProfile(id: number): void {
 }
 
 export function getOrCreateDefaultProfile(): ProfileData {
-  let profile = db
-    .prepare(
-      "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1",
-    )
-    .get() as ProfileData | null;
+  let profile = db.prepare(`SELECT ${PROFILE_COLS} FROM profiles ORDER BY id LIMIT 1`).get() as ProfileData | null;
   if (!profile) {
     db.run("INSERT INTO profiles (name, use_global_dirs) VALUES (?, 1)", ["User"]);
-    profile = db
-      .prepare(
-        "SELECT id, name, email, image_path, movies_directory, tvshows_directory, use_global_dirs FROM profiles ORDER BY id LIMIT 1",
-      )
-      .get() as ProfileData;
+    profile = db.prepare(`SELECT ${PROFILE_COLS} FROM profiles ORDER BY id LIMIT 1`).get() as ProfileData;
   }
   return profile;
 }
@@ -155,6 +150,8 @@ export function updateProfile(
     movies_directory?: string;
     tvshows_directory?: string;
     use_global_dirs?: number;
+    maturity_preference?: string;
+    age?: number | null;
   },
 ): ProfileData | null {
   const fields: string[] = [];
@@ -186,6 +183,14 @@ export function updateProfile(
   if (updates.use_global_dirs !== undefined) {
     fields.push("use_global_dirs = ?");
     values.push(updates.use_global_dirs);
+  }
+  if (updates.maturity_preference !== undefined) {
+    fields.push("maturity_preference = ?");
+    values.push(normalizeMaturityPreference(updates.maturity_preference));
+  }
+  if (updates.age !== undefined) {
+    fields.push("age = ?");
+    values.push(updates.age == null ? null : Math.max(0, Math.min(120, Math.floor(updates.age))));
   }
 
   if (fields.length === 0) return getProfile(id);

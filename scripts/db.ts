@@ -151,6 +151,13 @@ try {
   // column already exists
 }
 
+// Migration: add maturity level to titles
+try {
+  db.run("ALTER TABLE titles ADD COLUMN maturity_level TEXT NOT NULL DEFAULT 'everyone'");
+} catch {
+  // column already exists
+}
+
 // Migration: add tmdb_api_key to global_settings
 try {
   db.run("ALTER TABLE global_settings ADD COLUMN tmdb_api_key TEXT");
@@ -202,6 +209,20 @@ db.run(`
 // Migration: add password_hash to profiles
 try {
   db.run("ALTER TABLE profiles ADD COLUMN password_hash TEXT");
+} catch {
+  // column already exists
+}
+
+// Migration: add per-profile maturity display preference
+try {
+  db.run("ALTER TABLE profiles ADD COLUMN maturity_preference TEXT NOT NULL DEFAULT 'adults'");
+} catch {
+  // column already exists
+}
+
+// Migration: add per-profile age
+try {
+  db.run("ALTER TABLE profiles ADD COLUMN age INTEGER");
 } catch {
   // column already exists
 }

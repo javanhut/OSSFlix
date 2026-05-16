@@ -3,6 +3,13 @@ import { scanDirectory } from "./mediascanner";
 import { scanKaidaDBPrefix, scanKaidaDBRoot } from "./remotescanner";
 import { getOrCreateDefaultProfile, getGlobalSettings } from "./profile";
 import db from "./db";
+import {
+  allowedMaturityLevels,
+  normalizeMaturityLevel,
+  normalizeMaturityPreference,
+  type MaturityLevel,
+  type MaturityPreference,
+} from "./maturity";
 
 const DEFAULT_MOVIES_DIR = resolve("./TestDir/Movies");
 const DEFAULT_TVSHOWS_DIR = resolve("./TestDir/TV Shows");
@@ -72,6 +79,12 @@ export async function resolveToDb(): Promise<void> {
   }
 
   const allMedia = [...movies, ...tvShows];
+  const existingMaturity = new Map<string, MaturityLevel>();
+  const maturityRows = db.prepare("SELECT dir_path, maturity_level FROM titles").all() as {
+    dir_path: string;
+    maturity_level: string;
+  }[];
+  for (const row of maturityRows) existingMaturity.set(row.dir_path, normalizeMaturityLevel(row.maturity_level));
 
   const tx = db.transaction(() => {
     db.run("DELETE FROM category_titles");
@@ -81,8 +94,8 @@ export async function resolveToDb(): Promise<void> {
     db.run("DELETE FROM titles");
 
     const insertTitle = db.prepare(`
-      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles, seasons_meta)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles, seasons_meta, maturity_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertGenre = db.prepare("INSERT OR IGNORE INTO genres (name) VALUES (?)");
     const getGenreId = db.prepare("SELECT id FROM genres WHERE name = ?");
@@ -109,6 +122,7 @@ export async function resolveToDb(): Promise<void> {
         media.videos.length > 0 ? JSON.stringify(media.videos) : null,
         media.subtitles.length > 0 ? JSON.stringify(media.subtitles) : null,
         media.seasons && media.seasons.length > 0 ? JSON.stringify(media.seasons) : null,
+        existingMaturity.get(media.dirPath) || "everyone",
       );
       const titleId = Number(result.lastInsertRowid);
       titleIds.set(media.dirPath, titleId);
@@ -206,16 +220,26 @@ export async function resolveToDb(): Promise<void> {
   console.log(`Resolved ${allMedia.length} titles into database (movies: ${moviesDir}, tvshows: ${tvshowsDir})`);
 }
 
-export function getCategoriesFromDb(): MenuRow[] {
+function maturityWhere(preference?: string | null, alias = "t"): { sql: string; params: MaturityLevel[] } {
+  const levels = allowedMaturityLevels(normalizeMaturityPreference(preference));
+  return {
+    sql: `${alias}.maturity_level IN (${levels.map(() => "?").join(", ")})`,
+    params: levels,
+  };
+}
+
+export function getCategoriesFromDb(preference?: MaturityPreference | string | null): MenuRow[] {
+  const maturity = maturityWhere(preference);
   const allRows = db
     .prepare(`
     SELECT c.name AS category, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
     FROM categories c
     JOIN category_titles ct ON ct.category_id = c.id
     JOIN titles t ON t.id = ct.title_id
+    WHERE ${maturity.sql}
     ORDER BY c.sort_order, c.name
   `)
-    .all() as { category: string; name: string; imagePath: string; pathToDir: string }[];
+    .all(...maturity.params) as { category: string; name: string; imagePath: string; pathToDir: string }[];
 
   const grouped = new Map<string, TitleInfo[]>();
   for (const row of allRows) {
@@ -231,10 +255,14 @@ export function getCategoriesFromDb(): MenuRow[] {
   return rows;
 }
 
-export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
+export function getCategoriesByType(
+  typeFilter: string | string[],
+  preference?: MaturityPreference | string | null,
+): MenuRow[] {
   const types = Array.isArray(typeFilter) ? typeFilter : [typeFilter];
   const lowerTypes = types.map((t) => t.toLowerCase());
   const placeholders = lowerTypes.map(() => "?").join(", ");
+  const maturity = maturityWhere(preference);
 
   const allRows = db
     .prepare(`
@@ -242,10 +270,10 @@ export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
-    WHERE LOWER(t.type) IN (${placeholders})
+    WHERE LOWER(t.type) IN (${placeholders}) AND ${maturity.sql}
     ORDER BY g.name, t.name
   `)
-    .all(...lowerTypes) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
+    .all(...lowerTypes, ...maturity.params) as { genre: string; name: string; imagePath: string; pathToDir: string }[];
 
   const grouped = new Map<string, TitleInfo[]>();
   for (const row of allRows) {
@@ -261,9 +289,13 @@ export function getCategoriesByType(typeFilter: string | string[]): MenuRow[] {
   return rows;
 }
 
-export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
+export function getCategoriesByGenreTag(
+  genreTags: string[],
+  preference?: MaturityPreference | string | null,
+): MenuRow[] {
   const lowerTags = genreTags.map((t) => t.toLowerCase());
   const tagPlaceholders = lowerTags.map(() => "?").join(", ");
+  const maturity = maturityWhere(preference);
 
   // Get title IDs that have any of the specified genre tags
   const titleIds = db
@@ -272,9 +304,9 @@ export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
-    WHERE LOWER(g.name) IN (${tagPlaceholders})
+    WHERE LOWER(g.name) IN (${tagPlaceholders}) AND ${maturity.sql}
   `)
-    .all(...lowerTags) as { id: number }[];
+    .all(...lowerTags, ...maturity.params) as { id: number }[];
 
   if (titleIds.length === 0) return [];
 
@@ -307,17 +339,19 @@ export function getCategoriesByGenreTag(genreTags: string[]): MenuRow[] {
   return rows;
 }
 
-export function getTitleFromDb(dirPath: string) {
+export function getTitleFromDb(dirPath: string, preference?: MaturityPreference | string | null) {
+  const maturity = maturityWhere(preference);
   const title = db
     .prepare(`
     SELECT
       t.id, t.name, t.description, t.type, t.image_path AS bannerImage,
       t.dir_path AS dirPath, t.source_path AS sourcePath, t.cast_list AS castList,
-      t.season, t.episodes, t.videos, t.subtitles, t.seasons_meta AS seasonsMeta
+      t.season, t.episodes, t.videos, t.subtitles, t.seasons_meta AS seasonsMeta,
+      t.maturity_level AS maturityLevel
     FROM titles t
-    WHERE t.dir_path = ?
+    WHERE t.dir_path = ? AND ${maturity.sql}
   `)
-    .get(dirPath) as {
+    .get(dirPath, ...maturity.params) as {
     id: number;
     name: string;
     description: string;
@@ -331,6 +365,7 @@ export function getTitleFromDb(dirPath: string) {
     videos: string | null;
     subtitles: string | null;
     seasonsMeta: string | null;
+    maturityLevel: MaturityLevel;
   } | null;
 
   if (!title) return null;
@@ -353,7 +388,7 @@ export function listAllTitles() {
   return db
     .prepare(`
     SELECT t.name, t.type, t.image_path AS imagePath, t.dir_path AS dirPath,
-           t.source_path AS sourcePath, t.season, t.episodes
+           t.source_path AS sourcePath, t.season, t.episodes, t.maturity_level AS maturityLevel
     FROM titles t
     ORDER BY t.name
   `)
@@ -365,19 +400,28 @@ export function listAllTitles() {
     sourcePath: string;
     season: number | null;
     episodes: number | null;
+    maturityLevel: MaturityLevel;
   }[];
 }
 
-export function searchTitles(query: string) {
+export function updateTitleMaturity(dirPath: string, maturityLevel: string): boolean {
+  const result = db
+    .prepare("UPDATE titles SET maturity_level = ? WHERE dir_path = ?")
+    .run(normalizeMaturityLevel(maturityLevel), dirPath);
+  return result.changes > 0;
+}
+
+export function searchTitles(query: string, preference?: MaturityPreference | string | null) {
+  const maturity = maturityWhere(preference);
   return db
     .prepare(`
     SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
-    WHERE t.name LIKE ?
+    WHERE t.name LIKE ? AND ${maturity.sql}
     ORDER BY t.name
     LIMIT 20
   `)
-    .all(`%${query}%`) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+    .all(`%${query}%`, ...maturity.params) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
 }
 
 export function searchGenres(query: string) {
@@ -406,19 +450,20 @@ export function getAllGenreNames(): string[] {
   return rows.map((r) => r.name);
 }
 
-export function getTitlesByMultipleGenres(genreNames: string[]) {
+export function getTitlesByMultipleGenres(genreNames: string[], preference?: MaturityPreference | string | null) {
   const lowerNames = genreNames.map((n) => n.toLowerCase());
   const placeholders = lowerNames.map(() => "?").join(", ");
+  const maturity = maturityWhere(preference);
   return db
     .prepare(`
     SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
     JOIN title_genres tg ON tg.title_id = t.id
     JOIN genres g ON g.id = tg.genre_id
-    WHERE LOWER(g.name) IN (${placeholders})
+    WHERE LOWER(g.name) IN (${placeholders}) AND ${maturity.sql}
     GROUP BY t.id HAVING COUNT(DISTINCT g.id) = ?
   `)
-    .all(...lowerNames, lowerNames.length) as {
+    .all(...lowerNames, ...maturity.params, lowerNames.length) as {
     name: string;
     imagePath: string | null;
     pathToDir: string;
