@@ -107,6 +107,17 @@ html, body, #root {
   position: relative;
   cursor: pointer;
 }
+/* Invisible bridge that extends the trigger's hoverable area down to the dropdown,
+   so the cursor doesn't drop the :hover state while crossing the 8px gap. */
+.oss-genre-trigger::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 14px;
+  pointer-events: auto;
+}
 .oss-genre-dropdown {
   position: absolute;
   top: calc(100% + 8px);
@@ -175,13 +186,14 @@ html, body, #root {
   color: var(--oss-text);
   padding: 7px 16px 7px 36px;
   font-size: 0.85rem;
-  width: 200px;
+  width: 400px;
   outline: none;
   transition: all var(--oss-transition);
 }
 .oss-search input::placeholder { color: var(--oss-text-muted); }
-.oss-search input:focus {
-  width: 280px;
+.oss-search input:focus,
+.oss-search input:not(:placeholder-shown) {
+  width: 800px;
   border-color: var(--oss-accent);
   box-shadow: 0 0 0 3px var(--oss-accent-glow);
 }
@@ -221,7 +233,7 @@ html, body, #root {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 360px;
+  width: 800px;
   max-height: 420px;
   overflow-y: auto;
   background: var(--oss-bg-elevated);
@@ -504,7 +516,17 @@ html, body, #root {
 .oss-section {
   padding: 0 4%;
   margin-bottom: 2.5rem;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: center top;
+}
+/* Upscale the hovered row so it pops, dim the others so the focused shelf reads as primary. */
+.oss-section:hover {
+  transform: scale(1.025);
+  position: relative;
+  z-index: 3;
+}
+body:has(.oss-section:hover) .oss-section:not(:hover) {
+  opacity: 0.45;
 }
 /* When any chevron is hovered, dim the sections that don't contain it
    so the focused shelf pops. */
@@ -517,8 +539,9 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin: 0 0 1rem;
+  margin: 0 auto 1rem;
   padding-left: 14px;
+  max-width: 1414px;
   color: var(--oss-text);
 }
 .oss-section-title::before {
@@ -531,6 +554,15 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   height: 70%;
   border-radius: 2px;
   background: var(--oss-accent, #e50914);
+}
+.oss-section-title-text {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.oss-section-title-text:hover,
+.oss-section-title-text:focus-visible {
+  color: var(--oss-accent);
 }
 .oss-section-title-link {
   margin-left: 14px;
@@ -591,8 +623,11 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 /* ── Row carousel chevrons ── */
 .oss-row-wrapper {
   position: relative;
-  /* Cap the row to ~6 cards (200px × 6 + 14px × 5 gaps), left-aligned in the section */
-  max-width: 1270px;
+  /* Cap the row to ~6 cards (224px × 6 + 14px × 5 gaps = 1414px), centered in the section
+     so the empty space on left and right is equal. */
+  max-width: 1414px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .oss-row-chevron {
   position: absolute;
@@ -639,7 +674,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 .oss-card {
   position: relative;
   flex-shrink: 0;
-  width: 200px;
+  width: 224px;
   border-radius: var(--oss-radius);
   overflow: hidden;
   cursor: pointer;
@@ -653,7 +688,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 }
 .oss-card-img {
   width: 100%;
-  height: 280px;
+  height: 314px;
   object-fit: cover;
   display: block;
 }
@@ -905,10 +940,30 @@ body.modal-open #root {
   overflow: hidden;
   border: 1px solid var(--oss-border);
 }
+/* When the list is scrollable inside the card modal, give it a quiet, narrow scrollbar. */
+.oss-episode-list-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.oss-episode-list-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.oss-episode-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.oss-episode-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+.oss-episode-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
 .oss-episode {
   position: relative;
   display: flex;
   align-items: stretch;
+  min-height: 46px;
+  box-sizing: border-box;
   transition: background 0.15s ease, opacity 0.2s ease;
 }
 .oss-episode:not(:last-child) {
@@ -1074,6 +1129,9 @@ body.modal-open #root {
 }
 
 /* ── Fade-in animation for sections ── */
+/* End state is `transform: none` so once the animation finishes, the section
+   isn't holding onto a transform — otherwise `animation-fill-mode: both` would
+   keep `translateY(0)` applied and beat `.oss-section:hover { transform: scale(...) }`. */
 @keyframes ossFadeSlideIn {
   from {
     opacity: 0;
@@ -1081,7 +1139,7 @@ body.modal-open #root {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 .oss-section {
@@ -1104,14 +1162,14 @@ body.modal-open #root {
 }
 .skeleton-card {
   flex-shrink: 0;
-  width: 200px;
+  width: 224px;
   border-radius: var(--oss-radius);
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 .skeleton-card-img {
   width: 100%;
-  height: 280px;
+  height: 314px;
   border-radius: var(--oss-radius);
 }
 .skeleton-card-title {
@@ -1866,6 +1924,10 @@ body.modal-open #root {
   /* Genre trigger in overlay */
   .oss-genre-trigger {
     width: 100%;
+  }
+  /* Mobile overlay uses click-to-open, no hover gap to bridge — disable the desktop pseudo bridge. */
+  .oss-genre-trigger::after {
+    display: none;
   }
 
   /* Genre dropdown: replaces the menu content in-place */

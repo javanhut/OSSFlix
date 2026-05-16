@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { MigratorTab, AddMediaTab, css } from "../components/ProfileSettings";
 import { PasswordInput } from "../components/PasswordInput";
 
-type AdminTab = "media" | "addmedia" | "migrator" | "accounts";
+type AdminTab = "media" | "addmedia" | "migrator" | "accounts" | "backup";
 
 interface AccountGroup {
   email: string;
@@ -507,6 +507,9 @@ export default function Admin() {
         </button>
         <button type="button" style={tabStyle(activeTab === "accounts")} onClick={() => setActiveTab("accounts")}>
           Accounts
+        </button>
+        <button type="button" style={tabStyle(activeTab === "backup")} onClick={() => setActiveTab("backup")}>
+          Backup & Restore
         </button>
       </div>
 
@@ -1060,8 +1063,184 @@ export default function Admin() {
             )}
           </>
         )}
+
+        {activeTab === "backup" && <BackupRestoreTab />}
       </div>
     </div>
+  );
+}
+
+function BackupRestoreTab() {
+  const [downloading, setDownloading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/backup", { credentials: "same-origin" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `Backup failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const fnMatch = cd.match(/filename="([^"]+)"/);
+      const filename = fnMatch ? fnMatch[1] : `reelscape-backup-${Date.now()}.db`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessage({ kind: "ok", text: `Downloaded ${filename}` });
+    } catch (err: any) {
+      setMessage({ kind: "err", text: err?.message || "Backup failed" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!pendingFile) return;
+    if (confirmText !== "RESTORE") {
+      setMessage({ kind: "err", text: 'Type RESTORE to confirm.' });
+      return;
+    }
+    setRestoring(true);
+    setMessage(null);
+    try {
+      const buffer = await pendingFile.arrayBuffer();
+      const res = await fetch("/api/admin/restore", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: buffer,
+      });
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (!res.ok) throw new Error(data.error || `Restore failed (${res.status})`);
+      setMessage({
+        kind: "ok",
+        text: "Restore staged. The server is restarting — reload the page in a few seconds.",
+      });
+      setPendingFile(null);
+      setConfirmText("");
+    } catch (err: any) {
+      setMessage({ kind: "err", text: err?.message || "Restore failed" });
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionHeader
+        icon="db"
+        color="#22c55e"
+        title="Backup Database"
+        subtitle="Download a snapshot of profiles, watch history, watchlist, settings, and timings."
+      />
+      <div style={{ display: "flex", gap: "8px", marginBottom: "24px" }}>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          style={{
+            ...css.btn,
+            padding: "10px 20px",
+            background: "linear-gradient(135deg, #22c55e, #16a34a)",
+            color: "#fff",
+            opacity: downloading ? 0.6 : 1,
+          }}
+        >
+          {downloading ? "Preparing..." : "Download Backup"}
+        </button>
+      </div>
+
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "20px" }}>
+        <SectionHeader
+          icon="db"
+          color="#ef4444"
+          title="Restore Database"
+          subtitle="Replace the current database with a previously downloaded backup. The server will restart."
+        />
+        <div
+          style={{
+            padding: "12px 14px",
+            borderRadius: "8px",
+            marginBottom: "16px",
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.25)",
+            color: "#fca5a5",
+            fontSize: "0.82rem",
+            lineHeight: 1.5,
+          }}
+        >
+          Restoring overwrites all profiles, watch history, sessions, and settings on this server. The current database
+          is preserved as <code style={{ fontFamily: "monospace" }}>ossflix.db.previous</code> in the data volume.
+        </div>
+        <input
+          type="file"
+          accept=".db,application/x-sqlite3,application/octet-stream"
+          onChange={(e) => {
+            setPendingFile(e.target.files?.[0] || null);
+            setMessage(null);
+          }}
+          style={{ marginBottom: "12px", color: "rgba(255,255,255,0.6)", fontSize: "0.82rem" }}
+        />
+        {pendingFile && (
+          <>
+            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", marginBottom: "8px" }}>
+              Selected: <strong style={{ color: "#fff" }}>{pendingFile.name}</strong> (
+              {(pendingFile.size / 1024).toFixed(1)} KB)
+            </p>
+            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", marginBottom: "6px" }}>
+              Type <strong style={{ color: "#fff", fontFamily: "monospace" }}>RESTORE</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="RESTORE"
+              style={{ ...css.input, marginBottom: "12px", fontFamily: "monospace" }}
+            />
+            <button
+              type="button"
+              onClick={handleRestore}
+              disabled={restoring || confirmText !== "RESTORE"}
+              style={{
+                ...css.btn,
+                padding: "10px 20px",
+                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                color: "#fff",
+                opacity: restoring || confirmText !== "RESTORE" ? 0.5 : 1,
+              }}
+            >
+              {restoring ? "Restoring..." : "Restore Database"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {message && (
+        <p
+          style={{
+            marginTop: "16px",
+            padding: "10px 12px",
+            borderRadius: "8px",
+            fontSize: "0.82rem",
+            background: message.kind === "ok" ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+            color: message.kind === "ok" ? "#22c55e" : "#ef4444",
+            border: `1px solid ${message.kind === "ok" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+          }}
+        >
+          {message.text}
+        </p>
+      )}
+    </>
   );
 }
 

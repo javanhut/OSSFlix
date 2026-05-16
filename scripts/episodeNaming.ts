@@ -8,7 +8,16 @@ export interface ParsedEpisode {
 export const SEASON_TOKEN = /^(?:s|season\s?)0*(\d+)$/i;
 export const EPISODE_TOKEN = /^(?:e|ep|episode\s?)0*(\d+)$/i;
 export const COMBINED_SE_TOKEN = /(?:^|[._\s-])(?:s|season\s?)0*(\d+)[._\s-]*(?:e|ep|episode\s?)0*(\d+)(?=$|[._\s-])/i;
-export const CANONICAL_SUFFIX = /_s(\d+)_ep(\d+)\.[^.]+$/i;
+export const CANONICAL_SUFFIX = /_s(\d+)_ep(\d+)(?:_(?:sub|dub))?\.[^.]+$/i;
+export const VARIANT_SUFFIX = /_(sub|dub)\.[^.]+$/i;
+
+export type AudioVariant = "sub" | "dub";
+
+export function detectVariant(videoSrc: string): AudioVariant | null {
+  const filename = videoSrc.split("/").pop() || videoSrc;
+  const match = filename.match(VARIANT_SUFFIX);
+  return match ? (match[1].toLowerCase() as AudioVariant) : null;
+}
 
 export function titleFromStem(stem: string): string {
   const cleaned = stem.replace(/_/g, " ").replace(/\s+/g, " ").trim();
@@ -54,7 +63,9 @@ export function parseEpisodePath(relPath: string): ParsedEpisode | null {
   const filename = segments.pop()!;
   const dotIdx = filename.lastIndexOf(".");
   const ext = dotIdx >= 0 ? filename.slice(dotIdx + 1).toLowerCase() : "";
-  const stem = dotIdx >= 0 ? filename.slice(0, dotIdx) : filename;
+  const rawStem = dotIdx >= 0 ? filename.slice(0, dotIdx) : filename;
+  // Strip trailing _sub/_dub variant tag so it doesn't leak into the rendered title
+  const stem = rawStem.replace(/_(?:sub|dub)$/i, "");
 
   let seasonFromDir: number | null = null;
   let epFromDir: number | null = null;

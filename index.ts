@@ -13,8 +13,11 @@ import {
   searchGenres,
   getAllGenreNames,
   getTitlesByMultipleGenres,
+  getMediaDirectories,
 } from "./scripts/autoresolver";
-import { copyFile, mkdir, unlink } from "node:fs/promises";
+import { copyFile, mkdir, unlink, rename } from "node:fs/promises";
+import { watch as fsWatch, existsSync, type FSWatcher } from "node:fs";
+import { Database } from "bun:sqlite";
 import {
   getOrCreateDefaultProfile,
   updateProfile,
@@ -124,9 +127,54 @@ seedGuestProfile().catch((err) => console.error("[ossflix] failed to seed guest 
 // Hourly session cleanup
 setInterval(() => cleanExpiredSessions(), 3600_000);
 
+// Auto-rescan: trigger a library rescan whenever the watched media directories change.
+// Filesystem events are bursty (a single file copy can fire many events), so debounce.
+let autoRescanInFlight = false;
+let rescanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleAutoRescan(reason: string) {
+  if (rescanDebounceTimer) clearTimeout(rescanDebounceTimer);
+  rescanDebounceTimer = setTimeout(async () => {
+    rescanDebounceTimer = null;
+    if (autoRescanInFlight) return;
+    autoRescanInFlight = true;
+    try {
+      await resolveToDb();
+      console.log(`[ossflix] auto-rescan complete (${reason})`);
+    } catch (err) {
+      console.error("[ossflix] auto-rescan failed:", err);
+    } finally {
+      autoRescanInFlight = false;
+    }
+  }, 3000);
+}
+
+const mediaWatchers: FSWatcher[] = [];
+function watchMediaDir(dir: string | null | undefined, label: string) {
+  if (!dir || !existsSync(dir)) return;
+  try {
+    const watcher = fsWatch(dir, { recursive: true, persistent: false }, (_event, filename) => {
+      scheduleAutoRescan(`${label}: ${filename ?? "<unknown>"}`);
+    });
+    watcher.on("error", (err) => console.error(`[ossflix] ${label} watcher error:`, err));
+    mediaWatchers.push(watcher);
+    console.log(`[ossflix] watching ${label} for changes: ${dir}`);
+  } catch (err) {
+    console.error(`[ossflix] failed to watch ${label} (${dir}):`, err);
+  }
+}
+
+const initialDirs = getMediaDirectories();
+watchMediaDir(initialDirs.moviesDir, "movies");
+watchMediaDir(initialDirs.tvshowsDir, "tvshows");
+
 // Graceful shutdown — flush WAL to main database file
 function gracefulShutdown(signal: string) {
   console.log(`[ossflix] received ${signal}, checkpointing database...`);
+  for (const w of mediaWatchers) {
+    try {
+      w.close();
+    } catch {}
+  }
   try {
     db.run("PRAGMA wal_checkpoint(TRUNCATE)");
   } catch (e) {
@@ -614,6 +662,76 @@ Bun.serve({
         if (!id) return Response.json({ error: "Missing id" }, { status: 400 });
         deleteProfile(id);
         return Response.json({ ok: true });
+      },
+    },
+    "/api/admin/backup": {
+      async GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const tempPath = join(DATA_DIR, `backup-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+        try {
+          db.run(`VACUUM INTO '${tempPath.replace(/'/g, "''")}'`);
+          const buffer = await Bun.file(tempPath).arrayBuffer();
+          const datestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+          return new Response(buffer, {
+            headers: {
+              "Content-Type": "application/x-sqlite3",
+              "Content-Disposition": `attachment; filename="reelscape-backup-${datestamp}.db"`,
+              "Cache-Control": "no-store",
+            },
+          });
+        } catch (err: any) {
+          return Response.json({ error: err?.message || "Backup failed" }, { status: 500 });
+        } finally {
+          await unlink(tempPath).catch(() => {});
+        }
+      },
+    },
+    "/api/admin/restore": {
+      async POST(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const dbPath = join(DATA_DIR, "ossflix.db");
+        const pendingPath = join(DATA_DIR, "ossflix.db.restore-pending");
+        const previousPath = join(DATA_DIR, "ossflix.db.previous");
+        try {
+          const buffer = await req.arrayBuffer();
+          if (buffer.byteLength < 100)
+            return Response.json({ error: "Uploaded file is too small to be a SQLite database" }, { status: 400 });
+          // SQLite files start with the magic header "SQLite format 3\0"
+          const header = new TextDecoder().decode(new Uint8Array(buffer, 0, 16));
+          if (!header.startsWith("SQLite format 3"))
+            return Response.json({ error: "Uploaded file is not a SQLite database" }, { status: 400 });
+          await Bun.write(pendingPath, buffer);
+          // Validate by opening read-only and checking core tables exist
+          const validate = new Database(pendingPath, { readonly: true });
+          try {
+            const required = ["profiles", "global_settings", "playback_progress"];
+            const tables = validate
+              .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+              .all() as { name: string }[];
+            const names = new Set(tables.map((t) => t.name));
+            const missing = required.filter((t) => !names.has(t));
+            if (missing.length > 0) {
+              await unlink(pendingPath).catch(() => {});
+              return Response.json(
+                { error: `Uploaded database is missing required tables: ${missing.join(", ")}` },
+                { status: 400 },
+              );
+            }
+          } finally {
+            validate.close();
+          }
+          // Promote: keep the current DB as a fallback, swap the new file into place
+          await rename(dbPath, previousPath).catch(() => {});
+          await rename(pendingPath, dbPath);
+          // The existing process still holds the old DB handle by inode; the new file
+          // will only take effect after restart. Schedule one — under restart:unless-stopped
+          // the orchestrator brings the container back up.
+          setTimeout(() => process.exit(0), 500);
+          return Response.json({ ok: true, restart_required: true });
+        } catch (err: any) {
+          await unlink(pendingPath).catch(() => {});
+          return Response.json({ error: err?.message || "Restore failed" }, { status: 500 });
+        }
       },
     },
     "/api/auth/lookup": {
@@ -1834,10 +1952,12 @@ Bun.serve({
         const body = await req.json();
         if (body.clear_all) {
           db.run("DELETE FROM playback_progress WHERE profile_id = ?", [profile.id]);
+        } else if (body.dir_path) {
+          db.run("DELETE FROM playback_progress WHERE profile_id = ? AND dir_path = ?", [profile.id, body.dir_path]);
         } else if (body.video_src) {
           db.run("DELETE FROM playback_progress WHERE profile_id = ? AND video_src = ?", [profile.id, body.video_src]);
         } else {
-          return Response.json({ error: "Missing video_src or clear_all" }, { status: 400 });
+          return Response.json({ error: "Missing video_src, dir_path, or clear_all" }, { status: 400 });
         }
         return Response.json({ ok: true });
       },
@@ -2202,8 +2322,8 @@ Bun.serve({
       GET(req) {
         const profile = getProfileFromReq(req);
         const url = new URL(req.url);
-        const limit = parseInt(url.searchParams.get("limit") || "6", 10);
-        const recs = getRecommendations(profile.id, Math.min(limit, 20));
+        const limit = parseInt(url.searchParams.get("limit") || "5", 10);
+        const recs = getRecommendations(profile.id, Math.min(limit, 5));
         return Response.json(recs);
       },
     },

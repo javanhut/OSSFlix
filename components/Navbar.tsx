@@ -242,10 +242,29 @@ export function NavBar() {
               className={`oss-genre-trigger${openMenu === "movies" ? " oss-genre-open" : ""}`}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest(".oss-genre-dropdown")) return;
+                if ((e.target as HTMLElement).closest(".oss-nav-link")) return;
                 setOpenMenu((v) => (v === "movies" ? null : "movies"));
               }}
             >
-              <span className="oss-nav-link">Movies</span>
+              <Link
+                to="/movies"
+                className="oss-nav-link"
+                onClick={(e) => {
+                  if (navOpen) {
+                    // mobile overlay: tap toggles the sub-menu instead of navigating
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpenMenu((v) => (v === "movies" ? null : "movies"));
+                    return;
+                  }
+                  // desktop: navigate, and make sure no menu state is left holding the body scroll lock
+                  e.stopPropagation();
+                  setOpenMenu(null);
+                  setNavOpen(false);
+                }}
+              >
+                Movies
+              </Link>
               <div className="oss-genre-dropdown">
                 <div className="oss-genre-header">
                   <span>Movies</span>
@@ -302,10 +321,27 @@ export function NavBar() {
               className={`oss-genre-trigger${openMenu === "tv" ? " oss-genre-open" : ""}`}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest(".oss-genre-dropdown")) return;
+                if ((e.target as HTMLElement).closest(".oss-nav-link")) return;
                 setOpenMenu((v) => (v === "tv" ? null : "tv"));
               }}
             >
-              <span className="oss-nav-link">TV Shows</span>
+              <Link
+                to="/tvshows"
+                className="oss-nav-link"
+                onClick={(e) => {
+                  if (navOpen) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOpenMenu((v) => (v === "tv" ? null : "tv"));
+                    return;
+                  }
+                  e.stopPropagation();
+                  setOpenMenu(null);
+                  setNavOpen(false);
+                }}
+              >
+                TV Shows
+              </Link>
               <div className="oss-genre-dropdown">
                 <div className="oss-genre-header">
                   <span>TV Shows</span>

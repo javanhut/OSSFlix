@@ -26,7 +26,7 @@ function relativeTime(dateStr: string): string {
 
 function parseEpisodeInfo(videoSrc: string): string {
   const filename = videoSrc.split("/").pop() || videoSrc;
-  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
+  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)(?:_(?:sub|dub))?\.[^.]+$/i);
   if (match) return `S${match[2]} E${match[3]}`;
   return filename.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
 }

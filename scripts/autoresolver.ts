@@ -18,7 +18,7 @@ type MenuRow = {
   titles: TitleInfo[];
 };
 
-function getMediaDirectories(): { moviesDir: string; tvshowsDir: string } {
+export function getMediaDirectories(): { moviesDir: string; tvshowsDir: string } {
   // Prefer global settings, fall back to default profile, then defaults
   const global = getGlobalSettings();
   if (global.movies_directory || global.tvshows_directory) {
@@ -125,8 +125,11 @@ export async function resolveToDb(): Promise<void> {
     if (allMedia.length > 0) {
       insertCategory.run("Newly Added", sortOrder++);
       const catRow = getCategoryId.get("Newly Added") as { id: number };
-      for (const [, titleId] of titleIds) {
-        insertCategoryTitle.run(catRow.id, titleId);
+      const recentTitles = db
+        .prepare("SELECT id FROM titles ORDER BY created_at DESC, id DESC LIMIT 6")
+        .all() as { id: number }[];
+      for (const { id } of recentTitles) {
+        insertCategoryTitle.run(catRow.id, id);
       }
     }
 
@@ -184,7 +187,7 @@ export async function resolveToDb(): Promise<void> {
       if (!match) continue;
       const seasonNum = Number(match[1]);
       const epNum = Number(match[2]);
-      const pattern = new RegExp(`_s0*${seasonNum}_ep0*${epNum}\\.[^.]+$`, "i");
+      const pattern = new RegExp(`_s0*${seasonNum}_ep0*${epNum}(?:_(?:sub|dub))?\\.[^.]+$`, "i");
       for (const videoSrc of media.videos) {
         const filename = videoSrc.split("/").pop() || "";
         if (pattern.test(filename)) {

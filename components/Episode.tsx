@@ -10,6 +10,8 @@ type EpisodeProps = {
   progress?: Progress | null;
   onPlay: () => void;
   onRestart?: () => void;
+  onHoverStart?: () => void;
+  onHoverEnd?: () => void;
 };
 
 function parseFilename(filename: string) {
@@ -34,7 +36,7 @@ function formatTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function Episode({ filename, progress, onPlay, onRestart }: EpisodeProps) {
+export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, onHoverEnd }: EpisodeProps) {
   const parsed = parseFilename(filename);
   const isInProgress =
     !!progress &&
@@ -57,7 +59,13 @@ export function Episode({ filename, progress, onPlay, onRestart }: EpisodeProps)
   }
 
   return (
-    <div className={`oss-episode${stateClass}`}>
+    <div
+      className={`oss-episode${stateClass}`}
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
+      onFocus={onHoverStart}
+      onBlur={onHoverEnd}
+    >
       <button type="button" className="oss-episode-main" onClick={onPlay} aria-label={ariaLabel}>
         <span className="oss-episode-num" aria-hidden="true">
           {parsed.type === "episode" ? `Episode ${parsed.episode}` : "Movie"}

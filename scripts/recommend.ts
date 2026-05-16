@@ -12,7 +12,7 @@ type Recommendation = TitleInfo & {
   reason: string;
 };
 
-export function getRecommendations(profileId: number, limit = 6): Recommendation[] {
+export function getRecommendations(profileId: number, limit = 5): Recommendation[] {
   // 1. Get all titles the user has watched (any progress at all)
   const watchedDirs = db
     .prepare(`

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
-import { parseEpisodePath, formatEpisodeLabel } from "../scripts/episodeNaming";
+import { parseEpisodePath, formatEpisodeLabel, detectVariant, type AudioVariant } from "../scripts/episodeNaming";
 import type { SeasonMeta } from "../scripts/tomlreader";
 
 type SubtitleTrack = {
@@ -426,7 +426,7 @@ function TimingsModal({
       setRows((prev) =>
         prev.map((r) => {
           const filename = r.video_src.split("/").pop() || "";
-          const epMatch = filename.match(/_s(\d+)_ep(\d+)\./i);
+          const epMatch = filename.match(/_s(\d+)_ep(\d+)(?:_(?:sub|dub))?\./i);
           if (!epMatch) return r;
           const key = `s${epMatch[1].replace(/^0+/, "") || "0"}e${epMatch[2].replace(/^0+/, "") || "0"}`;
           const timing =
@@ -614,7 +614,7 @@ function TimingsModal({
 
 function parseSeasonNumber(videoSrc: string): number | null {
   const filename = videoSrc.split("/").pop() || videoSrc;
-  const match = filename.match(/_s(\d+)_ep\d+\.[^.]+$/i);
+  const match = filename.match(/_s(\d+)_ep\d+(?:_(?:sub|dub))?\.[^.]+$/i);
   return match ? parseInt(match[1], 10) : null;
 }
 
@@ -644,17 +644,35 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [showTimingsModal, setShowTimingsModal] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<AudioVariant | null>(null);
+  const availableVariants = useMemo(() => {
+    const set = new Set<AudioVariant>();
+    for (const v of information?.videos || []) {
+      const variant = detectVariant(v);
+      if (variant) set.add(variant);
+    }
+    return set;
+  }, [information?.videos]);
+  const hasBothVariants = availableVariants.has("sub") && availableVariants.has("dub");
+  const filteredVideos = useMemo(() => {
+    const videos = information?.videos || [];
+    if (!hasBothVariants || selectedVariant === null) return videos;
+    return videos.filter((v) => {
+      const variant = detectVariant(v);
+      return variant === null || variant === selectedVariant;
+    });
+  }, [information?.videos, hasBothVariants, selectedVariant]);
   const currentSeasonMeta = useMemo(() => {
     if (!information) return null;
     const metas = information.seasonsMeta || [];
     if (metas.length === 0) return null;
-    const seasonMap = groupVideosBySeason(information.videos || []);
+    const seasonMap = groupVideosBySeason(filteredVideos);
     const onlyOneSeason = seasonMap.size <= 1;
     const explicit = selectedSeason != null ? metas.find((m) => m.season === selectedSeason) : undefined;
     if (explicit) return explicit;
     if (onlyOneSeason && metas.length === 1) return metas[0];
     return null;
-  }, [information, selectedSeason]);
+  }, [information, selectedSeason, filteredVideos]);
   const displayBanner = currentSeasonMeta?.logo || information?.bannerImage || null;
   const displayDescription = currentSeasonMeta?.description || information?.description || "";
   // Feature 2: Sleep detection
@@ -675,6 +693,81 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [detectJobId, setDetectJobId] = useState<number | null>(null);
   const [detectProgress, setDetectProgress] = useState<string>("");
   const [detecting, setDetecting] = useState(false);
+  // Dropdown of secondary actions next to the genres
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  // Confirmation modal for resetting all playback progress on this title
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetInFlight, setResetInFlight] = useState(false);
+  const handleResetAllProgress = async () => {
+    if (!dirPath) return;
+    setResetInFlight(true);
+    try {
+      await fetch("/api/playback/history", {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir_path: dirPath }),
+      });
+      setProgressMap({});
+      fetchProgress();
+      setShowResetConfirm(false);
+    } catch (err) {
+      console.error("Failed to reset progress:", err);
+    } finally {
+      setResetInFlight(false);
+    }
+  };
+  // Episode hover preview — swaps the banner image for a muted /api/stream of the hovered episode
+  const [hoverPreviewSrc, setHoverPreviewSrc] = useState<string | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPreviewableVideo = (src: string) => {
+    const ext = (src.split(".").pop() || "").toLowerCase();
+    return ext === "mp4" || ext === "webm" || ext === "m4v" || ext === "ogv" || ext === "mov";
+  };
+  const beginHoverPreview = (src: string) => {
+    if (!isPreviewableVideo(src)) return;
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => setHoverPreviewSrc(src), 450);
+  };
+  const endHoverPreview = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHoverPreviewSrc(null);
+  };
+  useEffect(
+    () => () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    },
+    [],
+  );
+  // Tear down any preview when the player opens or the modal closes
+  useEffect(() => {
+    if (playerSrc || !show) endHoverPreview();
+  }, [playerSrc, show]);
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [moreMenuOpen]);
+
+  // Default to "sub" the first time we see both sub & dub variants for a title
+  useEffect(() => {
+    if (hasBothVariants && selectedVariant === null) setSelectedVariant("sub");
+  }, [hasBothVariants, selectedVariant]);
+
+  // If the active season disappears after a variant switch, fall back to the first available season
+  useEffect(() => {
+    if (selectedSeason == null) return;
+    const seasons = [...groupVideosBySeason(filteredVideos).keys()];
+    if (seasons.length === 0) return;
+    if (!seasons.includes(selectedSeason)) setSelectedSeason(seasons[0]);
+  }, [filteredVideos, selectedSeason]);
 
   // Focus trap for modal (D2)
   const previousFocusRef = useRef<Element | null>(null);
@@ -767,6 +860,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
       setLoading(true);
       setInformation(null);
       setSelectedSeason(null);
+      setSelectedVariant(null);
       fetch(`/api/media/info?dir=${encodeURIComponent(dirPath)}`)
         .then((res) => res.json())
         .then((data: MediaInfo) => {
@@ -796,7 +890,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   }, [show, dirPath]);
 
   const handlePlay = (videoSrc?: string, fromBeginning = false) => {
-    const src = videoSrc || information?.videos?.[0];
+    const src = videoSrc || filteredVideos[0];
     if (!src) return;
     if (fromBeginning) {
       setPlayerInitialTime(0);
@@ -811,9 +905,10 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
 
   const handleResume = () => {
     // Find in-progress entries (not completed) sorted by video order in the title
-    const videos = information?.videos || [];
+    const videos = filteredVideos;
+    const videoSet = new Set(videos);
     const inProgress = Object.values(progressMap).filter(
-      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
+      (e) => videoSet.has(e.video_src) && e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
     );
     if (inProgress.length > 0) {
       // Pick the latest one by position in the video list (most recent episode)
@@ -828,7 +923,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     } else {
       // All episodes completed — find the next unwatched episode after the last completed one
       const completedSrcs = Object.values(progressMap)
-        .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
+        .filter((e) => videoSet.has(e.video_src) && e.duration > 0 && e.current_time >= e.duration - 5)
         .map((e) => e.video_src);
       if (completedSrcs.length > 0 && videos.length > 0) {
         let lastCompletedIdx = -1;
@@ -847,15 +942,19 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     }
   };
 
+  const filteredSrcSet = useMemo(() => new Set(filteredVideos), [filteredVideos]);
   const hasResumable =
     Object.values(progressMap).some(
-      (e) => e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
+      (e) =>
+        filteredSrcSet.has(e.video_src) &&
+        e.current_time > 0 &&
+        (e.duration === 0 || e.current_time < e.duration - 5),
     ) ||
     (() => {
       // Also show resume if there are completed episodes and a next episode to play
-      const videos = information?.videos || [];
+      const videos = filteredVideos;
       const completedSrcs = Object.values(progressMap)
-        .filter((e) => e.duration > 0 && e.current_time >= e.duration - 5)
+        .filter((e) => filteredSrcSet.has(e.video_src) && e.duration > 0 && e.current_time >= e.duration - 5)
         .map((e) => e.video_src);
       if (completedSrcs.length > 0 && videos.length > 1) {
         let lastCompletedIdx = -1;
@@ -903,7 +1002,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 </button>
               </div>
             </ModalHeader>
-            <ModalBody>
+            <ModalBody style={{ overflow: "hidden" }}>
               {displayBanner && (
                 <div
                   className="oss-modal-banner"
@@ -912,24 +1011,58 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     marginBottom: "1rem",
                     borderRadius: "var(--oss-radius)",
                     overflow: "hidden",
+                    height: "300px",
+                    background: "var(--oss-bg-elevated)",
                   }}
                 >
                   <img
                     src={displayBanner}
                     alt={information.name}
-                    style={{ width: "100%", height: "300px", objectFit: "cover", display: "block" }}
+                    style={{
+                      width: "100%",
+                      height: "300px",
+                      objectFit: "cover",
+                      display: "block",
+                      transition: "opacity 0.2s ease",
+                      opacity: hoverPreviewSrc ? 0 : 1,
+                    }}
                   />
+                  {hoverPreviewSrc && (
+                    <video
+                      key={hoverPreviewSrc}
+                      src={`/api/stream?src=${encodeURIComponent(hoverPreviewSrc)}`}
+                      muted
+                      autoPlay
+                      loop
+                      playsInline
+                      preload="metadata"
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        const target = Math.min(30, (v.duration || 60) * 0.1);
+                        if (Number.isFinite(target) && target > 0) v.currentTime = target;
+                      }}
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  )}
                   <div
                     style={{
                       position: "absolute",
                       inset: 0,
                       background: "linear-gradient(transparent 50%, var(--oss-bg-card))",
+                      pointerEvents: "none",
                     }}
                   />
                 </div>
               )}
 
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px", alignItems: "center" }}>
                 <span
                   style={{
                     background: "var(--oss-accent)",
@@ -968,6 +1101,159 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     {g}
                   </button>
                 ))}
+                <div ref={moreMenuRef} style={{ position: "relative", marginLeft: "auto" }}>
+                  <button
+                    type="button"
+                    onClick={() => setMoreMenuOpen((v) => !v)}
+                    title="More actions"
+                    aria-haspopup="menu"
+                    aria-expanded={moreMenuOpen}
+                    style={{
+                      background: "rgba(255,255,255,0.08)",
+                      color: "var(--oss-text-muted)",
+                      padding: "3px 10px",
+                      borderRadius: "4px",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      border: "none",
+                      cursor: "pointer",
+                      lineHeight: 1,
+                    }}
+                  >
+                    &#x2026;
+                  </button>
+                  {moreMenuOpen && (
+                    <div
+                      role="menu"
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 6px)",
+                        right: 0,
+                        minWidth: "180px",
+                        background: "var(--oss-bg-elevated)",
+                        border: "1px solid var(--oss-border)",
+                        borderRadius: "8px",
+                        padding: "6px",
+                        zIndex: 50,
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                      }}
+                    >
+                      {tmdbApiKey && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="oss-more-menu-item"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            setTmdbQuery(information.name);
+                            setShowTmdbModal(true);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--oss-text)",
+                            padding: "8px 10px",
+                            textAlign: "left",
+                            fontSize: "0.82rem",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          Fetch from TMDB
+                        </button>
+                      )}
+                      {information.videos?.length > 1 && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            setShowTimingsModal(true);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--oss-text)",
+                            padding: "8px 10px",
+                            textAlign: "left",
+                            fontSize: "0.82rem",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          Episode Timings
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          setShowResetConfirm(true);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#fca5a5",
+                          padding: "8px 10px",
+                          textAlign: "left",
+                          fontSize: "0.82rem",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(239,68,68,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        Reset all progress
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onHide();
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--oss-text-muted)",
+                          padding: "8px 10px",
+                          textAlign: "left",
+                          fontSize: "0.82rem",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1rem" }}>
@@ -1025,14 +1311,55 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 </div>
               )}
 
+              {hasBothVariants && (
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "1rem" }}>
+                  <label
+                    htmlFor="oss-variant-select"
+                    style={{ color: "var(--oss-text-muted)", fontSize: "0.82rem", fontWeight: 500 }}
+                  >
+                    Audio
+                  </label>
+                  <select
+                    id="oss-variant-select"
+                    value={selectedVariant ?? "sub"}
+                    onChange={(e) => setSelectedVariant(e.target.value as AudioVariant)}
+                    style={{
+                      background: "var(--oss-bg-elevated)",
+                      color: "var(--oss-text)",
+                      border: "1px solid var(--oss-border)",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                  >
+                    <option value="sub">Sub</option>
+                    <option value="dub">Dub</option>
+                  </select>
+                </div>
+              )}
+
               {(() => {
-                const seasonMap = groupVideosBySeason(information.videos || []);
+                const seasonMap = groupVideosBySeason(filteredVideos);
                 const seasonKeys = [...seasonMap.keys()];
                 const hasSeasons = seasonKeys.length > 0;
+                const showPlay = (information.videos?.length ?? 0) > 0;
+                const playButton = showPlay ? (
+                  <button
+                    type="button"
+                    className={`oss-btn oss-btn-sm ${hasResumable ? "oss-btn-success" : "oss-btn-primary"}`}
+                    onClick={() => (hasResumable ? handleResume() : handlePlay())}
+                  >
+                    &#9654; {hasResumable ? "Resume" : "Play"}
+                  </button>
+                ) : null;
 
+                let left: React.ReactNode = null;
                 if (hasSeasons && seasonKeys.length > 1) {
-                  return (
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "1rem" }}>
+                  left = (
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                       <select
                         value={selectedSeason ?? ""}
                         onChange={(e) => setSelectedSeason(parseInt(e.target.value, 10))}
@@ -1062,37 +1389,61 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     </div>
                   );
                 } else if (hasSeasons) {
-                  return (
-                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                  left = (
+                    <span style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem" }}>
                       <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {seasonKeys[0]}</span>
                       {" · "}
                       {seasonMap.get(seasonKeys[0])!.length} episode
                       {seasonMap.get(seasonKeys[0])!.length !== 1 ? "s" : ""}
-                    </p>
+                    </span>
                   );
                 } else if (information.season != null) {
-                  return (
-                    <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                  left = (
+                    <span style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem" }}>
                       <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Season {information.season}</span>
                       {" · "}
                       {information.videos.length} episode{information.videos.length !== 1 ? "s" : ""}
-                    </p>
+                    </span>
                   );
                 }
-                return null;
+
+                if (!left && !playButton) return null;
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      marginBottom: "1rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>{left}</div>
+                    {playButton}
+                  </div>
+                );
               })()}
 
               {information.videos?.length > 0 &&
                 (() => {
-                  const seasonMap = groupVideosBySeason(information.videos);
+                  const seasonMap = groupVideosBySeason(filteredVideos);
                   const hasSeasons = seasonMap.size > 0;
                   const displayVideos =
-                    hasSeasons && selectedSeason != null ? seasonMap.get(selectedSeason) || [] : information.videos;
+                    hasSeasons && selectedSeason != null ? seasonMap.get(selectedSeason) || [] : filteredVideos;
 
                   return (
                     <div
-                      className="oss-episode-list"
-                      style={{ borderTop: "1px solid var(--oss-border)", paddingTop: "12px", marginTop: "8px" }}
+                      className="oss-episode-list oss-episode-list-scroll"
+                      style={{
+                        borderTop: "1px solid var(--oss-border)",
+                        paddingTop: "12px",
+                        marginTop: "8px",
+                        // Cap to exactly 5 episode rows; the list scrolls, the modal body does not.
+                        // Row min-height is locked in CSS (.oss-episode) to keep this math reliable.
+                        maxHeight: "calc(var(--oss-episode-row-h, 46px) * 5 + 12px)",
+                        overflowY: "auto",
+                      }}
                     >
                       {displayVideos.map((v) => {
                         const prog = progressMap[v];
@@ -1104,6 +1455,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                             progress={prog || null}
                             onPlay={() => handlePlay(v, !!isCompleted)}
                             onRestart={() => handlePlay(v, true)}
+                            onHoverStart={() => beginHoverPreview(v)}
+                            onHoverEnd={endHoverPreview}
                           />
                         );
                       })}
@@ -1111,55 +1464,6 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   );
                 })()}
             </ModalBody>
-            <ModalFooter>
-              <button type="button" className="oss-btn oss-btn-secondary oss-btn-sm" onClick={onHide}>
-                Close
-              </button>
-              {tmdbApiKey && (
-                <button
-                  type="button"
-                  className="oss-btn oss-btn-success-soft oss-btn-sm"
-                  onClick={() => {
-                    setTmdbQuery(information.name);
-                    setShowTmdbModal(true);
-                  }}
-                >
-                  Fetch from TMDB
-                </button>
-              )}
-              {information.videos?.length > 1 && (
-                <button
-                  type="button"
-                  className="oss-btn oss-btn-info-soft oss-btn-sm"
-                  onClick={() => setShowTimingsModal(true)}
-                >
-                  <svg
-                    aria-hidden="true"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    style={{ verticalAlign: "-2px", marginRight: "4px" }}
-                  >
-                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0" />
-                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291a1.873 1.873 0 0 0-1.116-2.693l-.318-.094c-.835-.246-.835-1.428 0-1.674l.319-.094a1.873 1.873 0 0 0 1.115-2.693l-.16-.291c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116z" />
-                  </svg>
-                  Timings
-                </button>
-              )}
-              {information.videos?.length > 0 && (
-                <>
-                  {hasResumable && (
-                    <button type="button" className="oss-btn oss-btn-success oss-btn-sm" onClick={handleResume}>
-                      &#9654; Resume
-                    </button>
-                  )}
-                  <button type="button" className="oss-btn oss-btn-primary oss-btn-sm" onClick={() => handlePlay()}>
-                    &#9654; Play
-                  </button>
-                </>
-              )}
-            </ModalFooter>
           </>
         )}
       </Modal>
@@ -1177,6 +1481,42 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         />
       )}
 
+      <Modal show={showResetConfirm} onHide={() => setShowResetConfirm(false)} centered>
+        <ModalHeader closeButton>
+          <ModalTitle style={{ fontSize: "1.05rem" }}>Reset all progress?</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", margin: 0, lineHeight: 1.55 }}>
+            This will clear watch progress for every episode of{" "}
+            <strong style={{ color: "var(--oss-text)" }}>{information?.name || "this title"}</strong>. Completed episodes
+            will be marked unwatched again. This action can't be undone.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <button
+            type="button"
+            className="oss-btn oss-btn-secondary oss-btn-sm"
+            onClick={() => setShowResetConfirm(false)}
+            disabled={resetInFlight}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="oss-btn oss-btn-danger oss-btn-sm"
+            onClick={handleResetAllProgress}
+            disabled={resetInFlight}
+            style={{
+              background: "linear-gradient(135deg, #ef4444, #dc2626)",
+              color: "#fff",
+              opacity: resetInFlight ? 0.6 : 1,
+            }}
+          >
+            {resetInFlight ? "Resetting..." : "Reset all progress"}
+          </button>
+        </ModalFooter>
+      </Modal>
+
       <VideoPlayer
         show={!!playerSrc}
         onHide={() => {
@@ -1191,15 +1531,15 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         timings={playerSrc ? timingsMap[playerSrc] : undefined}
         subtitles={information?.subtitles}
         nextSrc={(() => {
-          if (!information?.videos || !playerSrc) return undefined;
-          const idx = information.videos.indexOf(playerSrc);
-          return idx >= 0 && idx < information.videos.length - 1 ? information.videos[idx + 1] : undefined;
+          if (!filteredVideos.length || !playerSrc) return undefined;
+          const idx = filteredVideos.indexOf(playerSrc);
+          return idx >= 0 && idx < filteredVideos.length - 1 ? filteredVideos[idx + 1] : undefined;
         })()}
         onNext={() => {
-          if (!information?.videos || !playerSrc) return;
-          const currentIndex = information.videos.indexOf(playerSrc);
-          if (currentIndex >= 0 && currentIndex < information.videos.length - 1) {
-            const nextSrc = information.videos[currentIndex + 1];
+          if (!filteredVideos.length || !playerSrc) return;
+          const currentIndex = filteredVideos.indexOf(playerSrc);
+          if (currentIndex >= 0 && currentIndex < filteredVideos.length - 1) {
+            const nextSrc = filteredVideos[currentIndex + 1];
             if (restartMode) {
               setPlayerInitialTime(0);
             } else {
@@ -1213,13 +1553,13 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
           }
         }}
         hasNext={
-          !!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) < information.videos.length - 1)
+          !!(filteredVideos.length && playerSrc && filteredVideos.indexOf(playerSrc) < filteredVideos.length - 1)
         }
         onPrev={() => {
-          if (!information?.videos || !playerSrc) return;
-          const currentIndex = information.videos.indexOf(playerSrc);
+          if (!filteredVideos.length || !playerSrc) return;
+          const currentIndex = filteredVideos.indexOf(playerSrc);
           if (currentIndex > 0) {
-            const prevSrc = information.videos[currentIndex - 1];
+            const prevSrc = filteredVideos[currentIndex - 1];
             if (restartMode) {
               setPlayerInitialTime(0);
             } else {
@@ -1229,7 +1569,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
             setPlayerSrc(prevSrc);
           }
         }}
-        hasPrev={!!(information?.videos && playerSrc && information.videos.indexOf(playerSrc) > 0)}
+        hasPrev={!!(filteredVideos.length && playerSrc && filteredVideos.indexOf(playerSrc) > 0)}
         profileId={pid}
       />
 

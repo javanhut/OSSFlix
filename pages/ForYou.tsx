@@ -18,7 +18,7 @@ export default function ForYou() {
   const [selectedDir, setSelectedDir] = useState("");
 
   useEffect(() => {
-    fetch("/api/recommendations?limit=20", { credentials: "same-origin" })
+    fetch("/api/recommendations?limit=5", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: Recommendation[]) => setRecs(data))
       .catch(() => {})
@@ -27,7 +27,7 @@ export default function ForYou() {
 
   useEffect(() => {
     const handler = () => {
-      fetch("/api/recommendations?limit=20", { credentials: "same-origin" })
+      fetch("/api/recommendations?limit=5", { credentials: "same-origin" })
         .then((r) => r.json())
         .then((data: Recommendation[]) => setRecs(data))
         .catch(() => {});

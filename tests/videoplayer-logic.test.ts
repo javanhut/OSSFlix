@@ -14,7 +14,7 @@ function formatTime(seconds: number): string {
 
 function parseEpisodeFromSrc(src: string): string | null {
   const filename = src.split("/").pop() || "";
-  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)\.[^.]+$/i);
+  const match = filename.match(/^(.*?)_s(\d+)_ep(\d+)(?:_(?:sub|dub))?\.[^.]+$/i);
   if (!match) return null;
   return `S${Number(match[2])} E${Number(match[3])} - ${match[1].replace(/_/g, " ")}`;
 }

@@ -2718,14 +2718,16 @@ export function Profile() {
           type="button"
           className="oss-profile-trigger"
           onClick={() => setDropdownOpen(!dropdownOpen)}
+          aria-label={`Account: ${profile.name}`}
+          title={profile.name}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "8px",
+            justifyContent: "center",
             background: "none",
             border: "2px solid transparent",
-            borderRadius: "24px",
-            padding: "3px 10px 3px 3px",
+            borderRadius: "50%",
+            padding: "2px",
             cursor: "pointer",
             transition: "all 0.2s ease",
             borderColor: dropdownOpen ? "var(--oss-accent)" : "transparent",
@@ -2745,24 +2747,9 @@ export function Profile() {
               height: "32px",
               borderRadius: "50%",
               objectFit: "cover",
+              display: "block",
             }}
           />
-          <span className="oss-profile-name" style={{ color: "var(--oss-text)", fontSize: "0.85rem", fontWeight: 500 }}>
-            {profile.name}
-          </span>
-          <svg
-            aria-hidden="true"
-            className="oss-profile-chevron"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--oss-text-muted)"
-            strokeWidth="2.5"
-            style={{ transition: "transform 0.2s ease", transform: dropdownOpen ? "rotate(180deg)" : "rotate(0)" }}
-          >
-            <polyline points="6,9 12,15 18,9" />
-          </svg>
         </button>
 
         {dropdownOpen && (
