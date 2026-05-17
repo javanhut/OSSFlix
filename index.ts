@@ -731,9 +731,19 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
 await resolveMediaLibraryAndRefreshWatchers();
 startAutoRescanPoller();
 
-Bun.serve({
-  port: 3000,
+const server = Bun.serve({
+  port: Number(process.env.PORT) || 3000,
+  reusePort: true,
   routes: {
+    "/healthz": {
+      GET() {
+        return Response.json({
+          ok: true,
+          instance: process.env.INSTANCE_ID || "default",
+          pid: process.pid,
+        });
+      },
+    },
     "/": index,
     "/home": index,
     "/tvshows": index,
@@ -3238,3 +3248,18 @@ Bun.serve({
         }
       : false,
 });
+
+// Graceful shutdown: systemd sends SIGTERM during a rolling update — stop
+// accepting new connections, let in-flight requests finish, then exit. The
+// peer instance (sharing the port via SO_REUSEPORT) keeps serving.
+const shutdown = async (signal: string) => {
+  console.log(`[shutdown] received ${signal}, draining…`);
+  try {
+    await server.stop(false);
+  } catch (err) {
+    console.error("[shutdown] server.stop failed", err);
+  }
+  process.exit(0);
+};
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

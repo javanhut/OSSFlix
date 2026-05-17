@@ -1,0 +1,31 @@
+[Unit]
+Description=Reelscape (instance %i)
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__DIR__
+Environment=NODE_ENV=production
+Environment=INSTANCE_ID=%i
+Environment=PORT=__PORT__
+Environment=OSSFLIX_DATA_DIR=__DATA__
+ExecStart=__BUN__ __DIR__/index.ts
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reelscape-%i
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=__DIR__ __DATA__
+
+[Install]
+WantedBy=multi-user.target

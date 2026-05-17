@@ -595,6 +595,8 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   scroll-behavior: smooth;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 .oss-row::-webkit-scrollbar { display: none; }
 .oss-row-track {
@@ -2084,4 +2086,11 @@ body.modal-open #root {
 
   /* Profile delete buttons always visible on touch */
   [data-delete] { opacity: 1 !important; }
+
+  /* Section hover scale/dim is meant for mouse focus — on touch it gets stuck
+     after a tap and disrupts horizontal scroll (the scaled section creates a
+     new containing block, and dimmed siblings flicker). */
+  .oss-section:hover { transform: none; }
+  body:has(.oss-section:hover) .oss-section:not(:hover) { opacity: 1; }
+  body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) { opacity: 1; }
 }

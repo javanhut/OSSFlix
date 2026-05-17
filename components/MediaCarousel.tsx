@@ -55,6 +55,43 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
     timerRef.current = setInterval(advance, 8000);
   };
 
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchActiveRef = useRef(false);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+    touchActiveRef.current = true;
+    clearInterval(timerRef.current);
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!touchActiveRef.current) return;
+    touchActiveRef.current = false;
+    const restart = () => {
+      timerRef.current = setInterval(advance, 8000);
+    };
+    if (!start || mediaList.length <= 1) {
+      restart();
+      return;
+    }
+    const t = e.changedTouches[0];
+    if (!t) {
+      restart();
+      return;
+    }
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // Treat as a swipe if horizontal movement dominates and exceeds ~50px.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      const dir = dx < 0 ? 1 : -1;
+      const len = mediaList.length;
+      setActiveIndex((i) => (i + dir + len) % len);
+    }
+    restart();
+  };
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: fetchProgressForDir is stable; effect runs when the active slide changes
   useEffect(() => {
     const item = mediaList[activeIndex];
@@ -104,7 +141,12 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
 
   return (
     <>
-      <div className="oss-hero">
+      <div
+        className="oss-hero"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
         {mediaList.map((item, idx) => (
           <div key={item.pathToDir} className={`oss-hero-slide${idx === activeIndex ? " active" : ""}`}>
             <img src={item.imagePath} alt={item.title} loading={idx === 0 ? "eager" : "lazy"} />

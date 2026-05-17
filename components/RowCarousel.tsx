@@ -13,6 +13,30 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
   const offsetRef = useRef(0);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [hoverCapable, setHoverCapable] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return true;
+    return window.matchMedia("(hover: hover)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(hover: hover)");
+    const onChange = (e: { matches: boolean }) => {
+      setHoverCapable(e.matches);
+      // Clear any inline transform left by chevron-driven animation when
+      // dropping back to a touch context, so native scroll has a clean track.
+      if (!e.matches) {
+        const track = trackRef.current;
+        if (track) {
+          track.style.transition = "";
+          track.style.transform = "";
+        }
+        offsetRef.current = 0;
+      }
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   const computeMax = (): number => {
     const row = rowRef.current;
@@ -59,6 +83,7 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
   );
 
   const startScrolling = (dir: 1 | -1) => {
+    if (!hoverCapable) return;
     const track = trackRef.current;
     if (!track) return;
     const max = computeMax();
@@ -82,6 +107,7 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
   };
 
   const stopScrolling = () => {
+    if (!hoverCapable) return;
     const track = trackRef.current;
     if (!track) return;
     const current = readCurrentOffset();
