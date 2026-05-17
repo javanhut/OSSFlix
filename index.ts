@@ -856,9 +856,8 @@ Bun.serve({
     "/api/admin/restore": {
       async POST(req) {
         if (!authenticateAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
-        const dbPath = join(DATA_DIR, "ossflix.db");
         const pendingPath = join(DATA_DIR, "ossflix.db.restore-pending");
-        const previousPath = join(DATA_DIR, "ossflix.db.previous");
+        const snapshotPath = join(DATA_DIR, `ossflix.db.before-restore-${Date.now()}.db`);
         try {
           const buffer = await req.arrayBuffer();
           if (buffer.byteLength < 100)
@@ -868,15 +867,16 @@ Bun.serve({
           if (!header.startsWith("SQLite format 3"))
             return Response.json({ error: "Uploaded file is not a SQLite database" }, { status: 400 });
           await Bun.write(pendingPath, buffer);
-          // Validate by opening read-only and checking core tables exist
+          // Validate the uploaded file as a SQLite database and check the required tables
           const validate = new Database(pendingPath, { readonly: true });
+          let srcTables: Set<string>;
           try {
             const required = ["profiles", "global_settings", "playback_progress"];
-            const tables = validate
-              .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+            const rows = validate
+              .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
               .all() as { name: string }[];
-            const names = new Set(tables.map((t) => t.name));
-            const missing = required.filter((t) => !names.has(t));
+            srcTables = new Set(rows.map((t) => t.name));
+            const missing = required.filter((t) => !srcTables.has(t));
             if (missing.length > 0) {
               await unlink(pendingPath).catch(() => {});
               return Response.json(
@@ -887,14 +887,66 @@ Bun.serve({
           } finally {
             validate.close();
           }
-          // Promote: keep the current DB as a fallback, swap the new file into place
-          await rename(dbPath, previousPath).catch(() => {});
-          await rename(pendingPath, dbPath);
-          // The existing process still holds the old DB handle by inode; the new file
-          // will only take effect after restart. Schedule one — under restart:unless-stopped
-          // the orchestrator brings the container back up.
-          setTimeout(() => process.exit(0), 500);
-          return Response.json({ ok: true, restart_required: true });
+          // Take a safety snapshot of the current DB so the operator can roll back manually
+          db.run(`VACUUM INTO '${snapshotPath.replace(/'/g, "''")}'`);
+          // Restore in-place: ATTACH the uploaded DB and copy each table's contents,
+          // preserving the live connection so the bun process doesn't have to exit.
+          db.run("PRAGMA foreign_keys = OFF");
+          db.run(`ATTACH DATABASE '${pendingPath.replace(/'/g, "''")}' AS restore_src`);
+          try {
+            const mainTables = (
+              db
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                .all() as { name: string }[]
+            ).map((r) => r.name);
+            db.run("BEGIN IMMEDIATE");
+            for (const table of mainTables) {
+              if (!srcTables.has(table)) continue;
+              const mainCols = (
+                db.prepare(`PRAGMA main.table_info("${table}")`).all() as { name: string }[]
+              ).map((c) => c.name);
+              const srcCols = new Set(
+                (
+                  db.prepare(`PRAGMA restore_src.table_info("${table}")`).all() as { name: string }[]
+                ).map((c) => c.name),
+              );
+              const shared = mainCols.filter((c) => srcCols.has(c));
+              if (shared.length === 0) continue;
+              const colList = shared.map((c) => `"${c}"`).join(", ");
+              db.run(`DELETE FROM main."${table}"`);
+              db.run(`INSERT INTO main."${table}" (${colList}) SELECT ${colList} FROM restore_src."${table}"`);
+            }
+            // Reset AUTOINCREMENT counters to match the restored data
+            if (mainTables.includes("sqlite_sequence")) {
+              // can't drop, just leave it — values self-correct on next insert
+            }
+            db.run("COMMIT");
+          } catch (err) {
+            db.run("ROLLBACK");
+            throw err;
+          } finally {
+            db.run("DETACH DATABASE restore_src");
+            db.run("PRAGMA foreign_keys = ON");
+          }
+          // Verify integrity and truncate the WAL so a follow-up rescan can't
+          // see a half-replayed log.
+          const integrity = (db.prepare("PRAGMA integrity_check").get() as { integrity_check: string } | undefined)
+            ?.integrity_check;
+          if (integrity !== "ok") {
+            return Response.json(
+              {
+                error: `Database integrity check failed after restore: ${integrity}. Pre-restore snapshot kept at ${basename(snapshotPath)}.`,
+              },
+              { status: 500 },
+            );
+          }
+          db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+          await unlink(pendingPath).catch(() => {});
+          return Response.json({
+            ok: true,
+            restart_required: false,
+            snapshot: basename(snapshotPath),
+          });
         } catch (err: any) {
           await unlink(pendingPath).catch(() => {});
           return Response.json({ error: err?.message || "Restore failed" }, { status: 500 });

@@ -1257,7 +1257,9 @@ function BackupRestoreTab() {
       if (!res.ok) throw new Error(data.error || `Restore failed (${res.status})`);
       setMessage({
         kind: "ok",
-        text: "Restore staged. The server is restarting — reload the page in a few seconds.",
+        text: data.snapshot
+          ? `Restore complete. A pre-restore snapshot was kept as ${data.snapshot} in the data volume. Reload the page to see the restored state.`
+          : "Restore complete. Reload the page to see the restored state.",
       });
       setPendingFile(null);
       setConfirmText("");
@@ -1298,7 +1300,7 @@ function BackupRestoreTab() {
           icon="db"
           color="#ef4444"
           title="Restore Database"
-          subtitle="Replace the current database with a previously downloaded backup. The server will restart."
+          subtitle="Replace the current database with a previously downloaded backup. The server stays online; reload the page when it completes."
         />
         <div
           style={{
@@ -1312,8 +1314,8 @@ function BackupRestoreTab() {
             lineHeight: 1.5,
           }}
         >
-          Restoring overwrites all profiles, watch history, sessions, and settings on this server. The current database
-          is preserved as <code style={{ fontFamily: "monospace" }}>ossflix.db.previous</code> in the data volume.
+          Restoring overwrites all profiles, watch history, sessions, and settings on this server. A timestamped
+          snapshot of the current database is saved to the data volume before the restore as a safety net.
         </div>
         <input
           type="file"
