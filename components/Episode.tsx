@@ -45,7 +45,7 @@ export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, o
   const isWatched = !!progress && progress.duration > 0 && progress.current_time >= progress.duration - 5;
   const pct = progress && progress.duration > 0 ? (progress.current_time / progress.duration) * 100 : 0;
 
-  const titleText = parsed.type === "episode" ? parsed.title || `Episode ${parsed.episode}` : parsed.title;
+  const titleText = parsed.type === "episode" ? parsed.title || "Untitled" : parsed.title || "Untitled";
   const ariaLabel = parsed.type === "episode" ? `Play Episode ${parsed.episode}` : `Play ${titleText}`;
 
   let stateClass = "";

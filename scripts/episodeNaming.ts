@@ -1,8 +1,11 @@
+export type AudioVariant = "sub" | "dub";
+
 export interface ParsedEpisode {
   season: number;
   episode: number;
   title: string;
   ext: string;
+  variant?: AudioVariant;
 }
 
 export const SEASON_TOKEN = /^(?:s|season\s?)0*(\d+)$/i;
@@ -11,12 +14,53 @@ export const COMBINED_SE_TOKEN = /(?:^|[._\s-])(?:s|season\s?)0*(\d+)[._\s-]*(?:
 export const CANONICAL_SUFFIX = /_s(\d+)_ep(\d+)(?:_(?:sub|dub))?\.[^.]+$/i;
 export const VARIANT_SUFFIX = /_(sub|dub)\.[^.]+$/i;
 
-export type AudioVariant = "sub" | "dub";
-
 export function detectVariant(videoSrc: string): AudioVariant | null {
   const filename = videoSrc.split("/").pop() || videoSrc;
   const match = filename.match(VARIANT_SUFFIX);
   return match ? (match[1].toLowerCase() as AudioVariant) : null;
+}
+
+/**
+ * Build a variant map for a season's videos, inferring the unmarked partner of
+ * an explicitly-tagged episode. When the same (season, episode) has one file
+ * tagged `_sub` (or `_dub`) and another file with no tag, the untagged file is
+ * inferred as the opposite variant so the audio toggle can pair them up.
+ *
+ * Files with no partner keep `null` (variant filter is a passthrough).
+ */
+export function inferEpisodeVariants(videos: string[]): Map<string, AudioVariant | null> {
+  const result = new Map<string, AudioVariant | null>();
+  const byEpisode = new Map<string, string[]>();
+
+  for (const src of videos) {
+    result.set(src, detectVariant(src));
+    const filename = src.split("/").pop() || src;
+    const parsed = parseEpisodePath(filename);
+    if (!parsed) continue;
+    const key = `s${parsed.season}e${parsed.episode}`;
+    const list = byEpisode.get(key);
+    if (list) list.push(src);
+    else byEpisode.set(key, [src]);
+  }
+
+  for (const group of byEpisode.values()) {
+    if (group.length < 2) continue;
+    const tagged = new Set<AudioVariant>();
+    const untagged: string[] = [];
+    for (const src of group) {
+      const v = result.get(src) ?? null;
+      if (v) tagged.add(v);
+      else untagged.push(src);
+    }
+    if (untagged.length === 0) continue;
+    let inferred: AudioVariant | null = null;
+    if (tagged.has("sub") && !tagged.has("dub")) inferred = "dub";
+    else if (tagged.has("dub") && !tagged.has("sub")) inferred = "sub";
+    if (!inferred) continue;
+    for (const src of untagged) result.set(src, inferred);
+  }
+
+  return result;
 }
 
 export function titleFromStem(stem: string): string {
@@ -41,7 +85,8 @@ export function canonicalFilename(p: ParsedEpisode): string {
   // Always keep a leading token before _s{NN}_ep{NN} so the downstream
   // `_s\d+_ep\d+` regex (sort, timing matcher) continues to match.
   const slug = slugTitle(p.title) || "episode";
-  return `${slug}_s${pad2(p.season)}_ep${pad2(p.episode)}.${p.ext}`;
+  const variantSuffix = p.variant ? `_${p.variant}` : "";
+  return `${slug}_s${pad2(p.season)}_ep${pad2(p.episode)}${variantSuffix}.${p.ext}`;
 }
 
 export function formatEpisodeLabel(p: ParsedEpisode): string {
@@ -64,8 +109,14 @@ export function parseEpisodePath(relPath: string): ParsedEpisode | null {
   const dotIdx = filename.lastIndexOf(".");
   const ext = dotIdx >= 0 ? filename.slice(dotIdx + 1).toLowerCase() : "";
   const rawStem = dotIdx >= 0 ? filename.slice(0, dotIdx) : filename;
-  // Strip trailing _sub/_dub variant tag so it doesn't leak into the rendered title
-  const stem = rawStem.replace(/_(?:sub|dub)$/i, "");
+  // Detect + strip trailing _sub/_dub variant tag so it doesn't leak into the
+  // rendered title, but capture it on the parsed result so canonicalization can
+  // preserve it (otherwise two paired files collide on the same canonical name).
+  const variantMatch = rawStem.match(/_(sub|dub)$/i);
+  const variant: AudioVariant | undefined = variantMatch
+    ? (variantMatch[1]!.toLowerCase() as AudioVariant)
+    : undefined;
+  const stem = variantMatch ? rawStem.slice(0, rawStem.length - variantMatch[0].length) : rawStem;
 
   let seasonFromDir: number | null = null;
   let epFromDir: number | null = null;
@@ -107,7 +158,7 @@ export function parseEpisodePath(relPath: string): ParsedEpisode | null {
     title = titleFromStem(stem);
   }
 
-  return { season, episode, title, ext };
+  return variant ? { season, episode, title, ext, variant } : { season, episode, title, ext };
 }
 
 export function compareVideoSrc(a: string, b: string): number {

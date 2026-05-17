@@ -5,6 +5,7 @@ import {
   canonicalFilename,
   compareVideoSrc,
   titleFromStem,
+  inferEpisodeVariants,
 } from "../scripts/episodeNaming";
 import { normalizeType } from "../scripts/tomlreader";
 
@@ -85,6 +86,23 @@ describe("canonicalFilename", () => {
   test("empty title falls back to 'episode' slug", () => {
     expect(canonicalFilename({ season: 1, episode: 2, title: "", ext: "mkv" })).toBe("episode_s01_ep02.mkv");
   });
+  test("preserves _sub variant suffix", () => {
+    const p = parseEpisodePath("s01/ep01/Those Who Shed Petals_s1_ep1_sub.mp4")!;
+    expect(p.title).toBe("Those Who Shed Petals");
+    expect(p.variant).toBe("sub");
+    expect(canonicalFilename(p)).toBe("those_who_shed_petals_s01_ep01_sub.mp4");
+  });
+  test("preserves _dub variant suffix", () => {
+    const p = parseEpisodePath("s01/ep01/Those Who Shed Petals_s1_ep1_dub.mp4")!;
+    expect(p.title).toBe("Those Who Shed Petals");
+    expect(p.variant).toBe("dub");
+    expect(canonicalFilename(p)).toBe("those_who_shed_petals_s01_ep01_dub.mp4");
+  });
+  test("paired sub+dub files canonicalize to distinct names", () => {
+    const subP = parseEpisodePath("s01/ep01/Show_s1_ep1_sub.mkv")!;
+    const dubP = parseEpisodePath("s01/ep01/Show_s1_ep1_dub.mkv")!;
+    expect(canonicalFilename(subP)).not.toBe(canonicalFilename(dubP));
+  });
 });
 
 describe("compareVideoSrc", () => {
@@ -134,5 +152,37 @@ describe("normalizeType", () => {
     expect(normalizeType("documentary")).toBeNull();
     expect(normalizeType(undefined)).toBeNull();
     expect(normalizeType(42)).toBeNull();
+  });
+});
+
+describe("inferEpisodeVariants", () => {
+  test("pairs an untagged file with an explicit _sub partner as dub", () => {
+    const videos = [
+      "/media/tv/Show/those_who_shed_petals_s01_ep01.mp4",
+      "/media/tv/Show/s01_ep01_Those Who Shed Petals_s1_ep1_sub.mp4",
+      "/media/tv/Show/the_way_of_the_returner_s01_ep02.mp4",
+    ];
+    const map = inferEpisodeVariants(videos);
+    expect(map.get(videos[0]!)).toBe("dub");
+    expect(map.get(videos[1]!)).toBe("sub");
+    expect(map.get(videos[2]!)).toBeNull();
+  });
+  test("pairs an untagged file with an explicit _dub partner as sub", () => {
+    const videos = ["s01/ep01/show_s01_ep01.mkv", "s01/ep01/show_s01_ep01_dub.mkv"];
+    const map = inferEpisodeVariants(videos);
+    expect(map.get(videos[0]!)).toBe("sub");
+    expect(map.get(videos[1]!)).toBe("dub");
+  });
+  test("does not infer when no partner exists", () => {
+    const videos = ["show_s01_ep01.mkv", "show_s01_ep02.mkv"];
+    const map = inferEpisodeVariants(videos);
+    expect(map.get(videos[0]!)).toBeNull();
+    expect(map.get(videos[1]!)).toBeNull();
+  });
+  test("leaves both-tagged pairs untouched", () => {
+    const videos = ["show_s01_ep01_sub.mkv", "show_s01_ep01_dub.mkv"];
+    const map = inferEpisodeVariants(videos);
+    expect(map.get(videos[0]!)).toBe("sub");
+    expect(map.get(videos[1]!)).toBe("dub");
   });
 });

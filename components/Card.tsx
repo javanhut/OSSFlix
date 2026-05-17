@@ -4,7 +4,12 @@ import { useNavigate } from "react-router-dom";
 import { Episode } from "./Episode";
 import VideoPlayer from "./VideoPlayer";
 import { useProfile } from "../context/ProfileContext";
-import { parseEpisodePath, formatEpisodeLabel, detectVariant, type AudioVariant } from "../scripts/episodeNaming";
+import {
+  parseEpisodePath,
+  formatEpisodeLabel,
+  inferEpisodeVariants,
+  type AudioVariant,
+} from "../scripts/episodeNaming";
 import type { SeasonMeta } from "../scripts/tomlreader";
 
 type SubtitleTrack = {
@@ -645,23 +650,68 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<AudioVariant | null>(null);
+  const variantMap = useMemo(
+    () => inferEpisodeVariants(information?.videos || []),
+    [information?.videos],
+  );
   const availableVariants = useMemo(() => {
     const set = new Set<AudioVariant>();
-    for (const v of information?.videos || []) {
-      const variant = detectVariant(v);
-      if (variant) set.add(variant);
+    for (const v of variantMap.values()) {
+      if (v) set.add(v);
     }
     return set;
-  }, [information?.videos]);
+  }, [variantMap]);
   const hasBothVariants = availableVariants.has("sub") && availableVariants.has("dub");
   const filteredVideos = useMemo(() => {
     const videos = information?.videos || [];
-    if (!hasBothVariants || selectedVariant === null) return videos;
-    return videos.filter((v) => {
-      const variant = detectVariant(v);
-      return variant === null || variant === selectedVariant;
-    });
-  }, [information?.videos, hasBothVariants, selectedVariant]);
+    const variantFiltered =
+      !hasBothVariants || selectedVariant === null
+        ? videos
+        : videos.filter((v) => {
+            const variant = variantMap.get(v) ?? null;
+            return variant === null || variant === selectedVariant;
+          });
+    // Defensive dedupe: if multiple files survive for the same (season,
+    // episode), prefer the one whose inferred variant matches the selection,
+    // then untagged, then the first remaining. Files that don't parse as
+    // episodes (movies, extras) are never deduped.
+    const pickRank = (src: string): number => {
+      const v = variantMap.get(src) ?? null;
+      if (selectedVariant && v === selectedVariant) return 0;
+      if (v === null) return 1;
+      return 2;
+    };
+    const groups = new Map<string, string[]>();
+    for (const src of variantFiltered) {
+      const filename = src.split("/").pop() || src;
+      const parsed = parseEpisodePath(filename);
+      if (!parsed) continue;
+      const key = `s${parsed.season}e${parsed.episode}`;
+      const list = groups.get(key);
+      if (list) list.push(src);
+      else groups.set(key, [src]);
+    }
+    const winnerByKey = new Map<string, string>();
+    for (const [key, candidates] of groups) {
+      const winner = candidates.length > 1 ? [...candidates].sort((a, b) => pickRank(a) - pickRank(b))[0]! : candidates[0]!;
+      winnerByKey.set(key, winner);
+    }
+    const emitted = new Set<string>();
+    const result: string[] = [];
+    for (const src of variantFiltered) {
+      const filename = src.split("/").pop() || src;
+      const parsed = parseEpisodePath(filename);
+      if (!parsed) {
+        result.push(src);
+        continue;
+      }
+      const key = `s${parsed.season}e${parsed.episode}`;
+      if (emitted.has(key)) continue;
+      emitted.add(key);
+      result.push(winnerByKey.get(key) ?? src);
+    }
+    return result;
+  }, [information?.videos, hasBothVariants, selectedVariant, variantMap]);
   const currentSeasonMeta = useMemo(() => {
     if (!information) return null;
     const metas = information.seasonsMeta || [];
