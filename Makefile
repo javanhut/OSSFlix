@@ -114,6 +114,10 @@ _preflight:
 		exit 1; \
 	fi; \
 	chmod o+rx $(RS_DIR); \
+	echo "→ giving $(RS_USER) ownership of $(RS_DIR) (needed to write node_modules and pull updates)"; \
+	chown -R $(RS_USER):$(RS_USER) $(RS_DIR); \
+	echo "→ marking $(RS_DIR) safe for root git operations"; \
+	git config --global --get-all safe.directory | grep -qx "$(RS_DIR)" || git config --global --add safe.directory $(RS_DIR); \
 	echo "→ verifying $(RS_USER) can execute $(BUN)"; \
 	resolved=$(BUN); \
 	if ! sudo -u $(RS_USER) test -x "$(BUN)" 2>/dev/null; then \
