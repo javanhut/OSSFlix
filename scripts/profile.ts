@@ -64,9 +64,7 @@ export function createProfile(
 ): ProfileData {
   const normalizedEmail = email ? email.trim().toLowerCase() : null;
   const age = opts?.age != null ? opts.age : null;
-  const maturity = opts?.maturity_preference
-    ? normalizeMaturityPreference(opts.maturity_preference)
-    : null;
+  const maturity = opts?.maturity_preference ? normalizeMaturityPreference(opts.maturity_preference) : null;
   const cols = ["name", "use_global_dirs", "email", "age"];
   const placeholders = ["?", "1", "?", "?"];
   const values: any[] = [name, normalizedEmail, age];
@@ -85,9 +83,9 @@ export function createProfile(
 }
 
 export function getProfileWithHash(id: number): (ProfileData & { password_hash: string | null }) | null {
-  return db
-    .prepare(`SELECT ${PROFILE_COLS}, password_hash FROM profiles WHERE id = ?`)
-    .get(id) as (ProfileData & { password_hash: string | null }) | null;
+  return db.prepare(`SELECT ${PROFILE_COLS}, password_hash FROM profiles WHERE id = ?`).get(id) as
+    | (ProfileData & { password_hash: string | null })
+    | null;
 }
 
 export function setProfilePassword(id: number, hash: string): void {

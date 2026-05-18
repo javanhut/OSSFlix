@@ -905,20 +905,20 @@ const server = Bun.serve({
           db.run(`ATTACH DATABASE '${pendingPath.replace(/'/g, "''")}' AS restore_src`);
           try {
             const mainTables = (
-              db
-                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-                .all() as { name: string }[]
+              db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as {
+                name: string;
+              }[]
             ).map((r) => r.name);
             db.run("BEGIN IMMEDIATE");
             for (const table of mainTables) {
               if (!srcTables.has(table)) continue;
-              const mainCols = (
-                db.prepare(`PRAGMA main.table_info("${table}")`).all() as { name: string }[]
-              ).map((c) => c.name);
+              const mainCols = (db.prepare(`PRAGMA main.table_info("${table}")`).all() as { name: string }[]).map(
+                (c) => c.name,
+              );
               const srcCols = new Set(
-                (
-                  db.prepare(`PRAGMA restore_src.table_info("${table}")`).all() as { name: string }[]
-                ).map((c) => c.name),
+                (db.prepare(`PRAGMA restore_src.table_info("${table}")`).all() as { name: string }[]).map(
+                  (c) => c.name,
+                ),
               );
               const shared = mainCols.filter((c) => srcCols.has(c));
               if (shared.length === 0) continue;

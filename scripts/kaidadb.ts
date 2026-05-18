@@ -39,11 +39,7 @@ export async function kaidadbHealthCheck(): Promise<{ ok: boolean; error?: strin
   }
 }
 
-export async function kaidadbStream(
-  key: string,
-  rangeHeader?: string | null,
-  signal?: AbortSignal,
-): Promise<Response> {
+export async function kaidadbStream(key: string, rangeHeader?: string | null, signal?: AbortSignal): Promise<Response> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) throw new Error("KaidaDB URL not configured");
   const headers: Record<string, string> = { ...kaidadbAuthHeaders() };

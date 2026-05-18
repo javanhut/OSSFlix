@@ -2587,9 +2587,7 @@ function SettingsModal({
                       padding: "12px 14px",
                       borderRadius: "10px",
                       border:
-                        maturityPreference === pref
-                          ? "1px solid var(--oss-accent)"
-                          : "1px solid var(--oss-border)",
+                        maturityPreference === pref ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
                       background: maturityPreference === pref ? "rgba(59,130,246,0.12)" : "var(--oss-bg-elevated)",
                       color: "var(--oss-text)",
                       cursor: "pointer",
@@ -2798,6 +2796,7 @@ function SwitchProfileModal({
       .finally(() => setLoading(false));
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: effect is keyed on `show` opening the dialog; loadProfiles is stable in intent (refetch on open) and adding it would refetch on every render
   useEffect(() => {
     if (!show) return;
     loadProfiles();

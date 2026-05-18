@@ -650,10 +650,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<AudioVariant | null>(null);
-  const variantMap = useMemo(
-    () => inferEpisodeVariants(information?.videos || []),
-    [information?.videos],
-  );
+  const variantMap = useMemo(() => inferEpisodeVariants(information?.videos || []), [information?.videos]);
   const availableVariants = useMemo(() => {
     const set = new Set<AudioVariant>();
     for (const v of variantMap.values()) {
@@ -693,7 +690,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     }
     const winnerByKey = new Map<string, string>();
     for (const [key, candidates] of groups) {
-      const winner = candidates.length > 1 ? [...candidates].sort((a, b) => pickRank(a) - pickRank(b))[0]! : candidates[0]!;
+      const winner =
+        candidates.length > 1 ? [...candidates].sort((a, b) => pickRank(a) - pickRank(b))[0]! : candidates[0]!;
       winnerByKey.set(key, winner);
     }
     const emitted = new Set<string>();
@@ -794,6 +792,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     [],
   );
   // Tear down any preview when the player opens or the modal closes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: endHoverPreview is an inline cleanup helper; re-running on its identity change would just retrigger an idempotent teardown
   useEffect(() => {
     if (playerSrc || !show) endHoverPreview();
   }, [playerSrc, show]);
@@ -996,9 +995,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const hasResumable =
     Object.values(progressMap).some(
       (e) =>
-        filteredSrcSet.has(e.video_src) &&
-        e.current_time > 0 &&
-        (e.duration === 0 || e.current_time < e.duration - 5),
+        filteredSrcSet.has(e.video_src) && e.current_time > 0 && (e.duration === 0 || e.current_time < e.duration - 5),
     ) ||
     (() => {
       // Also show resume if there are completed episodes and a next episode to play
@@ -1118,7 +1115,9 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 </div>
               )}
 
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px", alignItems: "center" }}>
+              <div
+                style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px", alignItems: "center" }}
+              >
                 <span
                   style={{
                     background: "var(--oss-accent)",
@@ -1540,8 +1539,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         <ModalBody>
           <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", margin: 0, lineHeight: 1.55 }}>
             This will clear watch progress for every episode of{" "}
-            <strong style={{ color: "var(--oss-text)" }}>{information?.name || "this title"}</strong>. Completed episodes
-            will be marked unwatched again. This action can't be undone.
+            <strong style={{ color: "var(--oss-text)" }}>{information?.name || "this title"}</strong>. Completed
+            episodes will be marked unwatched again. This action can't be undone.
           </p>
         </ModalBody>
         <ModalFooter>

@@ -94,6 +94,91 @@ podman stop reelscape
 podman rm reelscape
 ```
 
+## Bare-metal Deployment (systemd, no container)
+
+For running Reelscape directly on a host with **zero-downtime rolling updates**, the repo ships a `Makefile` and a systemd template unit at `scripts/reelscape@.service.in`.
+
+Two service instances (`reelscape@a` and `reelscape@b`) bind the same TCP port via `SO_REUSEPORT`. `make update` starts the idle instance, polls `/healthz` until it confirms it's listening, then sends SIGTERM to the previous one. The shutdown handler in `index.ts` drains in-flight requests before exiting, so connected viewers see no interruption.
+
+### One-time install
+
+Clone the repo wherever you want it to live on the server (e.g. `/opt/reelscape`) and run:
+
+```bash
+cd /opt/reelscape
+sudo make install
+```
+
+This will:
+- create a system `reelscape` user
+- create the data dir at `/var/lib/reelscape`
+- run `bun install --frozen-lockfile`
+- write `/etc/systemd/system/reelscape@.service` with paths filled in
+- enable and start `reelscape@a.service`
+
+Override defaults via `make` variables:
+
+```bash
+sudo make install RS_DIR=/opt/reelscape RS_DATA=/srv/reelscape RS_PORT=8080 RS_USER=media
+```
+
+| Variable  | Default                          | Purpose                              |
+|-----------|----------------------------------|--------------------------------------|
+| `RS_USER` | `reelscape`                      | System user the service runs as      |
+| `RS_DIR`  | `$(pwd)`                         | Where the repo lives on the server   |
+| `RS_DATA` | `/var/lib/reelscape`             | SQLite DB + avatars + rollback state |
+| `RS_PORT` | `3000`                           | TCP port the server binds            |
+| `BUN`     | `$(which bun)`                   | Path to the `bun` binary             |
+
+### Updating after pushing code
+
+After pushing changes to the remote and SSHing into the server:
+
+```bash
+cd /opt/reelscape
+sudo make update
+```
+
+This records the current commit SHA, does `git pull --ff-only`, runs `bun install`, then performs the rolling swap. The previous SHA is stored at `$RS_DATA/.previous-sha` for rollback.
+
+### Rolling back a bad deploy
+
+```bash
+sudo make rollback
+```
+
+Resets the working tree to the SHA recorded by the last `update`, re-installs deps for that SHA's lockfile, and rolling-swaps back. The SHA file is rewritten to point at what you just left, so a second `make rollback` un-does it.
+
+> ⚠️ After `rollback` your local branch is *behind* origin. Revert / fix the bad commit on origin **before** running `make update` again — a fast-forward pull would just reapply it.
+
+### Utilities
+
+| Command              | What it does                                                       |
+|----------------------|--------------------------------------------------------------------|
+| `make status`        | Show which instance is active + current HEAD and rollback target   |
+| `make logs`          | `journalctl -f` on both instances                                  |
+| `sudo make restart`  | Restart the active instance (NOT zero-downtime — use `update`)     |
+| `sudo make uninstall`| Stop both instances and remove the systemd unit (data dir kept)    |
+
+### How zero-downtime works
+
+```
+        ┌──────────────┐                      ┌──────────────┐
+client→ │  reelscape@a │ ◀── port 3000 ──▶   │  reelscape@b │ ◀── port 3000
+        │  (old code)  │   SO_REUSEPORT       │  (new code)  │
+        └──────────────┘                      └──────────────┘
+              │                                     │
+              │   make update starts @b, waits      │
+              │   for /healthz to return            │
+              │   { "instance": "b" }               │
+              ▼                                     ▼
+        systemctl stop                        keeps serving;
+        (sends SIGTERM, drains)               kernel routes
+        exits cleanly                         all new conns here
+```
+
+`/healthz` returns the instance ID and PID so the rollout script can confirm the new code is actually answering before killing the old one.
+
 ## Adding Media
 
 Reelscape scans two directories — one for **Movies** and one for **TV Shows**. Each title lives in its own subfolder containing a `.toml` metadata file, a banner image, and video files.

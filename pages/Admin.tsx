@@ -734,7 +734,9 @@ export default function Admin() {
                   color: "rgba(255,255,255,0.4)",
                 }}
               >
-                Running OSSFlix in Docker? Use <code style={{ fontFamily: "monospace" }}>http://host.docker.internal:8080</code> instead of <code style={{ fontFamily: "monospace" }}>localhost</code>.
+                Running OSSFlix in Docker? Use{" "}
+                <code style={{ fontFamily: "monospace" }}>http://host.docker.internal:8080</code> instead of{" "}
+                <code style={{ fontFamily: "monospace" }}>localhost</code>.
               </p>
               {kaidadbUrl.trim() && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
@@ -1240,7 +1242,7 @@ function BackupRestoreTab() {
   const handleRestore = async () => {
     if (!pendingFile) return;
     if (confirmText !== "RESTORE") {
-      setMessage({ kind: "err", text: 'Type RESTORE to confirm.' });
+      setMessage({ kind: "err", text: "Type RESTORE to confirm." });
       return;
     }
     setRestoring(true);

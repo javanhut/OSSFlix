@@ -139,9 +139,9 @@ export async function resolveToDb(): Promise<void> {
     if (allMedia.length > 0) {
       insertCategory.run("Newly Added", sortOrder++);
       const catRow = getCategoryId.get("Newly Added") as { id: number };
-      const recentTitles = db
-        .prepare("SELECT id FROM titles ORDER BY created_at DESC, id DESC LIMIT 6")
-        .all() as { id: number }[];
+      const recentTitles = db.prepare("SELECT id FROM titles ORDER BY created_at DESC, id DESC LIMIT 6").all() as {
+        id: number;
+      }[];
       for (const { id } of recentTitles) {
         insertCategoryTitle.run(catRow.id, id);
       }
@@ -421,7 +421,12 @@ export function searchTitles(query: string, preference?: MaturityPreference | st
     ORDER BY t.name
     LIMIT 20
   `)
-    .all(`%${query}%`, ...maturity.params) as { name: string; imagePath: string | null; pathToDir: string; type: string }[];
+    .all(`%${query}%`, ...maturity.params) as {
+    name: string;
+    imagePath: string | null;
+    pathToDir: string;
+    type: string;
+  }[];
 }
 
 export function searchGenres(query: string) {

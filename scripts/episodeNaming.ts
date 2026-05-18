@@ -113,9 +113,7 @@ export function parseEpisodePath(relPath: string): ParsedEpisode | null {
   // rendered title, but capture it on the parsed result so canonicalization can
   // preserve it (otherwise two paired files collide on the same canonical name).
   const variantMatch = rawStem.match(/_(sub|dub)$/i);
-  const variant: AudioVariant | undefined = variantMatch
-    ? (variantMatch[1]!.toLowerCase() as AudioVariant)
-    : undefined;
+  const variant: AudioVariant | undefined = variantMatch ? (variantMatch[1]!.toLowerCase() as AudioVariant) : undefined;
   const stem = variantMatch ? rawStem.slice(0, rawStem.length - variantMatch[0].length) : rawStem;
 
   let seasonFromDir: number | null = null;

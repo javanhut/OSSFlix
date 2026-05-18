@@ -19,7 +19,9 @@ try {
     ?.integrity_check;
   if (integrity && integrity !== "ok") {
     console.error(`[ossflix] WARNING: SQLite integrity_check reported: ${integrity}`);
-    console.error(`[ossflix] DB at ${DB_PATH} appears corrupt. Stop the server and recover from a backup before continuing.`);
+    console.error(
+      `[ossflix] DB at ${DB_PATH} appears corrupt. Stop the server and recover from a backup before continuing.`,
+    );
   }
 } catch (err) {
   console.error("[ossflix] integrity_check failed to run:", err);
