@@ -231,3 +231,14 @@ describe("5B: Volume gesture threshold", () => {
     expect(VIDEOPLAYER_TSX).not.toContain("Math.abs(deltaY) < 15");
   });
 });
+
+describe("5C: Mobile row touch scrolling", () => {
+  test("rows allow both vertical page scroll and horizontal shelf swipes", () => {
+    expect(STYLES_CSS).toContain("touch-action: pan-x pan-y");
+    expect(STYLES_CSS).not.toContain("touch-action: pan-x;");
+  });
+
+  test("desktop hover row clipping is limited to fine pointers", () => {
+    expect(STYLES_CSS).toContain("@media (hover: hover) and (pointer: fine)");
+  });
+});

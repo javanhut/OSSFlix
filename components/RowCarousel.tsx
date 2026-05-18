@@ -6,6 +6,7 @@ type RowCarouselProps = {
 };
 
 const HOVER_SCROLL_PX_PER_SEC = 320;
+const HOVER_CAPABLE_QUERY = "(hover: hover) and (pointer: fine)";
 
 export function RowCarousel({ children, role }: RowCarouselProps) {
   const rowRef = useRef<HTMLDivElement>(null);
@@ -15,12 +16,12 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [hoverCapable, setHoverCapable] = useState(() => {
     if (typeof window === "undefined" || !window.matchMedia) return true;
-    return window.matchMedia("(hover: hover)").matches;
+    return window.matchMedia(HOVER_CAPABLE_QUERY).matches;
   });
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(hover: hover)");
+    const mq = window.matchMedia(HOVER_CAPABLE_QUERY);
     const onChange = (e: { matches: boolean }) => {
       setHoverCapable(e.matches);
       // Clear any inline transform left by chevron-driven animation when
@@ -55,7 +56,7 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
 
   const updateChevronVisibility = () => {
     const max = computeMax();
-    const offset = offsetRef.current;
+    const offset = hoverCapable ? offsetRef.current : (rowRef.current?.scrollLeft ?? 0);
     const left = offset > 1;
     const right = offset < max - 1;
     setCanScrollLeft((prev) => (prev !== left ? left : prev));
@@ -143,7 +144,11 @@ export function RowCarousel({ children, role }: RowCarouselProps) {
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <div className={`oss-row${canScrollLeft ? " fade-left" : ""}${canScrollRight ? " fade-right" : ""}`} ref={rowRef}>
+      <div
+        className={`oss-row${canScrollLeft ? " fade-left" : ""}${canScrollRight ? " fade-right" : ""}`}
+        ref={rowRef}
+        onScroll={updateChevronVisibility}
+      >
         <div className="oss-row-track" role={role} ref={trackRef}>
           {children}
         </div>

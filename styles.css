@@ -595,7 +595,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   scroll-behavior: smooth;
   -ms-overflow-style: none;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
   -webkit-overflow-scrolling: touch;
 }
 .oss-row::-webkit-scrollbar { display: none; }
@@ -619,7 +619,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   -webkit-mask-image: linear-gradient(to left, transparent, #000 56px);
   mask-image: linear-gradient(to left, transparent, #000 56px);
 }
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .oss-row { overflow: hidden; }
 }
 
