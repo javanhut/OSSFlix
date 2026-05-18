@@ -102,12 +102,19 @@ Two service instances (`reelscape@a` and `reelscape@b`) bind the same TCP port v
 
 ### One-time install
 
-Clone the repo wherever you want it to live on the server (e.g. `/opt/reelscape`) and run:
+> ⚠️ **Don't clone under `/root` or `/home/<user>`.** Those dirs are mode `0700` and the `reelscape` system user can't traverse them — `make install` will refuse with a clear error. Use a system-accessible path like `/opt/reelscape`.
+
+> ⚠️ **Install `bun` to a system path** (or just let `make install` copy it for you). If `bun` lives at `~/.bun/bin/bun`, the `reelscape` user can't execute it; the installer will detect this and copy `bun` to `/usr/local/bin/bun` automatically. To do it yourself: `sudo install -m 0755 ~/.bun/bin/bun /usr/local/bin/bun`.
+
+Clone the repo into a system-accessible location and run:
 
 ```bash
+sudo git clone <repo-url> /opt/reelscape
 cd /opt/reelscape
 sudo make install
 ```
+
+> 💡 If you ran `sudo make install` and got `bun not found on PATH`, that's because Debian's `sudo` strips `PATH` to `secure_path`. The Makefile now also searches `/root/.bun/bin`, `/home/*/.bun/bin`, and `/usr/local/bin` — but if it still can't find bun, pass it explicitly: `sudo make install BUN=$(which bun)`.
 
 This will:
 - create a system `reelscape` user

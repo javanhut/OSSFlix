@@ -19,7 +19,16 @@ RS_USER  ?= reelscape
 RS_DIR   ?= $(CURDIR)
 RS_DATA  ?= /var/lib/reelscape
 RS_PORT  ?= 3000
-BUN      ?= $(shell command -v bun 2>/dev/null)
+# Find bun even when sudo strips PATH (Debian-style secure_path). Looks in
+# common system locations and per-user .bun installs (root or any /home user).
+BUN      ?= $(or $(shell command -v bun 2>/dev/null), \
+                 $(firstword $(wildcard \
+                   /usr/local/bin/bun \
+                   /usr/bin/bun \
+                   /opt/bun/bin/bun \
+                   /root/.bun/bin/bun \
+                   $(if $(SUDO_USER),/home/$(SUDO_USER)/.bun/bin/bun) \
+                   /home/*/.bun/bin/bun)))
 
 UNIT_NAME  := reelscape@.service
 UNIT_SRC   := scripts/reelscape@.service.in
@@ -40,7 +49,7 @@ define need_bun
 	fi
 endef
 
-.PHONY: help install update rollback uninstall status logs restart deps build _emit_unit _swap _record_sha
+.PHONY: help install update rollback uninstall status logs restart deps build _emit_unit _swap _record_sha _preflight
 
 help:
 	@echo "Reelscape make targets:"
@@ -57,18 +66,22 @@ help:
 	@echo "  BUN=$(BUN)"
 
 # ── Install ──────────────────────────────────────────────────────────────────
-install: _emit_unit
+# Order matters: create user first, then sanity-check that the user can
+# actually reach the repo and bun, THEN emit the unit (which bakes paths in)
+# and install deps. Bailing early gives a clear error before we leave half-
+# finished state on disk.
+install:
 	$(call need_root)
 	$(call need_bun)
 	@echo "→ ensuring user $(RS_USER) exists"
 	@id -u $(RS_USER) >/dev/null 2>&1 || useradd --system --home-dir $(RS_DATA) --shell /usr/sbin/nologin $(RS_USER)
 	@echo "→ preparing data dir $(RS_DATA)"
 	@install -d -o $(RS_USER) -g $(RS_USER) -m 0750 $(RS_DATA)
-	@echo "→ giving $(RS_USER) read access to $(RS_DIR)"
-	@chown -R $(RS_USER):$(RS_USER) $(RS_DIR)/node_modules 2>/dev/null || true
-	@chmod o+rx $(RS_DIR)
+	@$(MAKE) --no-print-directory _preflight
+	@$(MAKE) --no-print-directory _emit_unit BUN="$$(cat $(RS_DATA)/.resolved-bun)"
 	@echo "→ installing dependencies as $(RS_USER)"
-	@sudo -u $(RS_USER) -H sh -c 'cd $(RS_DIR) && $(BUN) install --frozen-lockfile'
+	@bun_path=$$(cat $(RS_DATA)/.resolved-bun); \
+		sudo -u $(RS_USER) -H sh -c "cd $(RS_DIR) && $$bun_path install --frozen-lockfile"
 	@echo "→ reloading systemd"
 	@systemctl daemon-reload
 	@echo "→ enabling reelscape@a.service"
@@ -76,6 +89,42 @@ install: _emit_unit
 	@systemctl start reelscape@a.service
 	@$(MAKE) --no-print-directory _wait_healthz INSTANCE=a
 	@echo "✓ reelscape@a is up on port $(RS_PORT)"
+
+# Verify reelscape can reach both the repo and the bun binary. If bun lives
+# under a home dir (mode 0700, not traversable by system users), copy it to
+# /usr/local/bin so the systemd unit can exec it. Resolved path is written
+# to $RS_DATA/.resolved-bun for the install recipe to pick up.
+_preflight:
+	@set -e; \
+	echo "→ verifying $(RS_USER) can reach $(RS_DIR)"; \
+	if ! sudo -u $(RS_USER) test -r $(RS_DIR)/package.json 2>/dev/null; then \
+		echo ""; \
+		echo "✗ user '$(RS_USER)' cannot read $(RS_DIR)/package.json"; \
+		echo ""; \
+		echo "  This usually means the repo lives under a home dir like /root"; \
+		echo "  or /home/<user> — those are mode 0700 and system users can't"; \
+		echo "  traverse them. The chmod-leaf fix doesn't work; the parent dirs"; \
+		echo "  also have to be traversable."; \
+		echo ""; \
+		echo "  Move the repo to /opt and reinstall:"; \
+		echo "    sudo mv $(RS_DIR) /opt/reelscape"; \
+		echo "    cd /opt/reelscape"; \
+		echo "    sudo make install"; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	chmod o+rx $(RS_DIR); \
+	echo "→ verifying $(RS_USER) can execute $(BUN)"; \
+	resolved=$(BUN); \
+	if ! sudo -u $(RS_USER) test -x "$(BUN)" 2>/dev/null; then \
+		echo "  bun at $(BUN) isn't accessible to $(RS_USER) — copying to /usr/local/bin/bun"; \
+		install -m 0755 $(BUN) /usr/local/bin/bun; \
+		resolved=/usr/local/bin/bun; \
+	fi; \
+	echo "$$resolved" > $(RS_DATA)/.resolved-bun; \
+	chown $(RS_USER):$(RS_USER) $(RS_DATA)/.resolved-bun; \
+	chmod 0640 $(RS_DATA)/.resolved-bun; \
+	echo "→ resolved bun: $$resolved"
 
 # Render the systemd unit from the template, substituting paths.
 _emit_unit:
