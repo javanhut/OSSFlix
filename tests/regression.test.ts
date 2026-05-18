@@ -242,3 +242,14 @@ describe("5C: Mobile row touch scrolling", () => {
     expect(STYLES_CSS).toContain("@media (hover: hover) and (pointer: fine)");
   });
 });
+
+describe("5D: Compact mobile hamburger menu", () => {
+  test("mobile nav rows use tighter spacing so profile stays reachable", () => {
+    expect(STYLES_CSS).toContain("padding: 12px 20px;");
+    expect(STYLES_CSS).toContain("margin-top: 8px;");
+  });
+
+  test("mobile overlays use dynamic viewport height", () => {
+    expect(STYLES_CSS).toContain("height: 100dvh;");
+  });
+});
