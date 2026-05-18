@@ -253,3 +253,29 @@ describe("5D: Compact mobile hamburger menu", () => {
     expect(STYLES_CSS).toContain("height: 100dvh;");
   });
 });
+
+describe("5E: Compact mobile poster cards", () => {
+  test("mobile shelves show more smaller cards per row", () => {
+    expect(STYLES_CSS).toContain("calc((100vw - 6% - 36px) / 3.5)");
+    expect(STYLES_CSS).toContain("calc((100vw - 6% - 16px) / 2.8)");
+  });
+
+  test("small-phone card labels are scaled with the card", () => {
+    expect(STYLES_CSS).toContain(".oss-card-title-bar { padding: 30px 9px 8px; }");
+    expect(STYLES_CSS).toContain(".oss-card-title-bar span { font-size: 0.78rem; }");
+  });
+});
+
+describe("5F: Compact mobile detail modal", () => {
+  test("mobile detail modal uses dynamic viewport height and a shorter banner", () => {
+    expect(STYLES_CSS).toContain(".oss-detail-modal .modal-content { height: 100dvh !important; }");
+    expect(STYLES_CSS).toContain(".oss-detail-modal .modal-header { padding: 14px 14px 12px !important; }");
+    expect(STYLES_CSS).toContain("height: clamp(112px, 23vh, 150px) !important;");
+  });
+
+  test("mobile description is clamped so episodes remain visible", () => {
+    expect(STYLES_CSS).toContain(".oss-detail-description");
+    expect(STYLES_CSS).toContain("-webkit-line-clamp: 3;");
+    expect(STYLES_CSS).toContain("min-height: calc(var(--oss-episode-row-h, 46px) * 3);");
+  });
+});

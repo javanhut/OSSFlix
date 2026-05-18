@@ -1116,6 +1116,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
               )}
 
               <div
+                className="oss-detail-tags"
                 style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px", alignItems: "center" }}
               >
                 <span
@@ -1311,12 +1312,18 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 </div>
               </div>
 
-              <p style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1rem" }}>
+              <p
+                className="oss-detail-description"
+                style={{ color: "var(--oss-text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1rem" }}
+              >
                 {displayDescription}
               </p>
 
               {information.cast && information.cast.filter((c) => c).length > 0 && (
-                <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                <p
+                  className="oss-detail-cast"
+                  style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}
+                >
                   <span style={{ color: "var(--oss-text)", fontWeight: 500 }}>Cast: </span>
                   {information.cast.filter((c) => c).join(", ")}
                 </p>
@@ -1465,6 +1472,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 if (!left && !playButton) return null;
                 return (
                   <div
+                    className="oss-episode-toolbar"
                     style={{
                       display: "flex",
                       alignItems: "center",
