@@ -1891,8 +1891,11 @@ const server = Bun.serve({
         if (!title) {
           return Response.json({ error: "Not found" }, { status: 404 });
         }
+        const altName = title.altName?.trim() ? title.altName : null;
         return Response.json({
-          name: title.name,
+          name: altName ?? title.name,
+          originalName: title.name,
+          altName,
           description: title.description,
           type: title.type,
           bannerImage: title.bannerImage,
@@ -1906,6 +1909,18 @@ const server = Bun.serve({
           seasonsMeta: title.seasonsMeta ? JSON.parse(title.seasonsMeta) : [],
           maturityLevel: title.maturityLevel,
         });
+      },
+    },
+    "/api/media/alt-title": {
+      async PUT(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const body = (await req.json()) as { dirPath?: string; altName?: string | null };
+        if (!body.dirPath) return Response.json({ error: "Missing dirPath" }, { status: 400 });
+        const trimmed = typeof body.altName === "string" && body.altName.trim().length > 0 ? body.altName.trim() : null;
+        const result = db.prepare("UPDATE titles SET alt_name = ? WHERE dir_path = ?").run(trimmed, body.dirPath);
+        if (result.changes === 0) return Response.json({ error: "Title not found" }, { status: 404 });
+        return Response.json({ ok: true, altName: trimmed });
       },
     },
     "/api/admin/media/maturity": {
@@ -2187,7 +2202,7 @@ const server = Bun.serve({
         const maturity = maturitySql("t", profile);
         const rows = db
           .query(`
-          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir,
+          SELECT COALESCE(NULLIF(t.alt_name, ''), t.name) AS name, t.image_path AS imagePath, t.dir_path AS pathToDir,
                  pp.current_time AS currentTime, pp.duration,
                  MAX(pp.updated_at) AS lastUpdated
           FROM playback_progress pp
@@ -2225,7 +2240,7 @@ const server = Bun.serve({
         const rows = db
           .query(`
           SELECT pp.video_src, pp.dir_path, pp.current_time, pp.duration, pp.updated_at,
-                 t.name, t.image_path AS imagePath, t.type
+                 COALESCE(NULLIF(t.alt_name, ''), t.name) AS name, t.image_path AS imagePath, t.type
           FROM playback_progress pp
           JOIN titles t ON t.dir_path = pp.dir_path
           WHERE pp.profile_id = ? AND ${maturity.condition}
@@ -2260,7 +2275,7 @@ const server = Bun.serve({
         const maturity = maturitySql("t", profile);
         const titles = db
           .query(`
-          SELECT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir
+          SELECT COALESCE(NULLIF(t.alt_name, ''), t.name) AS name, t.image_path AS imagePath, t.dir_path AS pathToDir
           FROM watchlist w
           JOIN titles t ON t.dir_path = w.dir_path
           WHERE w.profile_id = ? AND ${maturity.condition}
@@ -2404,6 +2419,47 @@ const server = Bun.serve({
         }
         db.run("DELETE FROM episode_timings WHERE video_src LIKE ?", [`${dir}%`]);
         return Response.json({ ok: true });
+      },
+    },
+    "/api/episode/alt-titles": {
+      // Batch fetch all per-episode display-name overrides for a title.
+      GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) return Response.json({ error: "Missing dir parameter" }, { status: 400 });
+        const rows = db.query("SELECT video_src, alt_title FROM episode_alt_titles WHERE dir_path = ?").all(dir) as {
+          video_src: string;
+          alt_title: string;
+        }[];
+        return Response.json(rows);
+      },
+    },
+    "/api/episode/alt-title": {
+      async PUT(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const body = (await req.json()) as { video_src?: string; dir_path?: string; alt_title?: string | null };
+        if (!body.video_src || !body.dir_path) {
+          return Response.json({ error: "Missing video_src or dir_path" }, { status: 400 });
+        }
+        const trimmed =
+          typeof body.alt_title === "string" && body.alt_title.trim().length > 0 ? body.alt_title.trim() : null;
+        if (trimmed === null) {
+          db.run("DELETE FROM episode_alt_titles WHERE video_src = ?", [body.video_src]);
+        } else {
+          db.run(
+            `INSERT INTO episode_alt_titles (video_src, dir_path, alt_title, updated_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(video_src) DO UPDATE SET
+               alt_title = excluded.alt_title,
+               dir_path = excluded.dir_path,
+               updated_at = datetime('now')`,
+            [body.video_src, body.dir_path, trimmed],
+          );
+        }
+        return Response.json({ ok: true, alt_title: trimmed });
       },
     },
     "/api/episode/timings/parse": {
@@ -2769,14 +2825,14 @@ const server = Bun.serve({
         conditions.push(maturity.condition);
         params.push(...maturity.params);
 
-        let query = `SELECT DISTINCT t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at FROM titles t${joins}`;
+        let query = `SELECT DISTINCT COALESCE(NULLIF(t.alt_name, ''), t.name) AS name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type, t.created_at FROM titles t${joins}`;
         if (conditions.length > 0) {
           query += ` WHERE ${conditions.join(" AND ")}`;
         }
         if (sort === "recent") {
           query += ` ORDER BY t.created_at DESC`;
         } else {
-          query += ` ORDER BY t.name COLLATE NOCASE`;
+          query += ` ORDER BY name COLLATE NOCASE`;
         }
 
         const results = db.prepare(query).all(...params);

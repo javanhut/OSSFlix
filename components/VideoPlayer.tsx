@@ -41,6 +41,9 @@ type VideoPlayerProps = {
   profileId?: number; // deprecated: auth now uses cookies
   subtitles?: SubtitleTrack[];
   nextSrc?: string;
+  episodes?: string[];
+  episodeAlts?: Record<string, string>;
+  onSelectEpisode?: (src: string) => void;
 };
 
 function formatTime(seconds: number): string {
@@ -54,13 +57,6 @@ function formatTime(seconds: number): string {
 
 function safePlay(video: HTMLVideoElement): void {
   video.play().catch(() => {});
-}
-
-function parseEpisodeFromSrc(src: string): string | null {
-  const filename = src.split("/").pop() || "";
-  const parsed = parseEpisodePath(filename);
-  if (!parsed) return null;
-  return formatEpisodeLabel(parsed);
 }
 
 // ── SVG Icon components ──
@@ -390,6 +386,9 @@ export default function VideoPlayer({
   profileId: _profileId,
   subtitles,
   nextSrc,
+  episodes,
+  episodeAlts,
+  onSelectEpisode,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -407,6 +406,20 @@ export default function VideoPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [buffered, setBuffered] = useState(0);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showEpisodeMenu, setShowEpisodeMenu] = useState(false);
+  const currentEpisodeItemRef = useRef<HTMLButtonElement | null>(null);
+  // One-shot scroll-into-view when the episode menu opens. We can't put the
+  // call on the item's ref callback — React re-runs it on every parent render
+  // (the controls timer / time updates make this happen constantly), which
+  // yanks the scroll back to the current episode whenever the user tries to
+  // scroll away.
+  useEffect(() => {
+    if (!showEpisodeMenu) return;
+    const item = currentEpisodeItemRef.current;
+    if (!item) return;
+    const id = requestAnimationFrame(() => item.scrollIntoView({ block: "nearest" }));
+    return () => cancelAnimationFrame(id);
+  }, [showEpisodeMenu]);
   const [isLoading, setIsLoading] = useState(true);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [isPip, setIsPip] = useState(false);
@@ -727,7 +740,18 @@ export default function VideoPlayer({
     setAudioTracks([]);
   }, [src, initialTime, isStreamed]);
 
-  const episodeLabel = useMemo(() => parseEpisodeFromSrc(src), [src]);
+  const labelFor = useCallback(
+    (s: string): string | null => {
+      const filename = s.split("/").pop() || "";
+      const parsed = parseEpisodePath(filename);
+      if (!parsed) return null;
+      const override = episodeAlts?.[s]?.trim();
+      if (override) return `S${parsed.season} E${parsed.episode} - ${override}`;
+      return formatEpisodeLabel(parsed);
+    },
+    [episodeAlts],
+  );
+  const episodeLabel = useMemo(() => labelFor(src), [labelFor, src]);
 
   const isCachedRef = useRef(false);
   // Track if we've switched to cached playback mode
@@ -754,6 +778,7 @@ export default function VideoPlayer({
     setShowSettingsMenu(false);
     setShowCcMenu(false);
     setShowAudioMenu(false);
+    setShowEpisodeMenu(false);
     setDragging(false);
     setHoverTime(null);
     setIsLoading(true);
@@ -989,6 +1014,7 @@ export default function VideoPlayer({
           setShowSettingsMenu(false);
           setShowCcMenu(false);
           setShowAudioMenu(false);
+          setShowEpisodeMenu(false);
           setShowVolumeSlider(false);
         }, timeout);
       }
@@ -1091,6 +1117,7 @@ export default function VideoPlayer({
       setShowCcMenu((v) => !v);
       setShowSettingsMenu(false);
       setShowAudioMenu(false);
+      setShowEpisodeMenu(false);
       setShowVolumeSlider(false);
       return;
     }
@@ -1801,6 +1828,7 @@ export default function VideoPlayer({
             setShowAudioMenu((v) => !v);
             setShowSettingsMenu(false);
             setShowCcMenu(false);
+            setShowEpisodeMenu(false);
             setShowVolumeSlider(false);
           }
           break;
@@ -2334,7 +2362,7 @@ export default function VideoPlayer({
             }}
           >
             <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.82rem", fontWeight: 500 }}>
-              {nextSrc ? `Up Next: ${parseEpisodeFromSrc(nextSrc) || "Next Episode"}` : "Next episode in"}
+              {nextSrc ? `Up Next: ${labelFor(nextSrc) || "Next Episode"}` : "Next episode in"}
             </div>
             <div
               style={{
@@ -2831,18 +2859,139 @@ export default function VideoPlayer({
                     <span className="vp-tooltip">Previous (b)</span>
                   </button>
                 )}
-                <span
-                  style={{
-                    color: "rgba(255,255,255,0.7)",
-                    fontSize: "0.82rem",
-                    fontWeight: 500,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {episodeLabel}
-                </span>
+                {episodes && episodes.length > 1 && onSelectEpisode ? (
+                  <div style={{ position: "relative", minWidth: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEpisodeMenu((v) => !v);
+                        setShowSettingsMenu(false);
+                        setShowCcMenu(false);
+                        setShowAudioMenu(false);
+                        setShowVolumeSlider(false);
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "rgba(255,255,255,0.85)",
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        cursor: "pointer",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        maxWidth: "100%",
+                        transition: "background 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                      aria-haspopup="menu"
+                      aria-expanded={showEpisodeMenu}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {episodeLabel}
+                      </span>
+                      <svg
+                        aria-hidden="true"
+                        width="10"
+                        height="10"
+                        viewBox="0 0 10 10"
+                        fill="currentColor"
+                        style={{ flexShrink: 0, opacity: 0.7 }}
+                      >
+                        <path d="M1 3l4 4 4-4z" />
+                      </svg>
+                      <span className="vp-tooltip">Jump to episode</span>
+                    </button>
+                    {showEpisodeMenu && (
+                      <div
+                        className="vp-settings-panel"
+                        role="menu"
+                        onWheel={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                        style={{
+                          left: "50%",
+                          right: "auto",
+                          transform: "translateX(-50%)",
+                          minWidth: "280px",
+                          maxWidth: "min(420px, 80vw)",
+                          maxHeight: "min(360px, 50vh)",
+                          overflowY: "auto",
+                          overscrollBehavior: "contain",
+                          touchAction: "pan-y",
+                          WebkitOverflowScrolling: "touch",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "6px 16px 8px",
+                            color: "rgba(255,255,255,0.4)",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "1px",
+                            position: "sticky",
+                            top: 0,
+                            background: "rgba(20,20,28,0.96)",
+                          }}
+                        >
+                          Episodes
+                        </div>
+                        {episodes.map((epSrc) => {
+                          const isCurrent = epSrc === src;
+                          const label = labelFor(epSrc) || (epSrc.split("/").pop() ?? epSrc);
+                          return (
+                            <button
+                              type="button"
+                              key={epSrc}
+                              ref={isCurrent ? currentEpisodeItemRef : undefined}
+                              className={`vp-speed-btn${isCurrent ? " active" : ""}`}
+                              onClick={() => {
+                                setShowEpisodeMenu(false);
+                                if (!isCurrent) onSelectEpisode(epSrc);
+                              }}
+                              style={{ textAlign: "left" }}
+                            >
+                              <span
+                                style={{
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  flex: 1,
+                                }}
+                              >
+                                {label}
+                              </span>
+                              {isCurrent && <span style={{ fontSize: "0.9rem" }}>&#10003;</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span
+                    style={{
+                      color: "rgba(255,255,255,0.7)",
+                      fontSize: "0.82rem",
+                      fontWeight: 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {episodeLabel}
+                  </span>
+                )}
                 {onNext && hasNext && (
                   <button type="button" className="vp-ctrl-btn" onClick={onNext} style={{ padding: "6px" }}>
                     <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="#fff">
@@ -2880,6 +3029,7 @@ export default function VideoPlayer({
                     setShowSettingsMenu((v) => !v);
                     setShowCcMenu(false);
                     setShowAudioMenu(false);
+                    setShowEpisodeMenu(false);
                     setShowVolumeSlider(false);
                   }}
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}
@@ -2982,6 +3132,7 @@ export default function VideoPlayer({
                       setShowAudioMenu((v) => !v);
                       setShowSettingsMenu(false);
                       setShowCcMenu(false);
+                      setShowEpisodeMenu(false);
                       setShowVolumeSlider(false);
                     }}
                   >

@@ -1,4 +1,4 @@
-import { parseEpisodePath } from "../scripts/episodeNaming";
+import { parseEpisodePath, type AudioVariant } from "../scripts/episodeNaming";
 
 type Progress = {
   current_time: number;
@@ -8,6 +8,9 @@ type Progress = {
 type EpisodeProps = {
   filename: string;
   progress?: Progress | null;
+  variant?: AudioVariant | null;
+  altTitle?: string | null;
+  onEditTitle?: () => void;
   onPlay: () => void;
   onRestart?: () => void;
   onHoverStart?: () => void;
@@ -36,7 +39,17 @@ function formatTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, onHoverEnd }: EpisodeProps) {
+export function Episode({
+  filename,
+  progress,
+  variant,
+  altTitle,
+  onEditTitle,
+  onPlay,
+  onRestart,
+  onHoverStart,
+  onHoverEnd,
+}: EpisodeProps) {
   const parsed = parseFilename(filename);
   const isInProgress =
     !!progress &&
@@ -45,7 +58,8 @@ export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, o
   const isWatched = !!progress && progress.duration > 0 && progress.current_time >= progress.duration - 5;
   const pct = progress && progress.duration > 0 ? (progress.current_time / progress.duration) * 100 : 0;
 
-  const titleText = parsed.type === "episode" ? parsed.title || "Untitled" : parsed.title || "Untitled";
+  const originalTitleText = parsed.type === "episode" ? parsed.title || "Untitled" : parsed.title || "Untitled";
+  const titleText = altTitle?.trim() ? altTitle : originalTitleText;
   const ariaLabel = parsed.type === "episode" ? `Play Episode ${parsed.episode}` : `Play ${titleText}`;
 
   let stateClass = "";
@@ -72,7 +86,28 @@ export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, o
           {isWatched && <span className="oss-episode-num-check"> &#10003;</span>}
         </span>
         <span className="oss-episode-info">
-          <span className="oss-episode-title">{titleText}</span>
+          <span className="oss-episode-title">
+            {titleText}
+            {variant && (
+              <span
+                className={`oss-episode-variant oss-episode-variant-${variant}`}
+                style={{
+                  marginLeft: "8px",
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  fontSize: "0.65rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  background: variant === "sub" ? "rgba(59,130,246,0.18)" : "rgba(168,85,247,0.18)",
+                  color: variant === "sub" ? "#93c5fd" : "#d8b4fe",
+                  verticalAlign: "middle",
+                }}
+              >
+                {variant}
+              </span>
+            )}
+          </span>
         </span>
         {metaText && <span className="oss-episode-meta">{metaText}</span>}
         <span className="oss-episode-play" aria-hidden="true">
@@ -91,6 +126,22 @@ export function Episode({ filename, progress, onPlay, onRestart, onHoverStart, o
           aria-label="Play from beginning"
         >
           &#8634;
+        </button>
+      )}
+      {onEditTitle && (
+        <button
+          type="button"
+          className={`oss-episode-edit${altTitle ? " has-override" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditTitle();
+          }}
+          title={altTitle ? "Edit display name (override active)" : "Edit display name"}
+          aria-label="Edit episode display name"
+        >
+          <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325" />
+          </svg>
         </button>
       )}
       {pct > 0 && (

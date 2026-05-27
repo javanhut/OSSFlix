@@ -51,6 +51,13 @@ try {
   // column already exists
 }
 
+// Migration: per-title display-name override that survives library rescans
+try {
+  db.run("ALTER TABLE titles ADD COLUMN alt_name TEXT");
+} catch {
+  // column already exists
+}
+
 db.run(`
   CREATE TABLE IF NOT EXISTS genres (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,6 +148,18 @@ db.run(`
     outro_end REAL
   )
 `);
+
+// Per-episode display-name override — doesn't touch files, keyed by video_src.
+// dir_path is denormalized so the Card can batch-fetch all overrides for a title.
+db.run(`
+  CREATE TABLE IF NOT EXISTS episode_alt_titles (
+    video_src TEXT PRIMARY KEY,
+    dir_path TEXT NOT NULL,
+    alt_title TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_episode_alt_titles_dir ON episode_alt_titles(dir_path)`);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS watchlist (

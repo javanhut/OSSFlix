@@ -828,6 +828,9 @@ body.modal-open #root {
   overflow-y: auto !important;
   flex: 1 !important;
 }
+.oss-detail-modal {
+  max-width: 960px;
+}
 .oss-detail-modal .modal-content {
   height: min(760px, calc(100vh - 32px)) !important;
 }
@@ -1099,6 +1102,39 @@ body.modal-open #root {
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
 }
+.oss-episode-edit {
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: var(--oss-text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.oss-episode:hover .oss-episode-edit,
+.oss-episode-edit:focus-visible {
+  opacity: 1;
+}
+.oss-episode-edit:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+/* Subtle indicator when an override is active — keeps the button visible */
+.oss-episode-edit.has-override {
+  opacity: 0.55;
+  color: var(--oss-accent);
+}
+.oss-episode:hover .oss-episode-edit.has-override {
+  opacity: 1;
+}
 .oss-episode-progress {
   position: absolute;
   left: 0;
@@ -1116,7 +1152,8 @@ body.modal-open #root {
   background: #22c55e;
 }
 @media (hover: none) {
-  .oss-episode-restart {
+  .oss-episode-restart,
+  .oss-episode-edit {
     opacity: 1;
   }
 }

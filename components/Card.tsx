@@ -10,6 +10,8 @@ import {
   inferEpisodeVariants,
   type AudioVariant,
 } from "../scripts/episodeNaming";
+
+type AudioSelection = AudioVariant | "both";
 import type { SeasonMeta } from "../scripts/tomlreader";
 
 type SubtitleTrack = {
@@ -21,6 +23,8 @@ type SubtitleTrack = {
 
 interface MediaInfo {
   name: string;
+  originalName?: string;
+  altName?: string | null;
   description: string;
   genre: string[];
   type: string;
@@ -649,7 +653,9 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [showTimingsModal, setShowTimingsModal] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
-  const [selectedVariant, setSelectedVariant] = useState<AudioVariant | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<AudioSelection | null>(null);
+  const [mostRecentSrc, setMostRecentSrc] = useState<string | null>(null);
+  const [progressLoaded, setProgressLoaded] = useState(false);
   const variantMap = useMemo(() => inferEpisodeVariants(information?.videos || []), [information?.videos]);
   const availableVariants = useMemo(() => {
     const set = new Set<AudioVariant>();
@@ -661,6 +667,9 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const hasBothVariants = availableVariants.has("sub") && availableVariants.has("dub");
   const filteredVideos = useMemo(() => {
     const videos = information?.videos || [];
+    // "Sub + Dub" mode: show every variant; no filtering and no dedupe so the
+    // viewer can pick either copy of each episode.
+    if (selectedVariant === "both") return videos;
     const variantFiltered =
       !hasBothVariants || selectedVariant === null
         ? videos
@@ -747,6 +756,96 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   // Confirmation modal for resetting all playback progress on this title
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetInFlight, setResetInFlight] = useState(false);
+  // Alternative-title editor — display-only override that doesn't touch files
+  const [showAltTitleModal, setShowAltTitleModal] = useState(false);
+  const [altTitleDraft, setAltTitleDraft] = useState("");
+  const [altTitleSaving, setAltTitleSaving] = useState(false);
+  const altTitleInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!showAltTitleModal) return;
+    const id = requestAnimationFrame(() => altTitleInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [showAltTitleModal]);
+  // Per-episode display-name overrides (display-only — files are never renamed)
+  const [episodeAltsMap, setEpisodeAltsMap] = useState<Record<string, string>>({});
+  const [episodeEditSrc, setEpisodeEditSrc] = useState<string | null>(null);
+  const [episodeEditDraft, setEpisodeEditDraft] = useState("");
+  const [episodeEditSaving, setEpisodeEditSaving] = useState(false);
+  const episodeEditInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!episodeEditSrc) return;
+    const id = requestAnimationFrame(() => episodeEditInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [episodeEditSrc]);
+  const fetchEpisodeAlts = () => {
+    if (!dirPath) return;
+    fetch(`/api/episode/alt-titles?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((rows: { video_src: string; alt_title: string }[]) => {
+        const map: Record<string, string> = {};
+        for (const r of rows) map[r.video_src] = r.alt_title;
+        setEpisodeAltsMap(map);
+      })
+      .catch(() => {});
+  };
+  const openEpisodeEdit = (videoSrc: string) => {
+    setEpisodeEditDraft(episodeAltsMap[videoSrc] ?? "");
+    setEpisodeEditSrc(videoSrc);
+  };
+  const saveEpisodeAlt = async () => {
+    if (!episodeEditSrc || !dirPath) return;
+    setEpisodeEditSaving(true);
+    try {
+      const res = await fetch("/api/episode/alt-title", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_src: episodeEditSrc, dir_path: dirPath, alt_title: episodeEditDraft }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = (await res.json()) as { alt_title: string | null };
+      setEpisodeAltsMap((prev) => {
+        const next = { ...prev };
+        if (data.alt_title) next[episodeEditSrc] = data.alt_title;
+        else delete next[episodeEditSrc];
+        return next;
+      });
+      setEpisodeEditSrc(null);
+    } catch {
+      // leave open so the user can retry
+    } finally {
+      setEpisodeEditSaving(false);
+    }
+  };
+  const saveAltTitle = async () => {
+    if (!dirPath) return;
+    setAltTitleSaving(true);
+    try {
+      const res = await fetch("/api/media/alt-title", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dirPath, altName: altTitleDraft }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = (await res.json()) as { altName: string | null };
+      setInformation((prev) =>
+        prev
+          ? {
+              ...prev,
+              altName: data.altName,
+              name: data.altName ?? prev.originalName ?? prev.name,
+            }
+          : prev,
+      );
+      window.dispatchEvent(new CustomEvent("ossflix-media-updated"));
+      setShowAltTitleModal(false);
+    } catch {
+      // leave the modal open so the user can retry
+    } finally {
+      setAltTitleSaving(false);
+    }
+  };
   const handleResetAllProgress = async () => {
     if (!dirPath) return;
     setResetInFlight(true);
@@ -810,6 +909,20 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     if (hasBothVariants && selectedVariant === null) setSelectedVariant("sub");
   }, [hasBothVariants, selectedVariant]);
 
+  // Pick the initial selected season once info AND progress are both loaded.
+  // Prefer the season of the most-recently-played episode so reopening a show
+  // that the user last watched on (say) Season 3 lands on Season 3 — not S1.
+  useEffect(() => {
+    if (selectedSeason != null) return;
+    if (!information || !progressLoaded) return;
+    const seasons = groupVideosBySeason(information.videos || []);
+    if (seasons.size === 0) return;
+    let target: number | null = null;
+    if (mostRecentSrc) target = parseSeasonNumber(mostRecentSrc);
+    if (target == null || !seasons.has(target)) target = [...seasons.keys()][0];
+    setSelectedSeason(target);
+  }, [information, mostRecentSrc, progressLoaded, selectedSeason]);
+
   // If the active season disappears after a variant switch, fall back to the first available season
   useEffect(() => {
     if (selectedSeason == null) return;
@@ -831,15 +944,21 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   }, [show, playerSrc]);
 
   const fetchProgress = () => {
-    if (!dirPath) return;
+    if (!dirPath) {
+      setProgressLoaded(true);
+      return;
+    }
     fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
       .then((res) => res.json())
       .then((entries: ProgressEntry[]) => {
         const map: Record<string, ProgressEntry> = {};
         for (const e of entries) map[e.video_src] = e;
         setProgressMap(map);
+        // API returns entries ORDER BY updated_at DESC — first is most recent.
+        setMostRecentSrc(Array.isArray(entries) && entries.length > 0 ? entries[0].video_src : null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setProgressLoaded(true));
   };
 
   const fetchTimings = () => {
@@ -910,18 +1029,17 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
       setInformation(null);
       setSelectedSeason(null);
       setSelectedVariant(null);
+      setMostRecentSrc(null);
+      setProgressLoaded(false);
       fetch(`/api/media/info?dir=${encodeURIComponent(dirPath)}`)
         .then((res) => res.json())
         .then((data: MediaInfo) => {
           setInformation(data);
-          const seasons = groupVideosBySeason(data.videos || []);
-          if (seasons.size > 0) {
-            setSelectedSeason([...seasons.keys()][0]);
-          }
         })
         .finally(() => setLoading(false));
       fetchProgress();
       fetchTimings();
+      fetchEpisodeAlts();
       fetchWatchlistStatus();
       setSleepDismissed(false);
       setSleepInfo(null);
@@ -1197,6 +1315,33 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                         gap: "2px",
                       }}
                     >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          setAltTitleDraft(information.altName ?? "");
+                          setShowAltTitleModal(true);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--oss-text)",
+                          padding: "8px 10px",
+                          textAlign: "left",
+                          fontSize: "0.82rem",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        Edit display name
+                      </button>
                       {tmdbApiKey && (
                         <button
                           type="button"
@@ -1384,7 +1529,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   <select
                     id="oss-variant-select"
                     value={selectedVariant ?? "sub"}
-                    onChange={(e) => setSelectedVariant(e.target.value as AudioVariant)}
+                    onChange={(e) => setSelectedVariant(e.target.value as AudioSelection)}
                     style={{
                       background: "var(--oss-bg-elevated)",
                       color: "var(--oss-text)",
@@ -1399,6 +1544,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   >
                     <option value="sub">Sub</option>
                     <option value="dub">Dub</option>
+                    <option value="both">Sub + Dub</option>
                   </select>
                 </div>
               )}
@@ -1507,11 +1653,15 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                       {displayVideos.map((v) => {
                         const prog = progressMap[v];
                         const isCompleted = !!prog && prog.duration > 0 && prog.current_time >= prog.duration - 5;
+                        const variant = selectedVariant === "both" ? (variantMap.get(v) ?? null) : null;
                         return (
                           <Episode
                             key={v}
                             filename={v.split("/").pop()!}
                             progress={prog || null}
+                            variant={variant}
+                            altTitle={episodeAltsMap[v]}
+                            onEditTitle={() => openEpisodeEdit(v)}
                             onPlay={() => handlePlay(v, !!isCompleted)}
                             onRestart={() => handlePlay(v, true)}
                             onHoverStart={() => beginHoverPreview(v)}
@@ -1539,6 +1689,124 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
           onTimingsRefresh={fetchTimings}
         />
       )}
+
+      <Modal show={!!episodeEditSrc} onHide={() => setEpisodeEditSrc(null)} centered>
+        <ModalHeader closeButton>
+          <ModalTitle style={{ fontSize: "1.05rem" }}>Edit episode name</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", margin: "0 0 12px", lineHeight: 1.55 }}>
+            Override how this episode appears in the app. The file is not renamed.
+          </p>
+          {episodeEditSrc && (
+            <p style={{ color: "var(--oss-text-muted)", fontSize: "0.78rem", margin: "0 0 6px" }}>
+              Original: <span style={{ color: "var(--oss-text)" }}>{parseEpisodeLabel(episodeEditSrc)}</span>
+            </p>
+          )}
+          <input
+            ref={episodeEditInputRef}
+            type="text"
+            value={episodeEditDraft}
+            onChange={(e) => setEpisodeEditDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !episodeEditSaving) {
+                e.preventDefault();
+                saveEpisodeAlt();
+              }
+            }}
+            placeholder={episodeEditSrc ? parseEpisodeLabel(episodeEditSrc) : "Episode title"}
+            style={{
+              width: "100%",
+              padding: "9px 12px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.06)",
+              color: "#fff",
+              fontSize: "0.9rem",
+              outline: "none",
+            }}
+          />
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.75rem", margin: "8px 0 0" }}>
+            Leave blank to clear the override and revert to the original.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <button
+            type="button"
+            className="oss-btn oss-btn-secondary oss-btn-sm"
+            onClick={() => setEpisodeEditSrc(null)}
+            disabled={episodeEditSaving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="oss-btn oss-btn-primary oss-btn-sm"
+            onClick={saveEpisodeAlt}
+            disabled={episodeEditSaving}
+          >
+            {episodeEditSaving ? "Saving..." : "Save"}
+          </button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal show={showAltTitleModal} onHide={() => setShowAltTitleModal(false)} centered>
+        <ModalHeader closeButton>
+          <ModalTitle style={{ fontSize: "1.05rem" }}>Edit display name</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", margin: "0 0 12px", lineHeight: 1.55 }}>
+            Override how this title appears in the app. Files are not renamed — this only changes what you see.
+          </p>
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.78rem", margin: "0 0 6px" }}>
+            Original: <span style={{ color: "var(--oss-text)" }}>{information?.originalName || information?.name}</span>
+          </p>
+          <input
+            ref={altTitleInputRef}
+            type="text"
+            value={altTitleDraft}
+            onChange={(e) => setAltTitleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !altTitleSaving) {
+                e.preventDefault();
+                saveAltTitle();
+              }
+            }}
+            placeholder={information?.originalName || "Display name"}
+            style={{
+              width: "100%",
+              padding: "9px 12px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.06)",
+              color: "#fff",
+              fontSize: "0.9rem",
+              outline: "none",
+            }}
+          />
+          <p style={{ color: "var(--oss-text-muted)", fontSize: "0.75rem", margin: "8px 0 0" }}>
+            Leave blank to clear the override and revert to the original.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <button
+            type="button"
+            className="oss-btn oss-btn-secondary oss-btn-sm"
+            onClick={() => setShowAltTitleModal(false)}
+            disabled={altTitleSaving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="oss-btn oss-btn-primary oss-btn-sm"
+            onClick={saveAltTitle}
+            disabled={altTitleSaving}
+          >
+            {altTitleSaving ? "Saving..." : "Save"}
+          </button>
+        </ModalFooter>
+      </Modal>
 
       <Modal show={showResetConfirm} onHide={() => setShowResetConfirm(false)} centered>
         <ModalHeader closeButton>
@@ -1589,6 +1857,18 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         initialTime={playerInitialTime}
         timings={playerSrc ? timingsMap[playerSrc] : undefined}
         subtitles={information?.subtitles}
+        episodes={filteredVideos}
+        episodeAlts={episodeAltsMap}
+        onSelectEpisode={(epSrc) => {
+          if (!epSrc || epSrc === playerSrc) return;
+          if (restartMode) {
+            setPlayerInitialTime(0);
+          } else {
+            const saved = progressMap[epSrc];
+            setPlayerInitialTime(saved?.current_time || 0);
+          }
+          setPlayerSrc(epSrc);
+        }}
         nextSrc={(() => {
           if (!filteredVideos.length || !playerSrc) return undefined;
           const idx = filteredVideos.indexOf(playerSrc);

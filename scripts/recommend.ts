@@ -65,7 +65,7 @@ export function getRecommendations(profileId: number, limit = 5): Recommendation
   // 3. Score all unwatched titles by genre affinity
   const allTitles = db
     .prepare(`
-    SELECT t.id, t.name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
+    SELECT t.id, COALESCE(NULLIF(t.alt_name, ''), t.name) AS name, t.image_path AS imagePath, t.dir_path AS pathToDir, t.type
     FROM titles t
     WHERE t.maturity_level IN (${maturityPlaceholders})
   `)
