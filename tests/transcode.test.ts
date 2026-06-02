@@ -1,9 +1,17 @@
 import { describe, test, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
+import {
+  buildCacheTranscodeArgs,
+  buildLiveTranscodeArgs,
+  selectAudioStream,
+  selectVideoStream,
+  type ProbeStream,
+  type SelectedAudioStream,
+  type SelectedVideoStream,
+} from "../scripts/streamingProfile";
 
-// ── Test the pure functions extracted from index.ts transcode logic ──
-// These test the cache key generation, audio filter chain building, and FFmpeg arg construction
+// ── Test the real transcode arg builders from scripts/streamingProfile.ts ──
 
 const CACHE_DIR = resolve("./data/cache");
 
@@ -21,200 +29,149 @@ function getCachePath(cacheKey: string): string {
   return join(CACHE_DIR, `${cacheKey}.mp4`);
 }
 
-// Replicate the audio filter chain building from index.ts (cache transcode)
-function buildCacheAudioFilters(canCopyAudio: boolean, audioChannels: number): string[] {
-  const filters: string[] = [];
-  if (!canCopyAudio && audioChannels > 2) {
-    filters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
-  }
-  if (!canCopyAudio) {
-    filters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
-    filters.push("aresample=async=1:first_pts=0");
-  }
-  return filters;
+const STEREO_AAC: SelectedAudioStream = { index: 1, channels: 2, codecName: "aac" };
+const SURROUND_AC3: SelectedAudioStream = { index: 1, channels: 6, codecName: "ac3" };
+const H264_VIDEO: SelectedVideoStream = { index: 0, codecName: "h264", pixFmt: "yuv420p" };
+const HEVC_VIDEO: SelectedVideoStream = { index: 0, codecName: "hevc", pixFmt: "yuv420p10le" };
+
+// Find the `-af` filter chain in an arg list (the value immediately after "-af")
+function audioFilter(args: string[]): string | null {
+  const i = args.indexOf("-af");
+  return i >= 0 ? args[i + 1] : null;
 }
 
-// Replicate the audio filter chain building from index.ts (live transcode)
-function buildLiveAudioFilters(canCopyAudio: boolean, audioChannels: number): string[] {
-  const filters: string[] = [];
-  if (!canCopyAudio && audioChannels > 2) {
-    filters.push("pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE");
-  }
-  if (!canCopyAudio) {
-    filters.push("aresample=async=1:first_pts=0");
-  }
-  return filters;
-}
-
-function getAudioBitrate(channels: number): string {
-  return channels > 2 ? "448k" : "256k";
-}
-
-// Build the FFmpeg video args for cache transcode
-function buildCacheVideoArgs(canCopyVideo: boolean): string[] {
-  return canCopyVideo ? ["-c:v", "copy"] : ["-c:v", "libx264", "-preset", "medium", "-crf", "20"];
-}
-
-// Build the FFmpeg video args for live transcode
-function buildLiveVideoArgs(canCopyVideo: boolean): string[] {
-  return canCopyVideo
-    ? ["-c:v", "copy"]
-    : ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-crf", "23"];
+// Extract the codec value following a "-c:v"/"-c:a" flag
+function codec(args: string[], flag: string): string | null {
+  const i = args.indexOf(flag);
+  return i >= 0 ? args[i + 1] : null;
 }
 
 describe("Cache key generation", () => {
   test("produces deterministic keys", () => {
-    const key1 = getCacheKey("/media/movies/test.mkv", 0);
-    const key2 = getCacheKey("/media/movies/test.mkv", 0);
-    expect(key1).toBe(key2);
+    expect(getCacheKey("/media/movies/test.mkv", 0)).toBe(getCacheKey("/media/movies/test.mkv", 0));
   });
 
   test("different audio indices produce different keys", () => {
-    const key0 = getCacheKey("/media/movies/test.mkv", 0);
-    const key1 = getCacheKey("/media/movies/test.mkv", 1);
-    expect(key0).not.toBe(key1);
+    expect(getCacheKey("/media/movies/test.mkv", 0)).not.toBe(getCacheKey("/media/movies/test.mkv", 1));
   });
 
   test("different files produce different keys", () => {
-    const key1 = getCacheKey("/media/movies/movie1.mkv", 0);
-    const key2 = getCacheKey("/media/movies/movie2.mkv", 0);
-    expect(key1).not.toBe(key2);
+    expect(getCacheKey("/media/movies/movie1.mkv", 0)).not.toBe(getCacheKey("/media/movies/movie2.mkv", 0));
   });
 
   test("extracts base name from path", () => {
-    const key = getCacheKey("/media/movies/my_cool_movie.mkv", 0);
-    expect(key.startsWith("my_cool_movie_")).toBe(true);
-  });
-
-  test("handles paths without extension", () => {
-    const key = getCacheKey("/media/movies/noext", 0);
-    expect(key.startsWith("noext_")).toBe(true);
+    expect(getCacheKey("/media/movies/my_cool_movie.mkv", 0).startsWith("my_cool_movie_")).toBe(true);
   });
 
   test("cache path ends with .mp4", () => {
-    const key = getCacheKey("/media/movies/test.mkv", 0);
-    const path = getCachePath(key);
+    const path = getCachePath(getCacheKey("/media/movies/test.mkv", 0));
     expect(path.endsWith(".mp4")).toBe(true);
     expect(path).toContain("data/cache/");
   });
 });
 
-describe("Audio filter chain building", () => {
-  // ── Cache transcode filters ──
-  test("cache: AAC audio copies without filters", () => {
-    const filters = buildCacheAudioFilters(true, 2);
-    expect(filters.length).toBe(0);
+describe("selectAudioStream / selectVideoStream", () => {
+  const streams: ProbeStream[] = [
+    { index: 0, codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p" },
+    { index: 1, codec_type: "audio", codec_name: "aac", channels: 2 },
+    { index: 2, codec_type: "audio", codec_name: "ac3", channels: 6 },
+  ];
+
+  test("selects the requested audio stream by ordinal", () => {
+    expect(selectAudioStream(streams, 0)?.index).toBe(1);
+    expect(selectAudioStream(streams, 1)?.index).toBe(2);
   });
 
-  test("cache: stereo non-AAC gets loudnorm + aresample", () => {
-    const filters = buildCacheAudioFilters(false, 2);
-    expect(filters.length).toBe(2);
-    expect(filters[0]).toContain("loudnorm");
-    expect(filters[1]).toContain("aresample=async=1:first_pts=0");
+  test("falls back to the first audio stream for an out-of-range index", () => {
+    expect(selectAudioStream(streams, 99)?.index).toBe(1);
   });
 
-  test("cache: surround non-AAC gets pan downmix + loudnorm + aresample", () => {
-    const filters = buildCacheAudioFilters(false, 6);
-    expect(filters.length).toBe(3);
-    expect(filters[0]).toContain("pan=stereo");
-    expect(filters[0]).toContain("0.5*FC"); // center channel preserved
-    expect(filters[0]).toContain("0.5*LFE"); // LFE included
-    expect(filters[1]).toContain("loudnorm=I=-16:TP=-1.5:LRA=11");
-    expect(filters[2]).toContain("aresample=async=1:first_pts=0");
+  test("returns null when there is no audio", () => {
+    expect(selectAudioStream([streams[0]], 0)).toBeNull();
   });
 
-  test("cache: no aggressive async correction (no async=1000)", () => {
-    const filters = buildCacheAudioFilters(false, 2);
-    const joined = filters.join(",");
-    expect(joined).not.toContain("async=1000");
-    expect(joined).toContain("async=1");
-  });
-
-  // ── Live transcode filters ──
-  test("live: AAC audio copies without filters", () => {
-    const filters = buildLiveAudioFilters(true, 2);
-    expect(filters.length).toBe(0);
-  });
-
-  test("live: stereo non-AAC gets aresample only (no loudnorm)", () => {
-    const filters = buildLiveAudioFilters(false, 2);
-    expect(filters.length).toBe(1);
-    expect(filters[0]).toContain("aresample=async=1:first_pts=0");
-  });
-
-  test("live: surround non-AAC gets pan downmix + aresample (no loudnorm)", () => {
-    const filters = buildLiveAudioFilters(false, 6);
-    expect(filters.length).toBe(2);
-    expect(filters[0]).toContain("pan=stereo");
-    expect(filters[1]).toContain("aresample=async=1:first_pts=0");
-    // No loudnorm in live transcode (adds latency)
-    const joined = filters.join(",");
-    expect(joined).not.toContain("loudnorm");
-  });
-
-  test("live: no aggressive async correction", () => {
-    const filters = buildLiveAudioFilters(false, 2);
-    const joined = filters.join(",");
-    expect(joined).not.toContain("async=1000");
+  test("selects the video stream", () => {
+    expect(selectVideoStream(streams)?.codecName).toBe("h264");
   });
 });
 
-describe("Audio bitrate selection", () => {
-  test("stereo gets 256k", () => {
-    expect(getAudioBitrate(2)).toBe("256k");
+describe("Cache transcode args", () => {
+  test("re-encodes video as constant frame rate", () => {
+    const args = buildCacheTranscodeArgs("/m/test.mkv", STEREO_AAC, "/out.mp4");
+    expect(codec(args, "-c:v")).toBe("libx264");
+    const vs = args.indexOf("-vsync");
+    expect(vs).toBeGreaterThan(-1);
+    expect(args[vs + 1]).toBe("cfr");
   });
 
-  test("mono gets 256k", () => {
-    expect(getAudioBitrate(1)).toBe("256k");
+  test("uses ongoing drift correction and no first_pts pinning", () => {
+    const af = audioFilter(buildCacheTranscodeArgs("/m/test.mkv", SURROUND_AC3, "/out.mp4"));
+    expect(af).toContain("aresample=async=1000");
+    expect(af).not.toContain("first_pts=0");
   });
 
-  test("5.1 surround gets 448k", () => {
-    expect(getAudioBitrate(6)).toBe("448k");
+  test("surround source is downmixed and loudness-normalized", () => {
+    const af = audioFilter(buildCacheTranscodeArgs("/m/test.mkv", SURROUND_AC3, "/out.mp4"));
+    expect(af).toContain("pan=stereo");
+    expect(af).toContain("loudnorm");
   });
 
-  test("7.1 surround gets 448k", () => {
-    expect(getAudioBitrate(8)).toBe("448k");
+  test("omits audio mapping when there is no audio", () => {
+    const args = buildCacheTranscodeArgs("/m/test.mkv", null, "/out.mp4");
+    expect(args).not.toContain("-c:a");
   });
 });
 
-describe("Video encoding args", () => {
-  test("cache: copies compatible video", () => {
-    const args = buildCacheVideoArgs(true);
-    expect(args).toEqual(["-c:v", "copy"]);
+describe("Live transcode args", () => {
+  test("copies both streams only when video AND audio are copyable", () => {
+    const args = buildLiveTranscodeArgs("/m/test.mkv", STEREO_AAC, H264_VIDEO, 0);
+    expect(codec(args, "-c:v")).toBe("copy");
+    expect(codec(args, "-c:a")).toBe("copy");
   });
 
-  test("cache: uses medium preset without zerolatency", () => {
-    const args = buildCacheVideoArgs(false);
-    expect(args).toContain("-preset");
-    expect(args).toContain("medium");
-    expect(args).toContain("-crf");
-    expect(args).toContain("20");
-    expect(args).not.toContain("-tune");
-    expect(args).not.toContain("zerolatency");
+  test("re-encodes BOTH streams when only the audio needs work (no mixed copy)", () => {
+    // h264/yuv420p video would be copyable, but ac3 surround audio is not.
+    // Mixing copy-video with re-encoded-audio caused fixed lip-sync offsets,
+    // so the video must be re-encoded too.
+    const args = buildLiveTranscodeArgs("/m/test.mkv", SURROUND_AC3, H264_VIDEO, 0);
+    expect(codec(args, "-c:v")).toBe("libx264");
+    expect(codec(args, "-c:a")).toBe("aac");
   });
 
-  test("live: copies compatible video", () => {
-    const args = buildLiveVideoArgs(true);
-    expect(args).toEqual(["-c:v", "copy"]);
+  test("re-encodes BOTH streams when only the video needs work", () => {
+    // aac stereo audio is copyable, but hevc video is not.
+    const args = buildLiveTranscodeArgs("/m/test.mkv", STEREO_AAC, HEVC_VIDEO, 0);
+    expect(codec(args, "-c:v")).toBe("libx264");
+    expect(codec(args, "-c:a")).toBe("aac");
   });
 
-  test("live: uses veryfast preset with zerolatency", () => {
-    const args = buildLiveVideoArgs(false);
-    expect(args).toContain("-preset");
-    expect(args).toContain("veryfast");
-    expect(args).toContain("-tune");
-    expect(args).toContain("zerolatency");
-    expect(args).toContain("-crf");
-    expect(args).toContain("23");
+  test("re-encoded video is forced to constant frame rate", () => {
+    const args = buildLiveTranscodeArgs("/m/test.mkv", SURROUND_AC3, HEVC_VIDEO, 0);
+    const vs = args.indexOf("-vsync");
+    expect(vs).toBeGreaterThan(-1);
+    expect(args[vs + 1]).toBe("cfr");
   });
 
-  test("live: does not use ultrafast (quality regression check)", () => {
-    const args = buildLiveVideoArgs(false);
-    expect(args).not.toContain("ultrafast");
+  test("a seek forces re-encode even for an otherwise-copyable file", () => {
+    const args = buildLiveTranscodeArgs("/m/test.mkv", STEREO_AAC, H264_VIDEO, 120);
+    expect(codec(args, "-c:v")).toBe("libx264");
+    expect(codec(args, "-c:a")).toBe("aac");
+    expect(args).toContain("-ss");
   });
 
-  test("cache: does not use fast preset (quality regression check)", () => {
-    const args = buildCacheVideoArgs(false);
-    expect(args).not.toContain("fast");
+  test("remote sources always re-encode (never copy)", () => {
+    const args = buildLiveTranscodeArgs("kaidadb:abc", STEREO_AAC, H264_VIDEO, 0, true);
+    expect(codec(args, "-c:v")).toBe("libx264");
+  });
+
+  test("re-encoded audio uses ongoing drift correction, no first_pts pinning", () => {
+    const af = audioFilter(buildLiveTranscodeArgs("/m/test.mkv", SURROUND_AC3, HEVC_VIDEO, 0));
+    expect(af).toContain("aresample=async=1000");
+    expect(af).not.toContain("first_pts=0");
+  });
+
+  test("live audio filter has no loudnorm (deferred to cache for low latency)", () => {
+    const af = audioFilter(buildLiveTranscodeArgs("/m/test.mkv", SURROUND_AC3, HEVC_VIDEO, 0));
+    expect(af).not.toContain("loudnorm");
   });
 });

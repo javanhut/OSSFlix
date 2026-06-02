@@ -20,13 +20,20 @@ export type SelectedVideoStream = {
   pixFmt: string;
 };
 
+// aresample=async=N enables ONGOING drift correction (up to N samples/sec of
+// compensation), not just the one-time start alignment that async=1 gives.
+// We intentionally do NOT pin audio to a zero start PTS: forcing audio to start
+// at zero while the video keeps its own start offset is what produced fixed
+// lip-sync offsets.
+const RESAMPLE_FILTER = "aresample=async=1000";
+
 function buildCacheAudioFilters(channels: number): string {
   const filters: string[] = [];
   if (channels > 2) {
     filters.push(STEREO_DOWNMIX_FILTER);
   }
   filters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
-  filters.push("aresample=async=1:first_pts=0");
+  filters.push(RESAMPLE_FILTER);
   return filters.join(",");
 }
 
@@ -36,7 +43,7 @@ function buildLiveAudioFilters(channels: number): string {
     filters.push(STEREO_DOWNMIX_FILTER);
   }
   // Keep live transcode low-latency. Loudness normalization is deferred to cache jobs.
-  filters.push("aresample=async=1:first_pts=0");
+  filters.push(RESAMPLE_FILTER);
   return filters.join(",");
 }
 
@@ -92,6 +99,10 @@ export function buildCacheTranscodeArgs(
     "yuv420p",
     "-profile:v",
     "high",
+    // Force constant frame rate. VFR sources (common with MKV/anime) otherwise
+    // drift against the steadily-clocked audio over the length of an episode.
+    "-vsync",
+    "cfr",
     ...(selectedAudio
       ? ["-c:a", "aac", "-ac", "2", "-b:a", "192k", "-af", buildCacheAudioFilters(selectedAudio.channels)]
       : []),
@@ -125,6 +136,12 @@ export function buildLiveTranscodeArgs(
     startTime <= 0;
   const canCopyAudio = !isRemote && !!selectedAudio && selectedAudio.codecName === "aac" && selectedAudio.channels <= 2;
 
+  // Only copy streams when BOTH video and audio can be copied. Mixing a copied
+  // stream (original timestamps) with a re-encoded one (re-clocked PTS) leaves
+  // the two on independent clocks and produces a fixed lip-sync offset. If
+  // either stream needs work, re-encode both so they share one timeline.
+  const copyStreams = canCopyVideo && (selectedAudio ? canCopyAudio : true);
+
   // Remote sources: smaller probe (MKV headers fit in ~1MB) and shorter fragments for faster first frame
   const probeSize = isRemote ? "2M" : "10M";
   const fragDuration = isRemote ? "200000" : "1000000";
@@ -144,7 +161,7 @@ export function buildLiveTranscodeArgs(
     "-map",
     "0:v:0",
     ...(selectedAudio ? ["-map", `0:${selectedAudio.index}`] : []),
-    ...(canCopyVideo
+    ...(copyStreams
       ? ["-c:v", "copy"]
       : [
           "-c:v",
@@ -159,9 +176,12 @@ export function buildLiveTranscodeArgs(
           "yuv420p",
           "-profile:v",
           "high",
+          // Force constant frame rate so VFR sources don't drift against audio.
+          "-vsync",
+          "cfr",
         ]),
     ...(selectedAudio
-      ? canCopyAudio
+      ? copyStreams
         ? ["-c:a", "copy"]
         : ["-c:a", "aac", "-ac", "2", "-b:a", "192k", "-af", buildLiveAudioFilters(selectedAudio.channels)]
       : []),

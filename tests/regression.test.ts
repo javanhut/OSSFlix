@@ -13,13 +13,22 @@ const VIDEOPLAYER_TSX = readFileSync(resolve("./components/VideoPlayer.tsx"), "u
 const CARD_TSX = readFileSync(resolve("./components/Card.tsx"), "utf-8");
 const STYLES_CSS = readFileSync(resolve("./styles.css"), "utf-8");
 
-describe("1A: aresample fix — no aggressive async correction", () => {
-  test("transcode source does not contain async=1000", () => {
-    expect(TRANSCODE_SRC).not.toContain("async=1000");
+describe("1A: aresample fix — ongoing A/V drift correction", () => {
+  // Supersedes the earlier async=1 decision: async=1 only corrects the initial
+  // timestamp gap, so VFR/long sources drifted out of sync mid-episode. async=1000
+  // enables ongoing per-second correction. first_pts=0 was dropped because pinning
+  // audio to PTS 0 while video keeps its own start offset caused fixed lip-sync gaps.
+  test("transcode source uses ongoing async correction", () => {
+    expect(TRANSCODE_SRC).toContain("aresample=async=1000");
   });
 
-  test("transcode source uses async=1:first_pts=0", () => {
-    expect(TRANSCODE_SRC).toContain("aresample=async=1:first_pts=0");
+  test("transcode source no longer pins audio to first_pts=0", () => {
+    expect(TRANSCODE_SRC).not.toContain("first_pts=0");
+  });
+
+  test("re-encode paths force constant frame rate", () => {
+    expect(STREAM_PROFILE_TS).toContain('"-vsync"');
+    expect(STREAM_PROFILE_TS).toContain('"cfr"');
   });
 });
 
