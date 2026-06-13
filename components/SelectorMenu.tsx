@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Card } from "./Card";
 import { RowCarousel } from "./RowCarousel";
+import { DEFAULT_POSTER, posterFallback } from "../constants/media";
 
 function seeAllHrefFor(genre: string, isContinueWatching?: boolean): string | null {
   if (isContinueWatching) return null;
@@ -157,7 +158,14 @@ function TitleCard({
         onMouseLeave={() => setCardHovered(false)}
         onClick={handleCardClick}
       >
-        <img src={title.imagePath} alt={title.name} className="oss-card-img" loading="lazy" decoding="async" />
+        <img
+          src={title.imagePath || DEFAULT_POSTER}
+          alt={title.name}
+          className="oss-card-img"
+          loading="lazy"
+          decoding="async"
+          onError={posterFallback}
+        />
         <div className="oss-card-overlay">
           <p>{cardHovered ? (description ?? "Loading...") : ""}</p>
         </div>

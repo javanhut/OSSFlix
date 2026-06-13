@@ -14,6 +14,12 @@ import {
 const DEFAULT_MOVIES_DIR = resolve("./TestDir/Movies");
 const DEFAULT_TVSHOWS_DIR = resolve("./TestDir/TV Shows");
 
+// Format epoch seconds as SQLite's UTC 'YYYY-MM-DD HH:MM:SS' so values sort
+// lexicographically alongside datetime('now').
+function toSqliteUtc(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+
 type TitleInfo = {
   name: string;
   imagePath: string;
@@ -93,6 +99,17 @@ export async function resolveToDb(): Promise<void> {
   }[];
   for (const row of altNameRows) existingAltNames.set(row.dir_path, row.alt_name);
 
+  // Preserve each title's "added" timestamp across rescans. The full DELETE+INSERT
+  // below would otherwise reset created_at to now() every scan, making "Newly Added"
+  // reflect scan order rather than real recency. Remote titles carry an accurate
+  // source time (addedAt); locals fall back to the previously stored value.
+  const existingCreatedAt = new Map<string, string>();
+  const createdAtRows = db.prepare("SELECT dir_path, created_at FROM titles").all() as {
+    dir_path: string;
+    created_at: string;
+  }[];
+  for (const row of createdAtRows) existingCreatedAt.set(row.dir_path, row.created_at);
+
   const tx = db.transaction(() => {
     db.run("DELETE FROM category_titles");
     db.run("DELETE FROM title_genres");
@@ -101,8 +118,8 @@ export async function resolveToDb(): Promise<void> {
     db.run("DELETE FROM titles");
 
     const insertTitle = db.prepare(`
-      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles, seasons_meta, maturity_level, alt_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO titles (name, description, type, image_path, dir_path, source_path, cast_list, season, episodes, videos, subtitles, seasons_meta, maturity_level, alt_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertGenre = db.prepare("INSERT OR IGNORE INTO genres (name) VALUES (?)");
     const getGenreId = db.prepare("SELECT id FROM genres WHERE name = ?");
@@ -116,6 +133,12 @@ export async function resolveToDb(): Promise<void> {
     const titleIds: Map<string, number> = new Map();
 
     for (const media of allMedia) {
+      // Accurate source time for remote titles; preserved first-seen for everything
+      // else; only brand-new locals fall back to now().
+      const createdAt =
+        media.addedAt != null
+          ? toSqliteUtc(media.addedAt)
+          : (existingCreatedAt.get(media.dirPath) ?? toSqliteUtc(Date.now() / 1000));
       const result = insertTitle.run(
         media.name,
         media.description,
@@ -131,6 +154,7 @@ export async function resolveToDb(): Promise<void> {
         media.seasons && media.seasons.length > 0 ? JSON.stringify(media.seasons) : null,
         existingMaturity.get(media.dirPath) || "everyone",
         existingAltNames.get(media.dirPath) ?? null,
+        createdAt,
       );
       const titleId = Number(result.lastInsertRowid);
       titleIds.set(media.dirPath, titleId);

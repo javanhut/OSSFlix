@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Card from "../components/Card";
 import { RowCarousel } from "../components/RowCarousel";
 import { SkeletonRow } from "../components/SkeletonCard";
+import { posterFallback } from "../constants/media";
 
 type Recommendation = {
   name: string;
@@ -116,7 +117,14 @@ export default function ForYou() {
                 onClick={() => setSelectedDir(rec.pathToDir)}
               >
                 {rec.imagePath ? (
-                  <img src={rec.imagePath} alt={rec.name} className="oss-card-img" loading="lazy" decoding="async" />
+                  <img
+                    src={rec.imagePath}
+                    alt={rec.name}
+                    className="oss-card-img"
+                    loading="lazy"
+                    decoding="async"
+                    onError={posterFallback}
+                  />
                 ) : (
                   <div
                     className="oss-card-img"

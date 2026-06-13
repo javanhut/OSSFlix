@@ -37,6 +37,10 @@ export interface ScannedMedia {
   sourcePath: string;
   timings?: Record<string, EpisodeTimingEntry>;
   seasons?: SeasonMeta[];
+  // Source time (epoch seconds) the underlying media was added — drives accurate
+  // "Newly Added" ordering. Undefined for local scans (resolveToDb preserves the
+  // first-seen timestamp instead). See remotescanner for the remote value.
+  addedAt?: number;
 }
 
 const LANG_NAMES: Record<string, string> = {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Card from "../components/Card";
+import { posterFallback } from "../constants/media";
 
 type HistoryEntry = {
   video_src: string;
@@ -194,7 +195,12 @@ export default function History() {
                   }}
                 >
                   {entry.imagePath ? (
-                    <img src={entry.imagePath} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <img
+                      src={entry.imagePath}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={posterFallback}
+                    />
                   ) : (
                     <div
                       style={{

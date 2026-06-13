@@ -51,7 +51,16 @@ function parseSeasonsArray(raw: unknown): SeasonMeta[] | undefined {
 }
 
 export function parseTomlString(content: string): TvShowInfo | MovieInfo | null {
-  const parsed = toml.parse(content);
+  let parsed: { series?: any; seasons?: unknown };
+  try {
+    parsed = toml.parse(content);
+  } catch (err) {
+    // A malformed metadata.toml (e.g. a truncated/partial upload) must not throw:
+    // every caller treats null as "skip this one title". Letting the throw escape
+    // would abort the entire KaidaDB library scan, hiding *all* remote media.
+    console.error(`metadata.toml parse error (skipping title): ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
   const series = parsed.series;
   if (!series) return null;
   const typeRaw: unknown = series.type;

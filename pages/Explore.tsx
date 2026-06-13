@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { PREDEFINED_GENRES } from "../constants/Genres";
 import Card from "../components/Card";
+import { posterFallback } from "../constants/media";
 
 type TitleResult = {
   name: string;
@@ -200,7 +201,14 @@ export default function Explore() {
                   aria-label={r.name}
                 >
                   {r.imagePath ? (
-                    <img src={r.imagePath} alt="" className="explore-card-img" loading="lazy" decoding="async" />
+                    <img
+                      src={r.imagePath}
+                      alt=""
+                      className="explore-card-img"
+                      loading="lazy"
+                      decoding="async"
+                      onError={posterFallback}
+                    />
                   ) : (
                     <div className="explore-card-img explore-card-img-placeholder">?</div>
                   )}

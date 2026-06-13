@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import VideoPlayer from "./VideoPlayer";
 import Card from "./Card";
+import { DEFAULT_POSTER, posterFallback } from "../constants/media";
 
 type MediaItem = {
   imagePath: string;
@@ -149,7 +150,12 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
       >
         {mediaList.map((item, idx) => (
           <div key={item.pathToDir} className={`oss-hero-slide${idx === activeIndex ? " active" : ""}`}>
-            <img src={item.imagePath} alt={item.title} loading={idx === 0 ? "eager" : "lazy"} />
+            <img
+              src={item.imagePath || DEFAULT_POSTER}
+              alt={item.title}
+              loading={idx === 0 ? "eager" : "lazy"}
+              onError={posterFallback}
+            />
           </div>
         ))}
         <div className="oss-hero-vignette" />

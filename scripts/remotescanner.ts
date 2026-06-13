@@ -246,6 +246,8 @@ export async function scanKaidaDBPrefix(prefix: string, servePrefix: string): Pr
       return parseSubtitleFilename(filename, servePath);
     });
 
+    // Most recent file in the title dir = when this title was last added/updated.
+    const addedAt = titleItems.length ? Math.max(...titleItems.map((i) => i.created_at)) : undefined;
     results.push({
       ...data,
       bannerImage,
@@ -255,6 +257,7 @@ export async function scanKaidaDBPrefix(prefix: string, servePrefix: string): Pr
       sourcePath,
       timings,
       seasons,
+      addedAt,
     });
   }
 
@@ -461,6 +464,8 @@ async function scanSingleRemoteTitle(
     return parseSubtitleFilename(filename, servePath);
   });
 
+  // Most recent file in the title dir = when this title was last added/updated.
+  const addedAt = titleItems.length ? Math.max(...titleItems.map((i) => i.created_at)) : undefined;
   return {
     ...data,
     bannerImage,
@@ -470,5 +475,6 @@ async function scanSingleRemoteTitle(
     sourcePath,
     timings,
     seasons,
+    addedAt,
   };
 }
