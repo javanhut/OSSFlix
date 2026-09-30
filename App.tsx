@@ -31,13 +31,13 @@ function AppRoutes() {
   // Show spinner while checking session
   if (loading) {
     return (
-      <div
+      <div className="oss-auth-stage"
         style={{
           minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+          
         }}
       >
         <div
@@ -45,7 +45,7 @@ function AppRoutes() {
             width: "48px",
             height: "48px",
             border: "3px solid rgba(255,255,255,0.1)",
-            borderTopColor: "#3b82f6",
+            borderTopColor: "var(--oss-accent)",
             borderRadius: "50%",
             animation: "appSpin 0.8s linear infinite",
           }}

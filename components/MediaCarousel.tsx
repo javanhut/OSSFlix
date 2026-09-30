@@ -150,11 +150,20 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
       >
         {mediaList.map((item, idx) => (
           <div key={item.pathToDir} className={`oss-hero-slide${idx === activeIndex ? " active" : ""}`}>
+            {/* Blurred copy fills the stage; the sharp image is either full-bleed (wide banners)
+                or a floating poster on the right (portrait art, which looks soft when stretched). */}
+            <img className="oss-hero-backdrop" src={item.imagePath || DEFAULT_POSTER} alt="" aria-hidden="true" />
             <img
+              className="oss-hero-art"
               src={item.imagePath || DEFAULT_POSTER}
               alt={item.title}
               loading={idx === 0 ? "eager" : "lazy"}
               onError={posterFallback}
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                const portrait = img.naturalWidth > 0 && img.naturalWidth / img.naturalHeight < 1.3;
+                img.parentElement?.classList.toggle("oss-hero-slide-poster", portrait);
+              }}
             />
           </div>
         ))}
@@ -166,19 +175,19 @@ export default function MediaCarousel({ mediaList }: MediaCarouselProps) {
             <div className="oss-hero-actions">
               <button
                 type="button"
-                className="oss-btn oss-btn-primary"
+                className="oss-btn oss-btn-play oss-btn-lg"
                 onClick={() => handlePlay(currentItem)}
                 disabled={!currentInfo?.videos?.length}
                 style={{ opacity: currentInfo?.videos?.length ? 1 : 0.5 }}
               >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="#fff">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <polygon points="5,3 19,12 5,21" />
                 </svg>
                 {hasProgress ? "Resume" : "Play"}
               </button>
               <button
                 type="button"
-                className="oss-btn oss-btn-secondary"
+                className="oss-btn oss-btn-secondary oss-btn-lg"
                 onClick={() => setCardDir(currentItem.pathToDir)}
               >
                 <svg

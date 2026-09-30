@@ -279,13 +279,13 @@ export default function Admin() {
 
   if (loading) {
     return (
-      <div
+      <div className="oss-auth-stage"
         style={{
           minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+          
         }}
       >
         <div
@@ -293,7 +293,7 @@ export default function Admin() {
             width: "48px",
             height: "48px",
             border: "3px solid rgba(255,255,255,0.1)",
-            borderTopColor: "#3b82f6",
+            borderTopColor: "var(--oss-accent)",
             borderRadius: "50%",
             animation: "adminSpin 0.8s linear infinite",
           }}
@@ -306,14 +306,14 @@ export default function Admin() {
   // Login/Setup view
   if (!authenticated) {
     return (
-      <div
+      <div className="oss-auth-stage"
         style={{
           minHeight: "100vh",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+          
           padding: "40px 24px",
         }}
       >
@@ -474,7 +474,7 @@ export default function Admin() {
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+        background: "var(--oss-bg)",
         color: "#fff",
       }}
     >
@@ -489,18 +489,10 @@ export default function Admin() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <h1
-            style={{
-              fontSize: "1.3rem",
-              fontWeight: 800,
-              margin: 0,
-              background: "linear-gradient(135deg, #f59e0b, #f97316)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            Admin Panel
+          <h1 className="oss-login-logo" style={{ fontSize: "1.45rem", filter: "none" }}>
+            Reelscape
           </h1>
+          <span className="oss-admin-badge">Admin</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <button

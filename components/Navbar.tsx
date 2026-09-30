@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Profile from "./ProfileSettings";
@@ -234,9 +234,9 @@ export function NavBar() {
               </div>
             </li>
             <li>
-              <Link to="/home" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+              <NavLink to="/home" className="oss-nav-link" onClick={() => setNavOpen(false)}>
                 Home
-              </Link>
+              </NavLink>
             </li>
             <li
               className={`oss-genre-trigger${openMenu === "movies" ? " oss-genre-open" : ""}`}
@@ -246,7 +246,7 @@ export function NavBar() {
                 setOpenMenu((v) => (v === "movies" ? null : "movies"));
               }}
             >
-              <Link
+              <NavLink
                 to="/movies"
                 className="oss-nav-link"
                 onClick={(e) => {
@@ -264,7 +264,7 @@ export function NavBar() {
                 }}
               >
                 Movies
-              </Link>
+              </NavLink>
               <div className="oss-genre-dropdown">
                 <div className="oss-genre-header">
                   <span>Movies</span>
@@ -325,7 +325,7 @@ export function NavBar() {
                 setOpenMenu((v) => (v === "tv" ? null : "tv"));
               }}
             >
-              <Link
+              <NavLink
                 to="/tvshows"
                 className="oss-nav-link"
                 onClick={(e) => {
@@ -341,7 +341,7 @@ export function NavBar() {
                 }}
               >
                 TV Shows
-              </Link>
+              </NavLink>
               <div className="oss-genre-dropdown">
                 <div className="oss-genre-header">
                   <span>TV Shows</span>
@@ -395,19 +395,19 @@ export function NavBar() {
               </div>
             </li>
             <li>
-              <Link to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+              <NavLink to="/anime" className="oss-nav-link" onClick={() => setNavOpen(false)}>
                 Anime
-              </Link>
+              </NavLink>
             </li>
             <li>
-              <Link to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+              <NavLink to="/mylist" className="oss-nav-link" onClick={() => setNavOpen(false)}>
                 My List
-              </Link>
+              </NavLink>
             </li>
             <li>
-              <Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>
+              <NavLink to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>
                 Explore
-              </Link>
+              </NavLink>
             </li>
             <li className={`oss-genre-trigger${openMenu === "more" ? " oss-genre-open" : ""}`}>
               <button
@@ -617,7 +617,7 @@ export function NavBar() {
                     <div
                       className="oss-search-result-img oss-search-result-placeholder"
                       style={{
-                        background: "rgba(59,130,246,0.15)",
+                        background: "rgba(var(--oss-accent-rgb), 0.15)",
                       }}
                     >
                       <svg
@@ -636,7 +636,7 @@ export function NavBar() {
                     </div>
                     <div className="oss-search-result-info">
                       <span className="oss-search-result-name">{g.name}</span>
-                      <span className="oss-search-result-type" style={{ color: "#60a5fa" }}>
+                      <span className="oss-search-result-type" style={{ color: "var(--oss-accent-hover)" }}>
                         Genre
                       </span>
                     </div>
@@ -651,7 +651,7 @@ export function NavBar() {
                     onMouseEnter={() => setActiveIndex(i + genreResults.length)}
                   >
                     {r.imagePath ? (
-                      <img src={r.imagePath} alt="" className="oss-search-result-img" />
+                      <img src={r.imagePath} alt="" className="oss-search-result-img" loading="lazy" decoding="async" />
                     ) : (
                       <div className="oss-search-result-img oss-search-result-placeholder">
                         <svg

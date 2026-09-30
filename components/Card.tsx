@@ -250,7 +250,7 @@ function TimingFileBrowser({
                   onHide();
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(59,130,246,0.1)";
+                  e.currentTarget.style.background = "rgba(var(--oss-accent-rgb), 0.1)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
@@ -741,7 +741,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
   const [sleepDismissed, setSleepDismissed] = useState(false);
   // Feature 3: TMDB
   const [showTmdbModal, setShowTmdbModal] = useState(false);
-  const [tmdbApiKey, setTmdbApiKey] = useState<string | null>(null);
+  const [tmdbConfigured, setTmdbConfigured] = useState(false);
   const [tmdbQuery, setTmdbQuery] = useState("");
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [tmdbSearching, setTmdbSearching] = useState(false);
@@ -781,12 +781,13 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     if (!dirPath) return;
     fetch(`/api/episode/alt-titles?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
       .then((res) => res.json())
-      .then((rows: { video_src: string; alt_title: string }[]) => {
-        const map: Record<string, string> = {};
-        for (const r of rows) map[r.video_src] = r.alt_title;
-        setEpisodeAltsMap(map);
-      })
+      .then(applyEpisodeAlts)
       .catch(() => {});
+  };
+  const applyEpisodeAlts = (rows: { video_src: string; alt_title: string }[]) => {
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.video_src] = r.alt_title;
+    setEpisodeAltsMap(map);
   };
   const openEpisodeEdit = (videoSrc: string) => {
     setEpisodeEditDraft(episodeAltsMap[videoSrc] ?? "");
@@ -993,27 +994,29 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     }
     fetch(`/api/playback/progress?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
       .then((res) => res.json())
-      .then((entries: ProgressEntry[]) => {
-        const map: Record<string, ProgressEntry> = {};
-        for (const e of entries) map[e.video_src] = e;
-        setProgressMap(map);
-        // API returns entries ORDER BY updated_at DESC — first is most recent.
-        setMostRecentSrc(Array.isArray(entries) && entries.length > 0 ? entries[0].video_src : null);
-      })
+      .then(applyProgress)
       .catch(() => {})
       .finally(() => setProgressLoaded(true));
+  };
+  const applyProgress = (entries: ProgressEntry[]) => {
+    const map: Record<string, ProgressEntry> = {};
+    for (const e of entries) map[e.video_src] = e;
+    setProgressMap(map);
+    // API returns entries ORDER BY updated_at DESC — first is most recent.
+    setMostRecentSrc(Array.isArray(entries) && entries.length > 0 ? entries[0].video_src : null);
   };
 
   const fetchTimings = () => {
     if (!dirPath) return;
     fetch(`/api/episode/timings/batch?dir=${encodeURIComponent(dirPath)}`)
       .then((res) => res.json())
-      .then((rows: EpisodeTiming[]) => {
-        const map: Record<string, EpisodeTiming> = {};
-        for (const r of rows) map[r.video_src] = r;
-        setTimingsMap(map);
-      })
+      .then(applyTimings)
       .catch(() => {});
+  };
+  const applyTimings = (rows: EpisodeTiming[]) => {
+    const map: Record<string, EpisodeTiming> = {};
+    for (const r of rows) map[r.video_src] = r;
+    setTimingsMap(map);
   };
 
   const saveAllTimings = (timings: EpisodeTiming[]) => {
@@ -1041,14 +1044,6 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
       .catch(() => {});
   };
 
-  const fetchWatchlistStatus = () => {
-    if (!dirPath) return;
-    fetch(`/api/watchlist/check?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
-      .then((res) => res.json())
-      .then((data: { inList: boolean }) => setInWatchlist(data.inList))
-      .catch(() => {});
-  };
-
   const toggleWatchlist = () => {
     const method = inWatchlist ? "DELETE" : "POST";
     fetch("/api/watchlist", {
@@ -1065,6 +1060,33 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
       .catch(() => {});
   };
 
+  // Title + My List, overlaid on the artwork (or standalone when a title has no banner)
+  const detailHeading = information ? (
+    <div className="oss-detail-heading">
+      <ModalTitle className="oss-detail-title">{information.name}</ModalTitle>
+      <button
+        type="button"
+        onClick={toggleWatchlist}
+        title={inWatchlist ? "Remove from My List" : "Add to My List"}
+        aria-label={inWatchlist ? "Remove from My List" : "Add to My List"}
+        aria-pressed={inWatchlist}
+        className={`oss-watchlist-btn${inWatchlist ? " active" : ""}`}
+      >
+        {inWatchlist ? (
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        )}
+        {inWatchlist ? "In My List" : "My List"}
+      </button>
+    </div>
+  ) : null;
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: fetch callbacks are stable; depend only on show + dirPath
   useEffect(() => {
     if (show && dirPath) {
@@ -1080,22 +1102,24 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
           setInformation(data);
         })
         .finally(() => setLoading(false));
-      fetchProgress();
-      fetchTimings();
-      fetchEpisodeAlts();
-      fetchWatchlistStatus();
       setSleepDismissed(false);
       setSleepInfo(null);
-      // Check sleep pattern
-      fetch(`/api/playback/sleep-detect?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
-        .then((r) => r.json())
-        .then((data) => setSleepInfo(data))
-        .catch(() => {});
-      // Check TMDB key availability
-      fetch("/api/global-settings")
-        .then((r) => r.json())
-        .then((data) => setTmdbApiKey(data.tmdb_api_key || null))
-        .catch(() => {});
+      // Progress, timings, episode names, watchlist, sleep pattern and TMDB availability in one request
+      fetch(`/api/title/state?dir=${encodeURIComponent(dirPath)}`, { credentials: "same-origin" })
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((state) => {
+          applyProgress(state.progress);
+          applyTimings(state.timings);
+          applyEpisodeAlts(state.altTitles);
+          setInWatchlist(state.inWatchlist);
+          setSleepInfo(state.sleep);
+          setTmdbConfigured(state.tmdbConfigured);
+        })
+        .catch(() => {})
+        .finally(() => setProgressLoaded(true));
     }
   }, [show, dirPath]);
 
@@ -1191,31 +1215,22 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
         )}
         {!loading && information && (
           <>
-            <ModalHeader closeButton>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
-                <ModalTitle>{information.name}</ModalTitle>
-                <button
-                  type="button"
-                  onClick={toggleWatchlist}
-                  title={inWatchlist ? "Remove from My List" : "Add to My List"}
-                  aria-label={inWatchlist ? "Remove from My List" : "Add to My List"}
-                  style={{
-                    background: inWatchlist ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.08)",
-                    border: inWatchlist ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.12)",
-                    color: inWatchlist ? "#60a5fa" : "var(--oss-text-muted)",
-                    padding: "4px 12px",
-                    borderRadius: "4px",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {inWatchlist ? "\u2713 In My List" : "+ My List"}
-                </button>
-              </div>
-            </ModalHeader>
+            {/* Floating close — sits over the artwork instead of a header bar */}
+            <button type="button" className="oss-detail-close" onClick={onHide} aria-label="Close">
+              <svg
+                aria-hidden="true"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
             <ModalBody className="oss-detail-body">
               {hoverPreviewSrc && !bannerInView && (
                 <div className="oss-hover-preview-float" aria-hidden="true">
@@ -1228,10 +1243,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                   className="oss-modal-banner"
                   style={{
                     position: "relative",
-                    marginBottom: "1rem",
-                    borderRadius: "var(--oss-radius)",
                     overflow: "hidden",
-                    height: "clamp(140px, 32vh, 300px)",
+                    height: "clamp(180px, 42vh, 400px)",
                     background: "var(--oss-bg-elevated)",
                   }}
                 >
@@ -1252,12 +1265,15 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     style={{
                       position: "absolute",
                       inset: 0,
-                      background: "linear-gradient(transparent 50%, var(--oss-bg-card))",
+                      background:
+                        "linear-gradient(to top, var(--oss-bg-card) 0%, rgba(17,17,22,0.55) 35%, transparent 70%)",
                       pointerEvents: "none",
                     }}
                   />
+                  {detailHeading}
                 </div>
               )}
+              {!displayBanner && detailHeading}
 
               <div
                 className="oss-detail-tags"
@@ -1368,7 +1384,7 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                       >
                         Edit display name
                       </button>
-                      {tmdbApiKey && (
+                      {tmdbConfigured && (
                         <button
                           type="button"
                           role="menuitem"
@@ -1583,10 +1599,13 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                 const playButton = showPlay ? (
                   <button
                     type="button"
-                    className={`oss-btn oss-btn-sm ${hasResumable ? "oss-btn-success" : "oss-btn-primary"}`}
+                    className="oss-btn oss-btn-play"
                     onClick={() => (hasResumable ? handleResume() : handlePlay())}
                   >
-                    &#9654; {hasResumable ? "Resume" : "Play"}
+                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="6,4 20,12 6,20" />
+                    </svg>
+                    {hasResumable ? "Resume" : "Play"}
                   </button>
                 ) : null;
 
@@ -2062,6 +2081,8 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     <img
                       src={`https://image.tmdb.org/t/p/w92${r.poster_path}`}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       style={{ width: "60px", height: "90px", borderRadius: "4px", objectFit: "cover", flexShrink: 0 }}
                     />
                   ) : (

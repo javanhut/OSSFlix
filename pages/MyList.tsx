@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
+import PageHero from "../components/PageHero";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
@@ -46,7 +47,7 @@ export default function MyList() {
   if (loading) {
     return (
       <>
-        <h1 className="oss-page-title">My List</h1>
+        <PageHero title="My List" subtitle="Everything you've saved to watch next." />
         <SkeletonRow />
       </>
     );
@@ -54,7 +55,15 @@ export default function MyList() {
 
   return (
     <>
-      <h1 className="oss-page-title">My List</h1>
+      <PageHero
+        title="My List"
+        subtitle={
+          row
+            ? `${row.titles.length} saved ${row.titles.length === 1 ? "title" : "titles"} · Everything you've saved to watch next.`
+            : "Everything you've saved to watch next."
+        }
+        images={row?.titles.map((t) => t.imagePath) ?? []}
+      />
       {row && <SelectorMenu rows={[row]} onWatchlistChange={handleWatchlistChange} />}
       {!row && <p className="oss-empty">Your list is empty. Add titles from their detail page.</p>}
     </>

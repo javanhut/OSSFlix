@@ -94,17 +94,52 @@ import {
   clearAdminSessionCookie,
 } from "./scripts/admin";
 
+// Handlers using this must first reject unauthenticated requests (isUserOrAdminRequest).
+// The default-profile fallback only serves admin-session requests, which have no user profile.
+// (The old x-profile-id header fallback let anyone act as any profile without logging in.)
 function getProfileFromReq(req: Request): ProfileData {
-  // Try session-based auth first
   const auth = authenticateRequest(req);
   if (auth) return auth.profile;
-  // Fallback to header-based auth for backward compatibility during migration
-  const id = req.headers.get("x-profile-id");
-  if (id) {
-    const profile = getProfile(parseInt(id, 10));
-    if (profile) return profile;
-  }
   return getOrCreateDefaultProfile();
+}
+
+function isUserOrAdminRequest(req: Request): boolean {
+  return !!authenticateRequest(req) || authenticateAdminRequest(req);
+}
+
+// ── Per-title queries, shared by the individual endpoints and /api/title/state ──
+function queryDirProgress(profileId: number, dir: string): any[] {
+  return db
+    .query(
+      "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at DESC",
+    )
+    .all(profileId, dir) as any[];
+}
+function queryDirTimings(dir: string): any[] {
+  return db
+    .query("SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?")
+    .all(`${dir}%`) as any[];
+}
+function queryDirAltTitles(dir: string): { video_src: string; alt_title: string }[] {
+  return db.query("SELECT video_src, alt_title FROM episode_alt_titles WHERE dir_path = ?").all(dir) as {
+    video_src: string;
+    alt_title: string;
+  }[];
+}
+function queryInWatchlist(profileId: number, dir: string): boolean {
+  return !!db.query("SELECT id FROM watchlist WHERE profile_id = ? AND dir_path = ?").get(profileId, dir);
+}
+function queryDirSleepPattern(profileId: number, dir: string) {
+  const entries = db
+    .query(
+      "SELECT video_src, current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at",
+    )
+    .all(profileId, dir) as any[];
+  const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dir) as {
+    videos: string | null;
+  } | null;
+  const videos: string[] = title?.videos ? JSON.parse(title.videos) : [];
+  return detectSleepPattern(entries, videos);
 }
 
 function requireAuth(handler: (req: Request, profile: ProfileData) => Response | Promise<Response>) {
@@ -583,32 +618,65 @@ function parseJsonSafe(raw: string): any | null {
   }
 }
 
-function runFfprobe(sourcePath: string, showEntries: string[]): FfprobeResult {
+// Successful probes keyed by path + mtime + requested entries, so repeat plays and seeks skip ffprobe entirely.
+const FFPROBE_CACHE_MAX = 500;
+const ffprobeCache = new Map<string, any>();
+
+// Async (Bun.spawn, not spawnSync) so a slow probe doesn't block every other request on the server.
+async function runFfprobe(
+  sourcePath: string,
+  showEntries: string[],
+  opts: { cache?: boolean } = {},
+): Promise<FfprobeResult> {
+  const useCache = opts.cache !== false;
+  let cacheKey = "";
+  if (useCache) {
+    const mtime = Bun.file(sourcePath).lastModified;
+    cacheKey = `${sourcePath}\0${mtime}\0${showEntries.join("|")}`;
+    const hit = ffprobeCache.get(cacheKey);
+    if (hit) {
+      // Refresh LRU position
+      ffprobeCache.delete(cacheKey);
+      ffprobeCache.set(cacheKey, hit);
+      return { ok: true, data: hit };
+    }
+  }
+
   const args = ["ffprobe", "-v", "quiet"] as string[];
   for (const entry of showEntries) {
     args.push("-show_entries", entry);
   }
   args.push("-of", "json", sourcePath);
 
-  const probe = Bun.spawnSync(args, {
+  const probe = Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
   });
+  const [stdoutText, stderrText, exitCode] = await Promise.all([
+    new Response(probe.stdout).text(),
+    new Response(probe.stderr).text(),
+    probe.exited,
+  ]);
 
-  if (probe.exitCode !== 0) {
-    const stderrText = probe.stderr.toString().trim();
+  if (exitCode !== 0) {
     console.error(
-      `[stream] ffprobe failed for ${basename(sourcePath)}: ${stderrText || `exit code ${probe.exitCode}`}`,
+      `[stream] ffprobe failed for ${basename(sourcePath)}: ${stderrText.trim() || `exit code ${exitCode}`}`,
     );
     return { ok: false, error: "Unable to inspect media file" };
   }
 
-  const parsed = parseJsonSafe(probe.stdout.toString());
+  const parsed = parseJsonSafe(stdoutText);
   if (!parsed) {
     console.error(`[stream] ffprobe returned invalid JSON for ${basename(sourcePath)}`);
     return { ok: false, error: "Unable to inspect media file" };
   }
 
+  if (useCache) {
+    ffprobeCache.set(cacheKey, parsed);
+    if (ffprobeCache.size > FFPROBE_CACHE_MAX) {
+      ffprobeCache.delete(ffprobeCache.keys().next().value!);
+    }
+  }
   return { ok: true, data: parsed };
 }
 
@@ -651,7 +719,7 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
   const file = Bun.file(cachePath);
   if (await file.exists()) return cacheKey;
 
-  const probe = runFfprobe(sourcePath, ["stream=index,codec_type,channels", "format=duration"]);
+  const probe = await runFfprobe(sourcePath, ["stream=index,codec_type,channels", "format=duration"]);
   if (!probe.ok) {
     throw new Error(probe.error);
   }
@@ -1554,7 +1622,7 @@ const server = Bun.serve({
         }
 
         // No cache — live transcode using a strict web-safe profile.
-        const probe = runFfprobe(sourcePath, [
+        const probe = await runFfprobe(sourcePath, [
           "stream=index,codec_type,codec_name,channels,pix_fmt",
           "format=duration",
         ]);
@@ -1802,14 +1870,15 @@ const server = Bun.serve({
               return Response.json({ error: "KaidaDB probe unavailable" }, { status: 502 });
             }
             await Bun.write(tmpPath, partial);
-            probe = runFfprobe(tmpPath, showEntries);
+            // Temp file is deleted right after — don't cache by its path
+            probe = await runFfprobe(tmpPath, showEntries, { cache: false });
           } catch {
             return Response.json({ error: "KaidaDB unreachable" }, { status: 502 });
           } finally {
             await unlink(tmpPath).catch(() => {});
           }
         } else {
-          probe = runFfprobe(sourcePath, showEntries);
+          probe = await runFfprobe(sourcePath, showEntries);
         }
 
         if (!probe.ok) {
@@ -1840,12 +1909,14 @@ const server = Bun.serve({
     },
     "/api/media/categories": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const rows = getCategoriesFromDb(getProfileFromReq(req).maturity_preference);
         return Response.json(rows);
       },
     },
     "/api/media/categories/type": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const type = url.searchParams.get("type");
         if (!type) {
@@ -1858,6 +1929,7 @@ const server = Bun.serve({
     },
     "/api/media/categories/genre-tag": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const tags = url.searchParams.get("tags");
         if (!tags) {
@@ -1870,6 +1942,7 @@ const server = Bun.serve({
     },
     "/api/media/search": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const q = url.searchParams.get("q")?.trim();
         if (!q || q.length < 1) {
@@ -1882,6 +1955,7 @@ const server = Bun.serve({
     },
     "/api/media/info": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const dirParam = url.searchParams.get("dir");
         if (!dirParam) {
@@ -1945,10 +2019,12 @@ const server = Bun.serve({
     },
     "/api/profile": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = getProfileFromReq(req);
         return Response.json(profile);
       },
       async PUT(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const profile = getProfileFromReq(req);
           const body = await req.json();
@@ -1966,7 +2042,8 @@ const server = Bun.serve({
       },
     },
     "/api/profiles": {
-      GET() {
+      GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profiles = getAllProfiles().map((p) => ({
           id: p.id,
           name: p.name,
@@ -1976,6 +2053,7 @@ const server = Bun.serve({
         return Response.json(profiles);
       },
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const body = await req.json();
           const { name } = body;
@@ -1991,6 +2069,7 @@ const server = Bun.serve({
     },
     "/api/profiles/delete": {
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const body = await req.json();
           const { id } = body;
@@ -2042,13 +2121,15 @@ const server = Bun.serve({
       },
     },
     "/api/kaidadb/health": {
-      async GET() {
+      async GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         const result = await kaidadbHealthCheck();
         return Response.json(result);
       },
     },
     "/api/kaidadb/status": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const src = url.searchParams.get("src");
         if (!src) return Response.json({ error: "Missing src" }, { status: 400 });
@@ -2105,7 +2186,9 @@ const server = Bun.serve({
       },
     },
     "/api/global-settings": {
-      GET() {
+      // Contains secrets (KaidaDB/SMTP passwords, TMDB key) — admin only.
+      GET(req) {
+        if (!authenticateAdminRequest(req)) return Response.json({ error: "Admin access required" }, { status: 401 });
         const settings = getGlobalSettings();
         return Response.json(settings);
       },
@@ -2151,12 +2234,7 @@ const server = Bun.serve({
         }
 
         if (dir) {
-          const rows = db
-            .query(
-              "SELECT video_src, dir_path, playback_progress.current_time AS current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at DESC",
-            )
-            .all(profile.id, dir) as any[];
-          return Response.json(rows);
+          return Response.json(queryDirProgress(profile.id, dir));
         }
 
         // Return most recent playback entries for "continue watching"
@@ -2311,8 +2389,7 @@ const server = Bun.serve({
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) return Response.json({ error: "Missing dir" }, { status: 400 });
-        const row = db.query("SELECT id FROM watchlist WHERE profile_id = ? AND dir_path = ?").get(profile.id, dir);
-        return Response.json({ inList: !!row });
+        return Response.json({ inList: queryInWatchlist(profile.id, dir) });
       },
     },
     "/api/subtitles": {
@@ -2404,14 +2481,10 @@ const server = Bun.serve({
         if (!dir) {
           return Response.json({ error: "Missing dir parameter" }, { status: 400 });
         }
-        const rows = db
-          .query(
-            "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?",
-          )
-          .all(`${dir}%`) as any[];
-        return Response.json(rows);
+        return Response.json(queryDirTimings(dir));
       },
       DELETE(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) {
@@ -2429,11 +2502,26 @@ const server = Bun.serve({
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) return Response.json({ error: "Missing dir parameter" }, { status: 400 });
-        const rows = db.query("SELECT video_src, alt_title FROM episode_alt_titles WHERE dir_path = ?").all(dir) as {
-          video_src: string;
-          alt_title: string;
-        }[];
-        return Response.json(rows);
+        return Response.json(queryDirAltTitles(dir));
+      },
+    },
+    // Everything the title detail modal needs besides /api/media/info, in one round trip
+    // (was 6 separate requests every time a title was opened).
+    "/api/title/state": {
+      GET(req) {
+        const auth = authenticateRequest(req);
+        if (!auth) return Response.json({ error: "Unauthorized" }, { status: 401 });
+        const dir = new URL(req.url).searchParams.get("dir");
+        if (!dir) return Response.json({ error: "Missing dir parameter" }, { status: 400 });
+        const profileId = auth.profile.id;
+        return Response.json({
+          progress: queryDirProgress(profileId, dir),
+          timings: queryDirTimings(dir),
+          altTitles: queryDirAltTitles(dir),
+          inWatchlist: queryInWatchlist(profileId, dir),
+          sleep: queryDirSleepPattern(profileId, dir),
+          tmdbConfigured: !!getGlobalSettings().tmdb_api_key,
+        });
       },
     },
     "/api/episode/alt-title": {
@@ -2464,6 +2552,7 @@ const server = Bun.serve({
     },
     "/api/episode/timings/parse": {
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const toml = await import("toml");
           const text = await req.text();
@@ -2502,6 +2591,7 @@ const server = Bun.serve({
     },
     "/api/episode/timings/parse-file": {
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const body = await req.json();
           const filePath = body.path as string;
@@ -2667,6 +2757,7 @@ const server = Bun.serve({
     // Recommendations
     "/api/recommendations": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = getProfileFromReq(req);
         const url = new URL(req.url);
         const limit = parseInt(url.searchParams.get("limit") || "5", 10);
@@ -2676,6 +2767,7 @@ const server = Bun.serve({
     },
     "/api/stats": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const profile = getProfileFromReq(req);
         const pid = profile.id;
 
@@ -2795,6 +2887,7 @@ const server = Bun.serve({
     },
     "/api/media/titles": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const type = url.searchParams.get("type");
         const sort = url.searchParams.get("sort") || "name";
@@ -2841,13 +2934,15 @@ const server = Bun.serve({
     },
     // Feature 1: Genre exploration
     "/api/genres/all": {
-      GET() {
+      GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const genres = getAllGenreNames();
         return Response.json(genres);
       },
     },
     "/api/media/filter": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const genresParam = url.searchParams.get("genres");
         if (!genresParam) {
@@ -2867,32 +2962,18 @@ const server = Bun.serve({
     // Feature 2: Sleep detection
     "/api/playback/sleep-detect": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const dir = url.searchParams.get("dir");
         if (!dir) return Response.json({ error: "Missing dir parameter" }, { status: 400 });
         const profile = getProfileFromReq(req);
-        const pHeaders: Record<string, string> = { "x-profile-id": String(profile.id) };
-
-        // Get progress entries for this dir
-        const entries = db
-          .query(
-            "SELECT video_src, current_time, duration, updated_at FROM playback_progress WHERE profile_id = ? AND dir_path = ? ORDER BY updated_at",
-          )
-          .all(profile.id, dir) as any[];
-
-        // Get videos for this title
-        const title = db.prepare("SELECT videos FROM titles WHERE dir_path = ?").get(dir) as {
-          videos: string | null;
-        } | null;
-        const videos: string[] = title?.videos ? JSON.parse(title.videos) : [];
-
-        const result = detectSleepPattern(entries, videos);
-        return Response.json(result);
+        return Response.json(queryDirSleepPattern(profile.id, dir));
       },
     },
     // Feature 3: TMDB integration
     "/api/tmdb/search": {
       async GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const q = url.searchParams.get("q");
         const type = url.searchParams.get("type") as "movie" | "tv" | null;
@@ -2909,6 +2990,7 @@ const server = Bun.serve({
     },
     "/api/tmdb/details": {
       async GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const id = url.searchParams.get("id");
         const type = url.searchParams.get("type") as "movie" | "tv" | null;
@@ -3003,6 +3085,7 @@ const server = Bun.serve({
     },
     "/api/detect/status": {
       GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const jobId = url.searchParams.get("jobId");
         if (!jobId) return Response.json({ error: "Missing jobId" }, { status: 400 });
@@ -3013,6 +3096,7 @@ const server = Bun.serve({
     },
     "/api/browse": {
       async GET(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const url = new URL(req.url);
         const dir = url.searchParams.get("path") || "/";
         const mode = url.searchParams.get("mode") || "directories";
@@ -3067,6 +3151,7 @@ const server = Bun.serve({
     },
     "/api/profile/avatar": {
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const formData = await req.formData();
           const file = formData.get("avatar") as File | null;
@@ -3091,6 +3176,7 @@ const server = Bun.serve({
     },
     "/api/profile/avatar/browse": {
       async POST(req) {
+        if (!isUserOrAdminRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
         try {
           const body = await req.json();
           const filePath = body.path as string;

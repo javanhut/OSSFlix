@@ -1,22 +1,42 @@
-/* ── Reelscape Dark Theme ── */
+/* ── Reelscape — cinematic dark theme ── */
 
 :root {
-  --oss-bg: #0a0a0f;
-  --oss-bg-card: #16161e;
-  --oss-bg-elevated: #1c1c28;
-  --oss-bg-hover: #22222e;
-  --oss-surface: #1a1a26;
-  --oss-border: rgba(255, 255, 255, 0.06);
-  --oss-text: #e8e8ed;
-  --oss-text-muted: #8b8b9e;
+  /* Surfaces — near-black stage, layered with translucent glass */
+  --oss-bg: #07070a;
+  --oss-bg-card: #111116;
+  --oss-bg-elevated: #18181f;
+  --oss-bg-hover: #22222b;
+  --oss-surface: #141419;
+  --oss-glass: rgba(20, 20, 26, 0.72);
+  --oss-glass-strong: rgba(14, 14, 18, 0.88);
+  --oss-border: rgba(255, 255, 255, 0.08);
+  --oss-border-strong: rgba(255, 255, 255, 0.16);
+  --oss-text: #f4f4f6;
+  --oss-text-muted: #9a9aa8;
+  --oss-text-dim: #6b6b78;
+
+  /* Reelscape blue */
   --oss-accent: #3b82f6;
+  --oss-accent-rgb: 59, 130, 246;
   --oss-accent-hover: #60a5fa;
-  --oss-accent-glow: rgba(59, 130, 246, 0.25);
+  --oss-accent-hover-rgb: 96, 165, 250;
+  --oss-accent-soft: #93c5fd;
+  --oss-accent-glow: rgba(var(--oss-accent-rgb), 0.3);
+  --oss-brand-gradient: linear-gradient(100deg, #2563eb 0%, #3b82f6 45%, #60a5fa 75%, #93c5fd 100%);
   --oss-green: #22c55e;
+
+  /* Type */
+  --oss-font-display: "Sora", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --oss-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
   --oss-radius: 10px;
-  --oss-radius-lg: 14px;
+  --oss-radius-lg: 16px;
+  --oss-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.65);
   --oss-transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --oss-episode-row-h: 46px;
+
+  /* Bootstrap renders modals outside #root — point its body font at ours */
+  --bs-body-font-family: var(--oss-font-body);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -27,9 +47,335 @@ html, body, #root {
   min-height: 100vh;
   background: var(--oss-bg);
   color: var(--oss-text);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--oss-font-body);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+}
+
+/* Bun may emit Bootstrap's stylesheet after ours; out-rank its body/root font rules */
+html body { font-family: var(--oss-font-body); }
+:root:root { --bs-body-font-family: var(--oss-font-body); }
+
+/* ── Auth stage (login, profile picker, admin sign-in) ──
+   No library art is available before sign-in, so the "cinema" comes from projector-light glows,
+   film grain and a vignette. */
+.oss-auth-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--oss-bg) !important;
+}
+.oss-auth-stage::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -2;
+  background:
+    radial-gradient(40% 35% at 18% 12%, rgba(59, 130, 246, 0.3), transparent 70%),
+    radial-gradient(38% 40% at 85% 88%, rgba(37, 99, 235, 0.22), transparent 70%),
+    radial-gradient(30% 30% at 70% 20%, rgba(147, 197, 253, 0.12), transparent 70%);
+  filter: blur(20px);
+  animation: ossAuthDrift 24s ease-in-out infinite alternate;
+}
+.oss-auth-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.75) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.55;
+  mix-blend-mode: overlay;
+}
+@keyframes ossAuthDrift {
+  from { transform: translate3d(-2%, -1%, 0) scale(1); }
+  to { transform: translate3d(2%, 2%, 0) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oss-auth-stage::before { animation: none; }
+}
+.oss-auth-card {
+  background: rgba(16, 16, 21, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  overflow: hidden;
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.oss-login-logo {
+  font-family: var(--oss-font-display);
+  font-size: 3.6rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin: 0;
+  background: var(--oss-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 8px 40px rgba(59, 130, 246, 0.35));
+}
+.oss-login-logo-sm { font-size: 1.8rem; margin-bottom: 18px; }
+.oss-admin-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--oss-accent-rgb), 0.4);
+  background: rgba(var(--oss-accent-rgb), 0.12);
+  color: var(--oss-accent-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.oss-login-tagline {
+  margin: 10px 0 0;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.01em;
+}
+/* ── Login: split layout — cinematic showcase left, form right ── */
+.oss-login-layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 1fr);
+}
+.oss-login-showcase {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 6vh 5vw;
+  border-right: 1px solid var(--oss-border);
+}
+/* ── Poster wall (components/PosterWall.tsx): tilted tiles drifting past, like a marquee ── */
+.oss-poster-wall {
+  position: absolute;
+  display: grid;
+  gap: 16px;
+  transform: rotate(-10deg);
+  pointer-events: none;
+}
+.oss-poster-wall-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: ossWallScroll 60s linear infinite;
+}
+.oss-poster-wall-col.reverse { animation-direction: reverse; animation-duration: 75s; }
+@keyframes ossWallScroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+.oss-poster-tile {
+  flex-shrink: 0;
+  aspect-ratio: 2 / 3;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--oss-bg-elevated);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.oss-poster-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.oss-poster-tile-abstract {
+  background:
+    radial-gradient(120% 80% at 20% 10%, hsl(var(--tile-hue) 90% 65% / 0.7), transparent 60%),
+    radial-gradient(90% 70% at 90% 100%, hsl(calc(var(--tile-hue) + 30) 85% 50% / 0.55), transparent 65%),
+    linear-gradient(160deg, hsl(var(--tile-hue) 55% 26%), hsl(calc(var(--tile-hue) + 20) 55% 11%));
+}
+@media (prefers-reduced-motion: reduce) {
+  .oss-poster-wall-col { animation: none; }
+}
+/* Login: wall fills the showcase, fading out toward the form */
+.oss-poster-wall-login {
+  inset: -25% -10% -25% -20%;
+  grid-template-columns: repeat(5, 1fr);
+  opacity: 0.9;
+  mask-image: linear-gradient(to right, #000 30%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 30%, transparent 100%);
+}
+.oss-login-showcase::after {
+  /* Darken toward the copy so the headline stays readable */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(7,7,10,0.95) 0%, rgba(7,7,10,0.55) 40%, rgba(7,7,10,0.1) 75%),
+    linear-gradient(to right, transparent 60%, rgba(7,7,10,0.9) 100%);
+  pointer-events: none;
+}
+.oss-login-showcase-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+}
+.oss-login-showcase-copy .oss-login-logo { font-size: 2.2rem; margin-bottom: 26px; }
+.oss-login-headline {
+  font-family: var(--oss-font-display);
+  font-size: clamp(2.2rem, 4.2vw, 3.8rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  color: #fff;
+  margin: 0 0 26px;
+}
+.oss-login-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.oss-login-features li {
+  position: relative;
+  padding-left: 30px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 1rem;
+}
+.oss-login-features li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 11px no-repeat,
+    var(--oss-brand-gradient);
+}
+.oss-login-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+  background: linear-gradient(180deg, rgba(12, 12, 16, 0.6), rgba(7, 7, 10, 0.9));
+}
+.oss-login-panel > * { width: 100%; max-width: 400px; }
+.oss-login-panel-brand { display: none; text-align: center; margin-bottom: 28px; }
+.oss-login-welcome {
+  font-family: var(--oss-font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  margin: 0 0 22px;
+}
+@media (max-width: 900px) {
+  .oss-login-layout { grid-template-columns: 1fr; }
+  .oss-login-showcase { display: none; }
+  .oss-login-panel { padding: 40px 20px; background: none; }
+  .oss-login-panel-brand { display: block; }
+  .oss-login-welcome { display: none; }
+}
+.oss-profiles-heading {
+  font-family: var(--oss-font-display);
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  color: #fff;
+  margin: 0;
+}
+.oss-profile-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 132px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.oss-profile-tile-avatar {
+  width: 124px;
+  height: 124px;
+  border-radius: 22px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--oss-bg-elevated);
+  box-shadow: 0 0 0 2px transparent, 0 14px 36px rgba(0, 0, 0, 0.5);
+  transition: box-shadow var(--oss-transition), transform var(--oss-transition);
+}
+.oss-profile-tile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.oss-profile-tile-initial {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--oss-font-display);
+  font-size: 3rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(
+    145deg,
+    hsl(var(--oss-tile-hue, 20) 62% 55%),
+    hsl(calc(var(--oss-tile-hue, 20) + 40) 55% 34%)
+  );
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+.oss-profile-tile-name {
+  max-width: 124px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.98rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--oss-transition);
+}
+.oss-profile-tile:hover .oss-profile-tile-avatar,
+.oss-profile-tile:focus-visible .oss-profile-tile-avatar {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 0 0 3px #fff, 0 22px 48px rgba(0, 0, 0, 0.6);
+}
+.oss-profile-tile:hover .oss-profile-tile-name,
+.oss-profile-tile:focus-visible .oss-profile-tile-name { color: #fff; }
+.oss-profile-tile-add .oss-profile-tile-avatar {
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.45);
+}
+.oss-profile-tile-add:hover .oss-profile-tile-avatar {
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+  box-shadow: none;
+}
+.oss-profile-tile-delete {
+  position: absolute;
+  top: -8px;
+  right: -2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 26, 0.9);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.15s ease;
+  z-index: 2;
+}
+.oss-profile-tile:hover .oss-profile-tile-delete,
+.oss-profile-tile:focus-within .oss-profile-tile-delete { opacity: 1; }
+.oss-profile-tile-delete:hover { background: rgba(239, 68, 68, 0.9); color: #fff; border-color: transparent; }
+@media (hover: none) {
+  .oss-profile-tile-delete { opacity: 1; }
 }
 
 /* ── Scrollbar ── */
@@ -50,23 +396,30 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(to bottom, rgba(10,10,15,0.95), rgba(10,10,15,0.6));
-  backdrop-filter: blur(20px) saturate(1.5);
-  border-bottom: 1px solid var(--oss-border);
-  transition: background var(--oss-transition);
+  /* Transparent over the hero art at the top of the page; turns to glass once scrolled */
+  background: linear-gradient(to bottom, rgba(7,7,10,0.85) 0%, rgba(7,7,10,0.35) 70%, rgba(7,7,10,0) 100%);
+  border-bottom: 0;
+  transition: background var(--oss-transition), box-shadow var(--oss-transition), backdrop-filter var(--oss-transition);
 }
 .oss-navbar.scrolled {
-  background: rgba(10,10,15,0.98);
+  background: var(--oss-glass-strong);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 1px 0 var(--oss-border);
 }
 .oss-navbar-brand {
-  font-size: 1.5rem;
+  font-family: var(--oss-font-display);
+  font-size: 1.55rem;
   font-weight: 800;
-  letter-spacing: -0.5px;
-  color: var(--oss-accent);
+  letter-spacing: -0.04em;
+  background: var(--oss-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   text-decoration: none;
-  transition: opacity var(--oss-transition);
+  transition: opacity var(--oss-transition), filter var(--oss-transition);
 }
-.oss-navbar-brand:hover { opacity: 0.85; color: var(--oss-accent); }
+.oss-navbar-brand:hover { opacity: 0.9; filter: brightness(1.1); color: transparent; }
 
 .oss-navbar-right {
   display: flex;
@@ -96,14 +449,31 @@ html, body, #root {
   padding: 0;
 }
 .oss-nav-link {
-  color: var(--oss-text-muted);
+  position: relative;
+  color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   padding: 6px 14px;
-  border-radius: 6px;
+  border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
   transition: all var(--oss-transition);
   white-space: nowrap;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+.oss-nav-link.active {
+  color: #fff;
+  font-weight: 600;
+}
+.oss-nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 18px;
+  height: 3px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: var(--oss-brand-gradient);
 }
 .oss-nav-more {
   display: inline-flex;
@@ -372,16 +742,19 @@ html, body, #root {
 
 /* ── Page content offset ── */
 .oss-page { padding-top: 64px; }
+/* The home hero runs full-bleed underneath the transparent navbar */
+.oss-page .oss-hero { margin-top: -64px; }
 
 /* ── Hero / Carousel ── */
 .oss-hero {
   position: relative;
   width: 100%;
   /* Follow the viewport height, but don't get taller than a wide banner shape on narrow windows */
-  height: min(70vh, 56vw);
-  min-height: 280px;
-  max-height: 720px;
+  height: min(80vh, 58vw);
+  min-height: 320px;
+  max-height: 820px;
   overflow: hidden;
+  background: var(--oss-bg);
 }
 .oss-hero-slide {
   position: absolute;
@@ -391,39 +764,71 @@ html, body, #root {
 }
 .oss-hero-slide.active { opacity: 1; }
 .oss-hero-slide img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   /* Key art usually has faces/titles in the upper part — bias the crop upward */
   object-position: center 25%;
 }
+/* Ambient backdrop: only visible behind portrait posters */
+.oss-hero-backdrop {
+  filter: blur(48px) saturate(1.5) brightness(0.55);
+  transform: scale(1.2);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.oss-hero-slide-poster .oss-hero-backdrop { opacity: 1; }
+.oss-hero-slide-poster .oss-hero-art {
+  inset: auto;
+  top: calc(64px + 5%);
+  bottom: 14%;
+  right: 7%;
+  left: auto;
+  width: auto;
+  height: auto;
+  max-height: calc(81% - 64px);
+  aspect-ratio: 2 / 3;
+  object-position: center;
+  border-radius: var(--oss-radius-lg);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
 .oss-hero-vignette {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, var(--oss-bg) 0%, transparent 40%),
-    linear-gradient(to right, rgba(10,10,15,0.7) 0%, transparent 60%);
+    linear-gradient(to top, var(--oss-bg) 0%, rgba(7,7,10,0.6) 22%, transparent 50%),
+    linear-gradient(to right, rgba(7,7,10,0.9) 0%, rgba(7,7,10,0.45) 38%, transparent 65%);
   pointer-events: none;
 }
 .oss-hero-content {
   position: absolute;
-  bottom: 15%;
+  bottom: 16%;
   left: 4%;
-  max-width: min(520px, 60%);
+  max-width: min(600px, 58%);
   z-index: 2;
 }
 .oss-hero-title {
-  font-size: clamp(1.6rem, 6vh, 2.8rem);
+  font-family: var(--oss-font-display);
+  font-size: clamp(1.8rem, 7vh, 3.6rem);
   font-weight: 800;
-  line-height: 1.1;
-  margin: 0 0 12px;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  margin: 0 0 16px;
+  /* Small shadow only: line-clamp's overflow clip would cut a large blur into a visible box */
+  text-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  padding-bottom: 0.06em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .oss-hero-desc {
-  font-size: 0.95rem;
-  color: rgba(255,255,255,0.75);
-  line-height: 1.5;
-  margin: 0 0 20px;
+  font-size: 1rem;
+  color: rgba(255,255,255,0.78);
+  line-height: 1.55;
+  margin: 0 0 24px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -453,15 +858,15 @@ html, body, #root {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.28);
   border: none;
   padding: 0;
   cursor: pointer;
   transition: all var(--oss-transition);
 }
 .oss-hero-dot.active {
-  background: var(--oss-accent);
-  width: 24px;
+  background: var(--oss-brand-gradient);
+  width: 28px;
   border-radius: 4px;
 }
 
@@ -469,9 +874,10 @@ html, body, #root {
 .oss-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 10px 24px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 0.95rem;
   font-weight: 600;
   border: none;
@@ -495,12 +901,29 @@ html, body, #root {
   transform: translateY(-1px);
 }
 .oss-btn-secondary {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.14);
   color: var(--oss-text);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
 }
 .oss-btn-secondary:hover {
-  background: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.24);
+}
+/* Streaming-style primary action: solid white, dark text */
+.oss-btn-play {
+  background: #fff;
+  color: #0a0a0d;
+}
+.oss-btn-play:hover {
+  background: rgba(255,255,255,0.86);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(255,255,255,0.18);
+}
+.oss-btn-lg {
+  padding: 13px 30px;
+  font-size: 1.02rem;
+  font-weight: 700;
 }
 .oss-btn-success {
   background: var(--oss-green);
@@ -516,13 +939,13 @@ html, body, #root {
   font-size: 0.8rem;
 }
 .oss-btn-info-soft {
-  background: rgba(59,130,246,0.14);
-  color: #93c5fd;
-  border: 1px solid rgba(59,130,246,0.3);
+  background: rgba(var(--oss-accent-rgb), 0.14);
+  color: var(--oss-accent-soft);
+  border: 1px solid rgba(var(--oss-accent-rgb), 0.3);
 }
 .oss-btn-info-soft:hover {
-  background: rgba(59,130,246,0.2);
-  border-color: rgba(96,165,250,0.45);
+  background: rgba(var(--oss-accent-rgb), 0.2);
+  border-color: rgba(var(--oss-accent-hover-rgb), 0.45);
   color: #bfdbfe;
 }
 .oss-btn-success-soft {
@@ -569,25 +992,18 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 }
 .oss-section-title {
   position: relative;
-  font-size: 1.15rem;
+  font-family: var(--oss-font-display);
+  font-size: 1.35rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  text-transform: capitalize;
   margin: 0 auto 1rem;
-  padding-left: 14px;
-  max-width: 1414px;
+  padding-left: 0;
+  max-width: calc(var(--oss-card-w) * 6 + 70px);
   color: var(--oss-text);
 }
 .oss-section-title::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 70%;
-  border-radius: 2px;
-  background: var(--oss-accent, #e50914);
+  display: none;
 }
 .oss-section-title-text {
   color: inherit;
@@ -719,13 +1135,16 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   border-radius: var(--oss-radius);
   overflow: hidden;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.32s ease;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease;
 }
 .oss-card:hover {
-  transform: scale(1.05) translateY(-4px);
+  transform: scale(1.06) translateY(-6px);
   z-index: 2;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 0 36px rgba(var(--oss-accent-rgb), 0.18);
 }
 .oss-card-img {
   width: 100%;
@@ -773,14 +1192,18 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 40px 12px 10px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  padding: 48px 12px 11px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.9));
   pointer-events: none;
 }
 .oss-card-title-bar span {
-  font-size: 0.85rem;
+  font-family: var(--oss-font-display);
+  font-size: 0.86rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
   color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 .oss-card-progress {
   position: absolute;
@@ -821,9 +1244,11 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 /* Override Bootstrap modal for dark theme */
 .modal-content {
   background: var(--oss-bg-card) !important;
-  border: 1px solid var(--oss-border) !important;
+  border: 1px solid var(--oss-border-strong) !important;
   border-radius: var(--oss-radius-lg) !important;
   color: var(--oss-text) !important;
+  box-shadow: var(--oss-shadow-lg);
+  overflow: hidden;
   animation: ossSlideUp 0.3s ease;
 }
 .modal-header {
@@ -832,7 +1257,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 .modal-footer {
   border-top: 1px solid var(--oss-border) !important;
 }
-.modal-title { color: var(--oss-text) !important; }
+.modal-title { color: var(--oss-text) !important; font-family: var(--oss-font-display); letter-spacing: -0.02em; }
 .btn-close { filter: invert(1) !important; }
 body.modal-open {
   overflow: hidden !important;
@@ -846,10 +1271,11 @@ body.modal-open #root {
   overflow: hidden;
 }
 .modal-backdrop {
-  background: rgba(0, 0, 0, 0.6) !important;
+  background: rgba(0, 0, 0, 0.72) !important;
 }
 .modal {
   overflow: hidden !important;
+  font-family: var(--oss-font-body);
 }
 .modal-dialog {
   max-height: 90vh !important;
@@ -878,6 +1304,82 @@ body.modal-open #root {
   min-height: 0;
   overflow-y: auto !important;
   overscroll-behavior: contain;
+  padding: 0 1.5rem 1.5rem;
+}
+/* Artwork runs edge to edge; the title sits on it */
+.oss-detail-modal .oss-modal-banner {
+  margin: 0 -1.5rem 1.1rem;
+}
+.oss-detail-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 10, 13, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--oss-transition), transform var(--oss-transition);
+}
+.oss-detail-close:hover { background: rgba(10, 10, 13, 0.85); transform: scale(1.06); }
+.oss-detail-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 1.5rem 3.5rem 1rem 0;
+}
+.oss-modal-banner .oss-detail-heading {
+  position: absolute;
+  left: 1.5rem;
+  right: 1.5rem;
+  bottom: 1.1rem;
+  padding: 0;
+  z-index: 2;
+}
+.oss-detail-title.modal-title {
+  font-family: var(--oss-font-display);
+  font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.oss-watchlist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--oss-transition);
+}
+.oss-watchlist-btn:hover { background: rgba(255, 255, 255, 0.22); }
+.oss-watchlist-btn.active {
+  border-color: rgba(var(--oss-accent-rgb), 0.5);
+  background: rgba(var(--oss-accent-rgb), 0.22);
+  color: var(--oss-accent-soft);
 }
 /* Don't let flex squash sections on short screens — the body scrolls instead */
 .oss-detail-modal .oss-detail-body > * {
@@ -1101,7 +1603,7 @@ body.modal-open #root {
 }
 .oss-episode.in-progress .oss-episode-num {
   color: var(--oss-accent);
-  background: rgba(229, 9, 20, 0.18);
+  background: rgba(var(--oss-accent-rgb), 0.16);
 }
 .oss-episode.watched .oss-episode-num {
   color: #22c55e;
@@ -1132,13 +1634,21 @@ body.modal-open #root {
 }
 .oss-episode-play {
   flex-shrink: 0;
-  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   color: var(--oss-text-muted);
-  transition: color 0.15s ease, transform 0.15s ease;
+  background: rgba(255, 255, 255, 0.06);
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
+.oss-episode-play svg { margin-left: 2px; }
 .oss-episode:hover .oss-episode-main .oss-episode-play {
-  color: var(--oss-accent);
-  transform: scale(1.2);
+  color: #0a0a0d;
+  background: #fff;
+  transform: scale(1.08);
 }
 .oss-episode-restart {
   flex-shrink: 0;
@@ -1238,9 +1748,88 @@ body.modal-open #root {
 
 /* ── Page titles ── */
 .oss-page-title {
-  font-size: 2rem;
+  font-family: var(--oss-font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 800;
-  padding: 2rem 4% 0.5rem;
+  letter-spacing: -0.035em;
+  padding: 2.25rem 4% 0.75rem;
+  color: var(--oss-text);
+}
+/* ── Page hero (components/PageHero.tsx): the login showcase look for browsing pages ── */
+.oss-page-hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(300px, 44vh, 440px);
+  padding: 64px 4% 2.2rem;
+  margin-bottom: 0.5rem;
+}
+/* Runs underneath the transparent navbar, like the home banner */
+.oss-page .oss-page-hero { margin-top: -64px; padding-top: 128px; }
+.oss-page-hero::before {
+  /* Blue projector glow */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(45% 70% at 12% 20%, rgba(59, 130, 246, 0.22), transparent 70%),
+    radial-gradient(40% 60% at 75% 90%, rgba(37, 99, 235, 0.16), transparent 70%);
+}
+.oss-page-hero::after {
+  /* Keep the headline readable and melt the wall into the page below */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(to top, var(--oss-bg) 0%, rgba(7,7,10,0.6) 35%, rgba(7,7,10,0.15) 70%, rgba(7,7,10,0.5) 100%),
+    linear-gradient(to right, var(--oss-bg) 0%, rgba(7,7,10,0.85) 30%, rgba(7,7,10,0.2) 65%, transparent 100%);
+  pointer-events: none;
+}
+.oss-poster-wall-hero {
+  z-index: -3;
+  top: -60%;
+  bottom: -60%;
+  left: 30%;
+  right: -8%;
+  grid-template-columns: repeat(6, 1fr);
+  opacity: 0.85;
+}
+.oss-page-hero-copy {
+  position: relative;
+  max-width: 640px;
+}
+.oss-page-hero-title {
+  font-family: var(--oss-font-display);
+  font-size: clamp(2.4rem, 5.5vw, 4.4rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: #fff;
+  margin: 0;
+}
+.oss-page-hero-subtitle {
+  margin: 14px 0 0;
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+@media (max-width: 768px) {
+  .oss-page .oss-page-hero { margin-top: -56px; padding-top: 104px; }
+  .oss-page-hero { min-height: 240px; padding-bottom: 1.5rem; }
+  .oss-poster-wall-hero { left: 10%; grid-template-columns: repeat(4, 1fr); opacity: 0.6; }
+  .oss-page-hero-subtitle { font-size: 0.92rem; }
+}
+
+/* Headings for pages with their own container (Stats, History, For You) */
+.oss-page-heading {
+  font-family: var(--oss-font-display);
+  font-size: clamp(1.9rem, 3.6vw, 2.6rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
   color: var(--oss-text);
 }
 .oss-empty {
@@ -1325,7 +1914,7 @@ body.modal-open #root {
 .explore-page {
   max-width: 1400px;
   margin: 0;
-  padding: 2.5rem 4% 4rem;
+  padding: 0.5rem 4% 4rem;
   min-height: 100vh;
 }
 .explore-hero {
@@ -1335,22 +1924,13 @@ body.modal-open #root {
   position: relative;
   display: inline-block;
   margin: 0;
-  padding-bottom: 12px;
-  font-size: 2.4rem;
+  padding-bottom: 0;
+  font-family: var(--oss-font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.035em;
   color: var(--oss-text);
   line-height: 1;
-}
-.explore-hero-title::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: calc(100% + 24px);
-  height: 4px;
-  border-radius: 2px;
-  background: var(--oss-accent, #e50914);
 }
 .explore-hero-tagline {
   margin: 14px 0 0;
@@ -1665,7 +2245,7 @@ body.modal-open #root {
   from { transform: scale(1); }
   to { transform: scale(1.08); }
 }
-.oss-hero-slide.active img {
+.oss-hero-slide.active:not(.oss-hero-slide-poster) .oss-hero-art {
   animation: kenBurns 8s ease-in-out forwards;
 }
 
@@ -1777,11 +2357,12 @@ body.modal-open #root {
 }
 .oss-filter-sort {
   background: var(--oss-bg-elevated);
-  border: 1px solid var(--oss-border);
-  border-radius: 8px;
+  border: 1px solid var(--oss-border-strong);
+  border-radius: 999px;
   color: var(--oss-text);
-  padding: 6px 12px;
+  padding: 7px 14px;
   font-size: 0.82rem;
+  font-family: inherit;
   outline: none;
   cursor: pointer;
 }
@@ -1789,10 +2370,10 @@ body.modal-open #root {
   border-color: var(--oss-accent);
 }
 .oss-filter-pill {
-  padding: 5px 14px;
-  border-radius: 20px;
-  border: 1px solid var(--oss-border);
-  background: rgba(255,255,255,0.06);
+  padding: 6px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--oss-border-strong);
+  background: rgba(255,255,255,0.04);
   color: var(--oss-text-muted);
   font-size: 0.8rem;
   font-weight: 500;
@@ -1804,19 +2385,21 @@ body.modal-open #root {
   -webkit-appearance: none;
 }
 .oss-filter-pill:hover {
-  border-color: var(--oss-accent);
+  border-color: rgba(255,255,255,0.35);
   color: var(--oss-text);
+  background: rgba(255,255,255,0.08);
 }
 .oss-filter-pill.active {
-  border-color: var(--oss-accent);
-  background: rgba(59,130,246,0.2);
-  color: #60a5fa;
+  border-color: #fff;
+  background: #fff;
+  color: #0a0a0d;
+  font-weight: 600;
 }
 
 /* ── Clickable genre pills in Card detail modal ── */
 .oss-genre-pill:hover {
-  background: rgba(59,130,246,0.2) !important;
-  color: #60a5fa !important;
+  background: rgba(var(--oss-accent-rgb), 0.2) !important;
+  color: var(--oss-accent-hover) !important;
 }
 .oss-genre-pill:focus-visible {
   outline: 2px solid var(--oss-accent);
@@ -1871,6 +2454,7 @@ body.modal-open #root {
   .oss-row-wrapper { max-width: 100%; }
   .oss-navbar { padding: 0 0.75rem; height: 56px; }
   .oss-page { padding-top: 56px; }
+  .oss-page .oss-hero { margin-top: -56px; }
 
   /* Hamburger visible */
   .oss-hamburger { display: flex; }
@@ -2109,7 +2693,25 @@ body.modal-open #root {
 
 
   /* Hero */
-  .oss-hero { height: 50vh; min-height: 320px; }
+  .oss-hero { height: 68vh; min-height: 420px; max-height: 640px; }
+  /* Portrait art fits a phone screen — show it full-bleed instead of as a floating poster */
+  .oss-hero-slide-poster .oss-hero-art {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    border-radius: 0;
+    box-shadow: none;
+    object-position: center 20%;
+  }
+  .oss-hero-vignette {
+    background:
+      linear-gradient(to top, var(--oss-bg) 0%, rgba(7,7,10,0.75) 30%, transparent 62%),
+      linear-gradient(to bottom, rgba(7,7,10,0.55) 0%, transparent 22%);
+  }
+  .oss-hero-content { bottom: 12% !important; left: 5% !important; right: 5%; max-width: none !important; }
+  .oss-card-title-bar span { font-size: 0.74rem; }
   .oss-hero-title { font-size: 1.8rem; }
   .oss-hero-content { bottom: 20%; left: 5%; max-width: 80%; }
   .oss-hero-desc { -webkit-line-clamp: 2; }
@@ -2136,10 +2738,12 @@ body.modal-open #root {
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .oss-detail-modal .modal-body { padding: 12px 14px !important; }
+  .oss-detail-modal .modal-body { padding: 0 14px 12px !important; }
+  .oss-detail-modal .oss-modal-banner { margin-left: -14px; margin-right: -14px; }
+  .oss-modal-banner .oss-detail-heading { left: 14px; right: 14px; bottom: 10px; gap: 10px; }
   .modal-footer { flex-wrap: wrap; }
   .oss-modal-banner {
-    height: clamp(112px, 23vh, 150px) !important;
+    height: clamp(190px, 32vh, 260px) !important;
     margin-bottom: 10px !important;
   }
   .oss-modal-banner img { height: 100% !important; }
@@ -2203,7 +2807,7 @@ body.modal-open #root {
   .oss-card-img { height: auto; aspect-ratio: 2/3; }
   .skeleton-card { width: calc((100vw - 6% - 16px) / 2.8); }
   .skeleton-card-img { height: auto; aspect-ratio: 2/3; }
-  .oss-hero { height: 40vh; min-height: 280px; }
+  .oss-hero { height: 64vh; min-height: 380px; }
   .oss-hero-title { font-size: 1.4rem; }
   .oss-section-title { font-size: 1.1rem; }
   .oss-card-title-bar { padding: 30px 9px 8px; }

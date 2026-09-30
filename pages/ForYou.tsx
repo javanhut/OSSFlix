@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Card from "../components/Card";
 import { RowCarousel } from "../components/RowCarousel";
+import PageHero from "../components/PageHero";
 import { SkeletonRow } from "../components/SkeletonCard";
 import { posterFallback } from "../constants/media";
 
@@ -39,8 +40,8 @@ export default function ForYou() {
 
   if (loading) {
     return (
-      <div style={{ padding: "2rem 0", minHeight: "100vh" }}>
-        <h2 className="oss-page-title">For You</h2>
+      <div style={{ minHeight: "100vh" }}>
+        <PageHero title="For You" subtitle="Recommendations based on your watch history." />
         <SkeletonRow />
         <SkeletonRow />
       </div>
@@ -64,12 +65,11 @@ export default function ForYou() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <div style={{ padding: "2rem 4% 0.25rem" }}>
-        <h2 style={{ color: "var(--oss-text)", marginBottom: "0.25rem", fontSize: "1.5rem" }}>For You</h2>
-        <p style={{ color: "var(--oss-text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
-          Recommendations based on your watch history.
-        </p>
-      </div>
+      <PageHero
+        title="For You"
+        subtitle="Recommendations based on your watch history."
+        images={recs.map((r) => r.imagePath ?? "")}
+      />
 
       {recs.length === 0 && (
         <div

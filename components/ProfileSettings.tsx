@@ -483,7 +483,7 @@ function FileBrowser({
                   height: "32px",
                   margin: "0 auto",
                   border: "3px solid rgba(255,255,255,0.1)",
-                  borderTopColor: "#3b82f6",
+                  borderTopColor: "var(--oss-accent)",
                   borderRadius: "50%",
                   animation: "vpSpin 0.8s linear infinite",
                 }}
@@ -682,7 +682,7 @@ function ProfileModal({
                         width: "28px",
                         height: "28px",
                         border: "3px solid rgba(255,255,255,0.1)",
-                        borderTopColor: "#3b82f6",
+                        borderTopColor: "var(--oss-accent)",
                         borderRadius: "50%",
                         animation: "vpSpin 0.8s linear infinite",
                       }}
@@ -979,7 +979,7 @@ function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: s
               height: "20px",
               margin: "0 auto",
               border: "2px solid rgba(255,255,255,0.1)",
-              borderTopColor: "#3b82f6",
+              borderTopColor: "var(--oss-accent)",
               borderRadius: "50%",
               animation: "vpSpin 0.8s linear infinite",
             }}
@@ -1030,14 +1030,14 @@ function SourceBrowser({ onFilesSelected }: { onFilesSelected: (files: { name: s
                 ...dirItemStyle,
                 fontSize: "0.82rem",
                 padding: "6px 10px",
-                background: selected.has(file.path) ? "rgba(59,130,246,0.12)" : "transparent",
+                background: selected.has(file.path) ? "rgba(var(--oss-accent-rgb), 0.12)" : "transparent",
               }}
               onMouseEnter={(e) => {
                 if (!selected.has(file.path)) e.currentTarget.style.background = "var(--oss-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (!selected.has(file.path))
-                  e.currentTarget.style.background = selected.has(file.path) ? "rgba(59,130,246,0.12)" : "transparent";
+                  e.currentTarget.style.background = selected.has(file.path) ? "rgba(var(--oss-accent-rgb), 0.12)" : "transparent";
               }}
             >
               <div
@@ -1190,8 +1190,8 @@ function DevicesTab() {
             borderRadius: "20px",
             fontSize: "0.78rem",
             fontWeight: 600,
-            background: count >= maxSessions ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)",
-            color: count >= maxSessions ? "#ef4444" : "#3b82f6",
+            background: count >= maxSessions ? "rgba(239,68,68,0.15)" : "rgba(var(--oss-accent-rgb), 0.15)",
+            color: count >= maxSessions ? "#ef4444" : "var(--oss-accent)",
           }}
         >
           {count}/{maxSessions}
@@ -1216,7 +1216,7 @@ function DevicesTab() {
             background:
               count >= maxSessions
                 ? "linear-gradient(90deg, #ef4444, #f87171)"
-                : "linear-gradient(90deg, #3b82f6, #60a5fa)",
+                : "linear-gradient(90deg, var(--oss-accent), var(--oss-accent-hover))",
             transition: "width 0.3s ease",
           }}
         />
@@ -1234,8 +1234,8 @@ function DevicesTab() {
                 justifyContent: "space-between",
                 padding: "12px 14px",
                 borderRadius: "10px",
-                background: s.isCurrent ? "rgba(59,130,246,0.08)" : "var(--oss-bg-elevated)",
-                border: s.isCurrent ? "1px solid rgba(59,130,246,0.25)" : "1px solid var(--oss-border)",
+                background: s.isCurrent ? "rgba(var(--oss-accent-rgb), 0.08)" : "var(--oss-bg-elevated)",
+                border: s.isCurrent ? "1px solid rgba(var(--oss-accent-rgb), 0.25)" : "1px solid var(--oss-border)",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
@@ -1244,7 +1244,7 @@ function DevicesTab() {
                     width: "36px",
                     height: "36px",
                     borderRadius: "8px",
-                    background: s.isCurrent ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.05)",
+                    background: s.isCurrent ? "rgba(var(--oss-accent-rgb), 0.15)" : "rgba(255,255,255,0.05)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1271,8 +1271,8 @@ function DevicesTab() {
                           fontSize: "0.68rem",
                           padding: "1px 6px",
                           borderRadius: "4px",
-                          background: "rgba(59,130,246,0.2)",
-                          color: "#60a5fa",
+                          background: "rgba(var(--oss-accent-rgb), 0.2)",
+                          color: "var(--oss-accent-hover)",
                           fontWeight: 700,
                         }}
                       >
@@ -1655,7 +1655,7 @@ export function MigratorTab() {
             <label style={css.label}>Genres</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {genres.map((g) => (
-                <span key={g} style={{ ...tagStyle, background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>
+                <span key={g} style={{ ...tagStyle, background: "rgba(var(--oss-accent-rgb), 0.15)", color: "var(--oss-accent)" }}>
                   {g}
                   <button
                     type="button"
@@ -1663,7 +1663,7 @@ export function MigratorTab() {
                     style={{
                       background: "none",
                       border: "none",
-                      color: "#3b82f6",
+                      color: "var(--oss-accent)",
                       cursor: "pointer",
                       padding: "0 1px",
                       fontSize: "0.9rem",
@@ -2154,7 +2154,7 @@ export function AddMediaTab() {
             height: "24px",
             margin: "0 auto",
             border: "3px solid rgba(255,255,255,0.1)",
-            borderTopColor: "#3b82f6",
+            borderTopColor: "var(--oss-accent)",
             borderRadius: "50%",
             animation: "vpSpin 0.8s linear infinite",
           }}
@@ -2588,7 +2588,7 @@ function SettingsModal({
                       borderRadius: "10px",
                       border:
                         maturityPreference === pref ? "1px solid var(--oss-accent)" : "1px solid var(--oss-border)",
-                      background: maturityPreference === pref ? "rgba(59,130,246,0.12)" : "var(--oss-bg-elevated)",
+                      background: maturityPreference === pref ? "rgba(var(--oss-accent-rgb), 0.12)" : "var(--oss-bg-elevated)",
                       color: "var(--oss-text)",
                       cursor: "pointer",
                     }}
@@ -2616,7 +2616,7 @@ function SettingsModal({
                   width: "64px",
                   height: "64px",
                   borderRadius: "16px",
-                  background: "linear-gradient(135deg, #3b82f6, #60a5fa)",
+                  background: "linear-gradient(135deg, var(--oss-accent), var(--oss-accent-hover))",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -2957,7 +2957,7 @@ function SwitchProfileModal({
                   width: "32px",
                   height: "32px",
                   border: "3px solid rgba(255,255,255,0.1)",
-                  borderTopColor: "#3b82f6",
+                  borderTopColor: "var(--oss-accent)",
                   borderRadius: "50%",
                   animation: "vpSpin 0.8s linear infinite",
                 }}
@@ -3344,7 +3344,7 @@ export function Profile() {
           background: "var(--oss-bg-elevated)",
           animation: "vpSpin 1s linear infinite",
           border: "2px solid var(--oss-border)",
-          borderTopColor: "#3b82f6",
+          borderTopColor: "var(--oss-accent)",
         }}
       />
     );

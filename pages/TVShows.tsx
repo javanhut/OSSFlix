@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
 import FilterBar from "../components/FilterBar";
+import PageHero from "../components/PageHero";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
@@ -52,7 +53,7 @@ export default function TVShows() {
   if (loading) {
     return (
       <>
-        <h1 className="oss-page-title">TV Shows</h1>
+        <PageHero title="TV Shows" subtitle="Binge-worthy shows, right where you left off." />
         <SkeletonRow />
         <SkeletonRow />
         <SkeletonRow />
@@ -66,7 +67,11 @@ export default function TVShows() {
 
   return (
     <>
-      <h1 className="oss-page-title">TV Shows</h1>
+      <PageHero
+        title="TV Shows"
+        subtitle={`${allTvRow?.titles.length ?? 0} ${(allTvRow?.titles.length ?? 0) === 1 ? "series" : "series"} · Binge-worthy shows, right where you left off.`}
+        images={allTvRow?.titles.map((t) => t.imagePath) ?? []}
+      />
       <FilterBar type="tv show" onResults={setFilteredRows} />
       {displayRows.length > 0 && <SelectorMenu rows={displayRows} />}
       {displayRows.length === 0 && <p className="oss-empty">No TV shows found.</p>}

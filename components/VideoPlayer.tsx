@@ -361,7 +361,7 @@ function LoadingSpinner() {
           width: "48px",
           height: "48px",
           border: "3px solid rgba(255,255,255,0.15)",
-          borderTopColor: "#3b82f6",
+          borderTopColor: "var(--oss-accent)",
           borderRadius: "50%",
           animation: "vpSpin 0.8s linear infinite",
         }}
@@ -624,10 +624,37 @@ export default function VideoPlayer({
     }).catch(() => {});
   };
 
+  // Last position seen by timeupdate, tagged with its src. Used to flush a final save when the player
+  // closes or switches episode — by then the <video> element may already be gone or loading the next src.
+  const lastPosRef = useRef<{ src: string; dir: string; ct: number; dur: number } | null>(null);
+  const flushLastPosition = (keepalive = false) => {
+    const pos = lastPosRef.current;
+    if (!pos || pos.ct <= 0 || Math.abs(pos.ct - lastSavedTimeRef.current) < 1) return;
+    lastSavedTimeRef.current = pos.ct;
+    onProgress?.(pos.ct, pos.dur);
+    fetch("/api/playback/progress", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      keepalive,
+      body: JSON.stringify({ video_src: pos.src, dir_path: pos.dir, current_time: pos.ct, duration: pos.dur }),
+    }).catch(() => {});
+  };
+  const flushLastPositionRef = useRef(flushLastPosition);
+  flushLastPositionRef.current = flushLastPosition;
+
+  // Periodic save is a safety net; pause/close/episode-change/tab-close also save, so 15s is enough.
   useEffect(() => {
     if (!show || !src) return;
-    const interval = setInterval(() => saveProgressRef.current(), 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => saveProgressRef.current(), 15000);
+    const onPageHide = () => flushLastPositionRef.current(true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("pagehide", onPageHide);
+      // Runs on close and before switching to another episode
+      flushLastPositionRef.current();
+    };
   }, [show, src]);
 
   const isStreamed = useMemo(() => {
@@ -1157,11 +1184,9 @@ export default function VideoPlayer({
     setShowCcMenu(false);
   };
 
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video || dragging || seekLockRef.current) return;
-    const ct = video.currentTime + streamOffsetRef.current;
-    const dur = isStreamed ? durationRef.current : video.duration;
+  // Time/buffer state only feeds the control bar. Pushing it on every timeupdate re-renders this whole
+  // component ~4×/s, so while the controls are faded out we skip it and resync when they reappear.
+  const syncTimeDisplay = (video: HTMLVideoElement, ct: number) => {
     setCurrentTime(ct);
     if (video.buffered.length > 0) {
       const bufEnd = video.buffered.end(video.buffered.length - 1);
@@ -1178,6 +1203,30 @@ export default function VideoPlayer({
         setBuffered(bufEnd);
       }
     }
+  };
+
+  // Controls just reappeared — bring the time display up to date immediately rather than on the next tick
+  // biome-ignore lint/correctness/useExhaustiveDependencies: syncTimeDisplay is recreated every render; only showControls should trigger this
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!showControls || !video || dragging || seekLockRef.current) return;
+    syncTimeDisplay(video, video.currentTime + streamOffsetRef.current);
+  }, [showControls]);
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video || dragging || seekLockRef.current) return;
+    const ct = video.currentTime + streamOffsetRef.current;
+    const dur = isStreamed ? durationRef.current : video.duration;
+    if (currentSrcRef.current && Number.isFinite(ct)) {
+      lastPosRef.current = {
+        src: currentSrcRef.current,
+        dir: currentDirRef.current || "",
+        ct,
+        dur: Number.isFinite(dur) ? dur : 0,
+      };
+    }
+    if (showControls) syncTimeDisplay(video, ct);
 
     const t = timingsRef.current;
     const next = hasNextRef.current;
@@ -1977,7 +2026,7 @@ export default function VideoPlayer({
         @keyframes vpFadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes vpFadeOut { from { opacity: 1 } to { opacity: 0 } }
         @keyframes vpSpin { to { transform: rotate(360deg) } }
-        @keyframes vpPulse { 0%,100% { transform: translate(-50%,-50%) scale(1); opacity: 0.9 } 50% { transform: translate(-50%,-50%) scale(1.15); opacity: 1 } }
+        @keyframes vpPulse { 0%,100% { transform: translate(-50%,-50%) scale(1); opacity: 0.9 } 50% { transform: translate(-50%,-50%) scale(1.06); opacity: 1 } }
         .vp-ctrl-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; position: relative; outline: none; }
         .vp-ctrl-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.1); }
         .vp-ctrl-btn:active { transform: scale(0.95); }
@@ -1991,7 +2040,7 @@ export default function VideoPlayer({
         @keyframes vpSlideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
         .vp-speed-btn { width: 100%; padding: 8px 16px; border: none; background: transparent; color: rgba(255,255,255,0.7); font-size: 0.85rem; cursor: pointer; border-radius: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s ease; }
         .vp-speed-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-        .vp-speed-btn.active { color: #3b82f6; font-weight: 600; }
+        .vp-speed-btn.active { color: var(--oss-accent); font-weight: 600; }
         .vp-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(20,20,28,0.9); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; pointer-events: none; margin-bottom: 6px; opacity: 0; transition: opacity 0.15s ease; font-variant-numeric: tabular-nums; }
         .vp-ctrl-btn:hover .vp-tooltip { opacity: 1; }
       `}</style>
@@ -2094,8 +2143,9 @@ export default function VideoPlayer({
             if (!playing) return;
             const video = videoRef.current;
             if (!video) return;
-            const current = video.currentTime + streamOffsetRef.current;
-            const bufferedAhead = buffered - current;
+            // Read the live buffer — `buffered` state isn't updated while controls are hidden
+            const bufEnd = video.buffered.length > 0 ? video.buffered.end(video.buffered.length - 1) : 0;
+            const bufferedAhead = bufEnd - video.currentTime;
             // suspend can fire during normal buffering strategy; only treat it as loading when headroom is low
             if (bufferedAhead <= 1.5) {
               if (loadingStartedAtRef.current === null) loadingStartedAtRef.current = Date.now();
@@ -2117,6 +2167,8 @@ export default function VideoPlayer({
             setTimeout(() => attemptStreamRecovery("video-error"), delay);
           }}
           onEnded={() => {
+            // Save the final position so the episode registers as watched before any auto-advance
+            saveProgressRef.current(true);
             setPlaying(false);
             setShowControls(true);
             // If countdown is already running, let it finish
@@ -2139,6 +2191,9 @@ export default function VideoPlayer({
           }}
           onPause={() => {
             if (!transitioningRef.current) setPlaying(false);
+            // Not forced: a src change also fires pause with currentTime already reset to 0,
+            // and a forced save there would overwrite real progress with 0.
+            if (!transitioningRef.current) saveProgressRef.current();
           }}
         >
           {subtitles?.map((sub, i) => (
@@ -2404,7 +2459,7 @@ export default function VideoPlayer({
                   padding: "8px",
                   borderRadius: "6px",
                   border: "none",
-                  background: "#3b82f6",
+                  background: "var(--oss-accent)",
                   color: "#fff",
                   fontSize: "0.82rem",
                   fontWeight: 600,
@@ -2470,9 +2525,12 @@ export default function VideoPlayer({
               top: "50%",
               left: "50%",
               transform: "translate(-50%, -50%)",
-              width: "72px",
-              height: "72px",
-              background: "rgba(59,130,246,0.85)",
+              width: "84px",
+              height: "84px",
+              background: "rgba(255,255,255,0.14)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
               borderRadius: "50%",
               display: "flex",
               alignItems: "center",
@@ -2480,10 +2538,10 @@ export default function VideoPlayer({
               pointerEvents: "none",
               zIndex: 5,
               animation: "vpPulse 2s ease infinite",
-              boxShadow: "0 0 40px rgba(59,130,246,0.4)",
+              boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
             }}
           >
-            <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+            <svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="#fff">
               <polygon points="8,4 20,12 8,20" />
             </svg>
           </div>
@@ -2513,7 +2571,22 @@ export default function VideoPlayer({
             <IconBack />
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 600, letterSpacing: "-0.2px" }}>{title}</span>
+            <span
+              style={{
+                display: "block",
+                color: "#fff",
+                fontFamily: "var(--oss-font-display)",
+                fontSize: "1.2rem",
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+              }}
+            >
+              {title}
+            </span>
           </div>
         </div>
 
@@ -2599,7 +2672,7 @@ export default function VideoPlayer({
                     bottom: "20px",
                     left: `${dragX}px`,
                     transform: "translateX(-50%)",
-                    background: "rgba(59,130,246,0.92)",
+                    background: "rgba(var(--oss-accent-rgb), 0.92)",
                     backdropFilter: "blur(8px)",
                     color: "#fff",
                     padding: "5px 12px",
@@ -2637,9 +2710,9 @@ export default function VideoPlayer({
                   left: 0,
                   height: "100%",
                   width: `${progress}%`,
-                  background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
+                  background: "var(--oss-brand-gradient)",
                   borderRadius: "4px",
-                  boxShadow: "0 0 8px rgba(59,130,246,0.4)",
+                  boxShadow: "0 0 12px rgba(var(--oss-accent-rgb), 0.45)",
                 }}
               />
 
@@ -2655,7 +2728,7 @@ export default function VideoPlayer({
                   borderRadius: "50%",
                   background: "#fff",
                   transition: "all 0.15s ease",
-                  boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(59,130,246,0.3)",
+                  boxShadow: "0 0 8px rgba(0,0,0,0.4), 0 0 16px rgba(var(--oss-accent-rgb), 0.3)",
                 }}
               />
             </div>
@@ -2752,7 +2825,7 @@ export default function VideoPlayer({
                     onChange={handleVolumeChange}
                     className="vp-volume-track"
                     style={{
-                      background: `linear-gradient(to right, #3b82f6 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
+                      background: `linear-gradient(to right, var(--oss-accent) ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
                     }}
                   />
                 </div>
@@ -2802,7 +2875,7 @@ export default function VideoPlayer({
                         direction: "rtl",
                         width: "6px",
                         height: "120px",
-                        background: `linear-gradient(to top, #3b82f6 ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
+                        background: `linear-gradient(to top, var(--oss-accent) ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(muted ? 0 : volume) * 100}%)`,
                       }}
                     />
                     <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.72rem", fontWeight: 600 }}>
@@ -3035,7 +3108,7 @@ export default function VideoPlayer({
                   style={{ fontSize: "0.82rem", fontWeight: 600, gap: "4px", display: "flex", alignItems: "center" }}
                 >
                   <IconSettings />
-                  {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "#3b82f6" }}>{playbackRate}x</span>}
+                  {playbackRate !== 1 && <span style={{ fontSize: "0.72rem", color: "var(--oss-accent)" }}>{playbackRate}x</span>}
                   <span className="vp-tooltip">Settings</span>
                 </button>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PageHero from "../components/PageHero";
 import { createPortal } from "react-dom";
 import Card from "../components/Card";
 import { posterFallback } from "../constants/media";
@@ -82,8 +83,9 @@ export default function History() {
 
   if (loading) {
     return (
-      <div style={{ padding: "2rem 4%", maxWidth: "1200px", margin: "0 auto" }}>
-        <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem" }}>Watch History</h2>
+      <>
+      <PageHero title="Watch History" subtitle="Everything you've watched, most recent first." />
+      <div style={{ padding: "0.5rem 4% 2rem", maxWidth: "calc(1200px + 8%)" }}>
         {Array.from({ length: 5 }, (_, i) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: loading skeleton; items are identical placeholders
@@ -113,14 +115,23 @@ export default function History() {
           </div>
         ))}
       </div>
+      </>
     );
   }
 
   return (
     <>
-      <div style={{ padding: "2rem 4%", maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-          <h2 style={{ color: "#fff", fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Watch History</h2>
+      <PageHero
+        title="Watch History"
+        subtitle={
+          entries.length > 0
+            ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} · Everything you've watched, most recent first.`
+            : "Everything you've watched, most recent first."
+        }
+        images={entries.map((e) => e.imagePath ?? "")}
+      />
+      <div style={{ padding: "0.5rem 4% 2rem", maxWidth: "calc(1200px + 8%)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "1rem" }}>
           {entries.length > 0 && (
             <button
               type="button"
@@ -198,6 +209,8 @@ export default function History() {
                     <img
                       src={entry.imagePath}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       onError={posterFallback}
                     />
@@ -264,7 +277,7 @@ export default function History() {
                         style={{
                           height: "100%",
                           width: `${Math.min(pct, 100)}%`,
-                          background: isCompleted ? "#22c55e" : "var(--oss-accent, #3b82f6)",
+                          background: isCompleted ? "#22c55e" : "var(--oss-accent)",
                           borderRadius: "2px",
                         }}
                       />

@@ -97,13 +97,10 @@ describe("API Integration Tests", () => {
     expect(data).toHaveProperty("name");
   });
 
-  test("GET /api/global-settings returns settings", async () => {
+  test("GET /api/global-settings requires admin (it contains passwords/API keys)", async () => {
     if (!serverAvailable) return;
     const res = await fetch(`${BASE_URL}/api/global-settings`);
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as any;
-    expect(data).toHaveProperty("movies_directory");
-    expect(data).toHaveProperty("tvshows_directory");
+    expect(res.status).toBe(401);
   });
 
   // ── Streaming endpoints ──

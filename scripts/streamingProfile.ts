@@ -1,3 +1,5 @@
+import { availableParallelism } from "node:os";
+
 export type ProbeStream = {
   index?: number;
   codec_type?: string;
@@ -72,6 +74,10 @@ export function selectVideoStream(streams: ProbeStream[]): SelectedVideoStream |
   };
 }
 
+// Background cache transcodes get half the cores: a single thread took far longer than the episode itself,
+// keeping playback on the slow restart-on-seek live path. The other half stays free for live transcodes.
+const CACHE_TRANSCODE_THREADS = Math.max(2, Math.floor(availableParallelism() / 2));
+
 export function buildCacheTranscodeArgs(
   sourcePath: string,
   selectedAudio: SelectedAudioStream | null,
@@ -94,7 +100,7 @@ export function buildCacheTranscodeArgs(
     "-crf",
     "22",
     "-threads",
-    "1",
+    String(CACHE_TRANSCODE_THREADS),
     "-pix_fmt",
     "yuv420p",
     "-profile:v",

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import PageHero from "../components/PageHero";
 
 type StatsData = {
   totalHours: number;
@@ -30,13 +31,15 @@ export default function Stats() {
 
   if (loading) {
     return (
-      <div style={{ padding: "2rem 4%", minHeight: "100vh" }}>
-        <h2 style={{ color: "var(--oss-text)", fontSize: "1.5rem", marginBottom: "2rem" }}>Stats</h2>
+      <div style={{ minHeight: "100vh" }}>
+        <PageHero title="Stats" subtitle="Your library and viewing, at a glance." />
+        <div style={{ padding: "0.5rem 4% 2rem" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
           {Array.from({ length: 4 }, (_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: loading skeleton; items are identical placeholders
             <div key={i} className="skeleton-shimmer" style={{ height: "120px", borderRadius: "12px" }} />
           ))}
+        </div>
         </div>
       </div>
     );
@@ -55,8 +58,9 @@ export default function Stats() {
   const hasWatchData = stats.titlesWatched > 0;
 
   return (
-    <div style={{ padding: "2rem 4%", minHeight: "100vh", maxWidth: "1000px", margin: "0 auto" }}>
-      <h2 style={{ color: "var(--oss-text)", fontSize: "1.5rem", marginBottom: "2rem" }}>Stats</h2>
+    <>
+    <PageHero title="Stats" subtitle="Your library and viewing, at a glance." />
+    <div style={{ padding: "0.5rem 4% 2rem", minHeight: "60vh", maxWidth: "calc(1000px + 8%)" }}>
 
       {/* Library Overview */}
       <h3
@@ -301,5 +305,6 @@ export default function Stats() {
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
 import FilterBar from "../components/FilterBar";
+import PageHero from "../components/PageHero";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
@@ -52,7 +53,7 @@ export default function Movies() {
   if (loading) {
     return (
       <>
-        <h1 className="oss-page-title">Movies</h1>
+        <PageHero title="Movies" subtitle="Every film in your library, ready when you are." />
         <SkeletonRow />
         <SkeletonRow />
         <SkeletonRow />
@@ -66,7 +67,11 @@ export default function Movies() {
 
   return (
     <>
-      <h1 className="oss-page-title">Movies</h1>
+      <PageHero
+        title="Movies"
+        subtitle={`${allMoviesRow?.titles.length ?? 0} ${(allMoviesRow?.titles.length ?? 0) === 1 ? "movie" : "movies"} · Every film in your library, ready when you are.`}
+        images={allMoviesRow?.titles.map((t) => t.imagePath) ?? []}
+      />
       <FilterBar type="Movie" onResults={setFilteredRows} />
       {displayRows.length > 0 && <SelectorMenu rows={displayRows} />}
       {displayRows.length === 0 && <p className="oss-empty">No movies found.</p>}

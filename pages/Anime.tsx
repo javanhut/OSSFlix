@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SelectorMenu from "../components/SelectorMenu";
 import FilterBar from "../components/FilterBar";
+import PageHero from "../components/PageHero";
 import { SkeletonRow } from "../components/SkeletonCard";
 
 type TitleInfo = {
@@ -65,7 +66,7 @@ export default function Anime() {
   if (loading) {
     return (
       <>
-        <h1 className="oss-page-title">Anime</h1>
+        <PageHero title="Anime" subtitle="Series and films from the world of anime." />
         <SkeletonRow />
         <SkeletonRow />
         <SkeletonRow />
@@ -79,7 +80,11 @@ export default function Anime() {
 
   return (
     <>
-      <h1 className="oss-page-title">Anime</h1>
+      <PageHero
+        title="Anime"
+        subtitle={`${allAnimeRow?.titles.length ?? 0} ${(allAnimeRow?.titles.length ?? 0) === 1 ? "title" : "titles"} · Series and films from the world of anime.`}
+        images={allAnimeRow?.titles.map((t) => t.imagePath) ?? []}
+      />
       <FilterBar type="Anime" onResults={setFilteredRows} />
       {displayRows.length > 0 && <SelectorMenu rows={displayRows} />}
       {displayRows.length === 0 && <p className="oss-empty">No anime found.</p>}

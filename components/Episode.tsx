@@ -99,8 +99,8 @@ export function Episode({
                   fontWeight: 700,
                   letterSpacing: "0.04em",
                   textTransform: "uppercase",
-                  background: variant === "sub" ? "rgba(59,130,246,0.18)" : "rgba(168,85,247,0.18)",
-                  color: variant === "sub" ? "#93c5fd" : "#d8b4fe",
+                  background: variant === "sub" ? "rgba(var(--oss-accent-rgb), 0.18)" : "rgba(168,85,247,0.18)",
+                  color: variant === "sub" ? "var(--oss-accent-soft)" : "#d8b4fe",
                   verticalAlign: "middle",
                 }}
               >
@@ -111,7 +111,9 @@ export function Episode({
         </span>
         {metaText && <span className="oss-episode-meta">{metaText}</span>}
         <span className="oss-episode-play" aria-hidden="true">
-          &#9654;
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,4 20,12 6,20" />
+          </svg>
         </span>
       </button>
       {isInProgress && onRestart && (

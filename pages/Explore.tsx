@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import PageHero from "../components/PageHero";
 import { PREDEFINED_GENRES } from "../constants/Genres";
 import Card from "../components/Card";
 import { posterFallback } from "../constants/media";
@@ -69,12 +70,9 @@ export default function Explore() {
   const hasResults = selectedGenres.size > 0;
 
   return (
-    <div className="explore-page">
-      {/* Hero */}
-      <header className="explore-hero">
-        <h1 className="explore-hero-title">Explore</h1>
-        <p className="explore-hero-tagline">Mix and match tags to find your next watch.</p>
-      </header>
+    <>
+      <PageHero title="Explore" subtitle="Mix and match tags to find your next watch." />
+      <div className="explore-page">
 
       {/* Selected chips strip */}
       {hasResults && (
@@ -225,5 +223,6 @@ export default function Explore() {
 
       <Card show={!!selectedDir} onHide={() => setSelectedDir("")} dirPath={selectedDir} />
     </div>
+    </>
   );
 }

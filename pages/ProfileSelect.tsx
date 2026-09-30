@@ -169,43 +169,21 @@ export default function ProfileSelect() {
   };
 
   return (
-    <div
+    <div className="oss-auth-stage"
       style={{
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
+        
         padding: "40px 24px",
       }}
     >
       {/* Logo */}
-      <div style={{ marginBottom: "48px", textAlign: "center" }}>
-        <h1
-          style={{
-            fontSize: "3rem",
-            fontWeight: 800,
-            color: "#fff",
-            margin: 0,
-            letterSpacing: "-1px",
-            background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          Reelscape
-        </h1>
-        <p
-          style={{
-            color: "rgba(255,255,255,0.35)",
-            fontSize: "0.9rem",
-            marginTop: "8px",
-            fontWeight: 400,
-          }}
-        >
-          Who's watching?
-        </p>
+      <div style={{ marginBottom: "44px", textAlign: "center" }}>
+        <div className="oss-login-logo oss-login-logo-sm">Reelscape</div>
+        <h1 className="oss-profiles-heading">Who's watching?</h1>
       </div>
 
       {loading ? (
@@ -214,7 +192,7 @@ export default function ProfileSelect() {
             width: "48px",
             height: "48px",
             border: "3px solid rgba(255,255,255,0.1)",
-            borderTopColor: "#3b82f6",
+            borderTopColor: "var(--oss-accent)",
             borderRadius: "50%",
             animation: "vpSpin 0.8s linear infinite",
           }}
@@ -226,9 +204,9 @@ export default function ProfileSelect() {
             style={{
               display: "flex",
               flexWrap: "wrap",
-              gap: "24px",
+              gap: "28px",
               justifyContent: "center",
-              maxWidth: "700px",
+              maxWidth: "860px",
             }}
           >
             {profiles.map((p) => (
@@ -240,98 +218,29 @@ export default function ProfileSelect() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") handleSelect(p);
                 }}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "20px",
-                  border: "2px solid transparent",
-                  borderRadius: "16px",
-                  background: "rgba(255,255,255,0.03)",
-                  cursor: "pointer",
-                  transition: "all 0.25s ease",
-                  width: "140px",
-                  position: "relative",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "#3b82f6";
-                  e.currentTarget.style.background = "rgba(59,130,246,0.08)";
-                  e.currentTarget.style.transform = "scale(1.05)";
-                  const del = e.currentTarget.querySelector("[data-delete]") as HTMLElement;
-                  if (del) del.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "transparent";
-                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                  e.currentTarget.style.transform = "scale(1)";
-                  const del = e.currentTarget.querySelector("[data-delete]") as HTMLElement;
-                  if (del) del.style.opacity = "0";
-                }}
+                className="oss-profile-tile"
               >
-                <div
-                  style={{
-                    width: "80px",
-                    height: "80px",
-                    borderRadius: "50%",
-                    overflow: "hidden",
-                    border: "3px solid rgba(255,255,255,0.1)",
-                    background: "var(--oss-bg-elevated)",
-                  }}
-                >
-                  <img
-                    src={p.image_path || "/images/profileicon.png"}
-                    alt={p.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
+                <div className="oss-profile-tile-avatar">
+                  {p.image_path ? (
+                    <img src={p.image_path} alt="" />
+                  ) : (
+                    // No photo: a colored tile with the initial, hue varied per profile
+                    <span
+                      className="oss-profile-tile-initial"
+                      style={{ "--oss-tile-hue": `${(p.id * 67) % 360}` } as React.CSSProperties}
+                    >
+                      {p.name.trim().charAt(0).toUpperCase() || "?"}
+                    </span>
+                  )}
                 </div>
-                <span
-                  style={{
-                    color: "#fff",
-                    fontSize: "0.95rem",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    maxWidth: "120px",
-                  }}
-                >
-                  {p.name}
-                </span>
+                <span className="oss-profile-tile-name">{p.name}</span>
                 {profiles.length > 1 && (
                   <button
                     type="button"
-                    data-delete
+                    className="oss-profile-tile-delete"
                     onClick={(e) => handleDelete(p.id, e)}
-                    style={{
-                      position: "absolute",
-                      top: "6px",
-                      right: "6px",
-                      width: "22px",
-                      height: "22px",
-                      borderRadius: "50%",
-                      border: "none",
-                      background: "rgba(255,255,255,0.06)",
-                      color: "rgba(255,255,255,0.3)",
-                      fontSize: "0.75rem",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.15s ease",
-                      opacity: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(239,68,68,0.2)";
-                      e.currentTarget.style.color = "#ef4444";
-                      e.currentTarget.style.opacity = "1";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                      e.currentTarget.style.color = "rgba(255,255,255,0.3)";
-                      e.currentTarget.style.opacity = "0";
-                    }}
                     title="Delete profile"
+                    aria-label={`Delete profile ${p.name}`}
                   >
                     &times;
                   </button>
@@ -343,46 +252,16 @@ export default function ProfileSelect() {
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "20px",
-                  border: "2px dashed rgba(255,255,255,0.1)",
-                  borderRadius: "16px",
-                  background: "transparent",
-                  cursor: "pointer",
-                  transition: "all 0.25s ease",
-                  width: "140px",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
-                  e.currentTarget.style.background = "rgba(59,130,246,0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                  e.currentTarget.style.background = "transparent";
-                }}
+                className="oss-profile-tile oss-profile-tile-add"
               >
-                <div
-                  style={{
-                    width: "80px",
-                    height: "80px",
-                    borderRadius: "50%",
-                    border: "2px dashed rgba(255,255,255,0.15)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
+                <div className="oss-profile-tile-avatar">
                   <svg
                     aria-hidden="true"
-                    width="32"
-                    height="32"
+                    width="36"
+                    height="36"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="rgba(255,255,255,0.3)"
+                    stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
                   >
@@ -390,9 +269,7 @@ export default function ProfileSelect() {
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                 </div>
-                <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.85rem", fontWeight: 500 }}>
-                  Add Profile
-                </span>
+                <span className="oss-profile-tile-name">Add Profile</span>
               </button>
             )}
           </div>
@@ -458,7 +335,7 @@ export default function ProfileSelect() {
                     padding: "8px 24px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "#3b82f6",
+                    background: "var(--oss-accent)",
                     color: "#fff",
                     fontSize: "0.85rem",
                     fontWeight: 600,
@@ -601,7 +478,7 @@ export default function ProfileSelect() {
                       padding: "8px 24px",
                       borderRadius: "8px",
                       border: "none",
-                      background: "#3b82f6",
+                      background: "var(--oss-accent)",
                       color: "#fff",
                       fontSize: "0.85rem",
                       fontWeight: 600,

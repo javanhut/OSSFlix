@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import PosterWall from "../components/PosterWall";
 import { useProfile, type PublicProfile } from "../context/ProfileContext";
 import { useNavigate } from "react-router-dom";
 import { PasswordInput } from "../components/PasswordInput";
@@ -409,7 +410,7 @@ export default function Login() {
                       fontSize: "1.2rem",
                       fontWeight: 600,
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                 </div>
@@ -431,7 +432,7 @@ export default function Login() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     inputStyle={inputStyle}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                      e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -459,7 +460,7 @@ export default function Login() {
                     }}
                     inputStyle={inputStyle}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                      e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -476,7 +477,7 @@ export default function Login() {
                     padding: "12px",
                     borderRadius: "10px",
                     border: "none",
-                    background: "#3b82f6",
+                    background: "var(--oss-accent)",
                     color: "#fff",
                     fontSize: "0.9rem",
                     fontWeight: 600,
@@ -525,7 +526,7 @@ export default function Login() {
                     padding: "12px",
                     borderRadius: "10px",
                     border: "none",
-                    background: "#3b82f6",
+                    background: "var(--oss-accent)",
                     color: "#fff",
                     fontSize: "0.9rem",
                     fontWeight: 600,
@@ -584,7 +585,7 @@ export default function Login() {
                     onChange={(e) => setPasswordVal(e.target.value)}
                     inputStyle={inputStyle}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                      e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -612,7 +613,7 @@ export default function Login() {
                     }}
                     inputStyle={inputStyle}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                      e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -652,7 +653,7 @@ export default function Login() {
                       if (e.key === "Enter") handleVerifyName();
                     }}
                     style={inputStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                 </div>
@@ -681,7 +682,7 @@ export default function Login() {
                   }}
                   inputStyle={inputStyle}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -725,7 +726,7 @@ export default function Login() {
                   padding: "12px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "#3b82f6",
+                  background: "var(--oss-accent)",
                   color: "#fff",
                   fontSize: "0.9rem",
                   fontWeight: 600,
@@ -813,8 +814,8 @@ export default function Login() {
                   textAlign: "left",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
-                  e.currentTarget.style.background = "rgba(59,130,246,0.06)";
+                  e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.4)";
+                  e.currentTarget.style.background = "rgba(var(--oss-accent-rgb), 0.06)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
@@ -914,7 +915,7 @@ export default function Login() {
               if (e.key === "Enter") handleEmailLookup();
             }}
             style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
           />
         </div>
@@ -928,7 +929,7 @@ export default function Login() {
             padding: "12px",
             borderRadius: "10px",
             border: "none",
-            background: "#3b82f6",
+            background: "var(--oss-accent)",
             color: "#fff",
             fontSize: "0.9rem",
             fontWeight: 600,
@@ -986,47 +987,35 @@ export default function Login() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "linear-gradient(180deg, #0a0a0f 0%, #12121e 50%, #0a0a0f 100%)",
-        padding: "40px 24px",
-      }}
-    >
-      {/* Logo */}
-      <div style={{ marginBottom: "12px", textAlign: "center" }}>
-        <h1
-          className="oss-login-logo"
-          style={{
-            fontSize: "3.5rem",
-            fontWeight: 800,
-            color: "#fff",
-            margin: 0,
-            letterSpacing: "-1px",
-            background: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          Reelscape
-        </h1>
+    <div className="oss-auth-stage oss-login-layout">
+      {/* Showcase — decorative; hidden on narrow screens */}
+      <section className="oss-login-showcase" aria-hidden="true">
+        <PosterWall columns={5} className="oss-poster-wall-login" />
+        <div className="oss-login-showcase-copy">
+          <div className="oss-login-logo">Reelscape</div>
+          <h2 className="oss-login-headline">
+            Your whole library.
+            <br />
+            One beautiful screen.
+          </h2>
+          <ul className="oss-login-features">
+            <li>Stream your movies and shows anywhere</li>
+            <li>Pick up exactly where you left off</li>
+            <li>Profiles for everyone in the house</li>
+          </ul>
+        </div>
+      </section>
+
+      <section className="oss-login-panel">
+      {/* Logo — only on narrow screens, where the showcase is hidden */}
+      <div className="oss-login-panel-brand">
+        <h1 className="oss-login-logo">Reelscape</h1>
+        <p className="oss-login-tagline">Your library. Your screen.</p>
       </div>
+      <h1 className="oss-login-welcome">{tab === "register" ? "Create your account" : "Welcome back"}</h1>
 
       {/* Card */}
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "420px",
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: "20px",
-          overflow: "hidden",
-        }}
-      >
+      <div className="oss-auth-card" style={{ width: "100%", maxWidth: "420px" }}>
         {/* Tabs - only show when not in profile selection or password phase */}
         {!selectedProfile && !emailSubmitted && (
           <div
@@ -1049,12 +1038,12 @@ export default function Login() {
                   flex: 1,
                   padding: "16px",
                   border: "none",
-                  background: tab === t ? "rgba(59,130,246,0.08)" : "transparent",
-                  color: tab === t ? "#93c5fd" : "rgba(255,255,255,0.4)",
+                  background: tab === t ? "rgba(var(--oss-accent-rgb), 0.08)" : "transparent",
+                  color: tab === t ? "var(--oss-accent-soft)" : "rgba(255,255,255,0.4)",
                   fontSize: "0.9rem",
                   fontWeight: 600,
                   cursor: "pointer",
-                  borderBottom: tab === t ? "2px solid #3b82f6" : "2px solid transparent",
+                  borderBottom: tab === t ? "2px solid var(--oss-accent)" : "2px solid transparent",
                   transition: "all 0.2s ease",
                 }}
               >
@@ -1072,7 +1061,7 @@ export default function Login() {
                   width: "36px",
                   height: "36px",
                   border: "3px solid rgba(255,255,255,0.1)",
-                  borderTopColor: "#3b82f6",
+                  borderTopColor: "var(--oss-accent)",
                   borderRadius: "50%",
                   animation: "loginSpin 0.8s linear infinite",
                 }}
@@ -1110,7 +1099,7 @@ export default function Login() {
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
                 />
               </div>
@@ -1132,7 +1121,7 @@ export default function Login() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)")}
                 />
               </div>
@@ -1154,7 +1143,7 @@ export default function Login() {
                   onChange={(e) => setPasswordVal(e.target.value)}
                   inputStyle={inputStyle}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -1182,7 +1171,7 @@ export default function Login() {
                   }}
                   inputStyle={inputStyle}
                   onFocus={(e) => {
-                    e.currentTarget.style.borderColor = "rgba(59,130,246,0.5)";
+                    e.currentTarget.style.borderColor = "rgba(var(--oss-accent-rgb), 0.5)";
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
@@ -1199,7 +1188,7 @@ export default function Login() {
                   padding: "12px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "#3b82f6",
+                  background: "var(--oss-accent)",
                   color: "#fff",
                   fontSize: "0.9rem",
                   fontWeight: 600,
@@ -1258,6 +1247,8 @@ export default function Login() {
           Admin
         </button>
       </div>
+
+      </section>
 
       <style>{`
         @keyframes loginSpin { to { transform: rotate(360deg) } }
