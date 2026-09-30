@@ -890,6 +890,49 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
     },
     [],
   );
+  // On short screens the modal body scrolls and the banner can be off-screen while hovering episodes;
+  // track that so the preview can float in a corner instead of playing somewhere invisible.
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+  const [bannerInView, setBannerInView] = useState(true);
+  useEffect(() => {
+    const el = bannerRef.current;
+    if (!el) {
+      setBannerInView(false);
+      return;
+    }
+    // Use the visible ratio, not isIntersecting — a sliver of banner still counts as "intersecting",
+    // and a preview playing in a mostly-hidden banner is effectively invisible.
+    const observer = new IntersectionObserver(
+      ([entry]) => setBannerInView(!!entry && entry.intersectionRatio >= 0.6),
+      { root: el.closest(".oss-detail-body"), threshold: [0, 0.2, 0.4, 0.6, 0.8, 1] },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+  const renderHoverPreview = (src: string) => (
+    <video
+      key={src}
+      src={`/api/stream?src=${encodeURIComponent(src)}`}
+      muted
+      autoPlay
+      loop
+      playsInline
+      preload="metadata"
+      onLoadedMetadata={(e) => {
+        const v = e.currentTarget;
+        const target = Math.min(30, (v.duration || 60) * 0.1);
+        if (Number.isFinite(target) && target > 0) v.currentTime = target;
+      }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        display: "block",
+      }}
+    />
+  );
   // Tear down any preview when the player opens or the modal closes
   // biome-ignore lint/correctness/useExhaustiveDependencies: endHoverPreview is an inline cleanup helper; re-running on its identity change would just retrigger an idempotent teardown
   useEffect(() => {
@@ -1174,15 +1217,21 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
               </div>
             </ModalHeader>
             <ModalBody className="oss-detail-body">
+              {hoverPreviewSrc && !bannerInView && (
+                <div className="oss-hover-preview-float" aria-hidden="true">
+                  <div className="oss-hover-preview-float-inner">{renderHoverPreview(hoverPreviewSrc)}</div>
+                </div>
+              )}
               {displayBanner && (
                 <div
+                  ref={bannerRef}
                   className="oss-modal-banner"
                   style={{
                     position: "relative",
                     marginBottom: "1rem",
                     borderRadius: "var(--oss-radius)",
                     overflow: "hidden",
-                    height: "300px",
+                    height: "clamp(140px, 32vh, 300px)",
                     background: "var(--oss-bg-elevated)",
                   }}
                 >
@@ -1191,37 +1240,14 @@ export function Card({ show, onHide, dirPath, onWatchlistChange }: CardProps) {
                     alt={information.name}
                     style={{
                       width: "100%",
-                      height: "300px",
+                      height: "100%",
                       objectFit: "cover",
                       display: "block",
                       transition: "opacity 0.2s ease",
-                      opacity: hoverPreviewSrc ? 0 : 1,
+                      opacity: hoverPreviewSrc && bannerInView ? 0 : 1,
                     }}
                   />
-                  {hoverPreviewSrc && (
-                    <video
-                      key={hoverPreviewSrc}
-                      src={`/api/stream?src=${encodeURIComponent(hoverPreviewSrc)}`}
-                      muted
-                      autoPlay
-                      loop
-                      playsInline
-                      preload="metadata"
-                      onLoadedMetadata={(e) => {
-                        const v = e.currentTarget;
-                        const target = Math.min(30, (v.duration || 60) * 0.1);
-                        if (Number.isFinite(target) && target > 0) v.currentTime = target;
-                      }}
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  )}
+                  {hoverPreviewSrc && bannerInView && renderHoverPreview(hoverPreviewSrc)}
                   <div
                     style={{
                       position: "absolute",

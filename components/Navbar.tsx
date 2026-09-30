@@ -27,7 +27,7 @@ export function NavBar() {
   const [selectedDir, setSelectedDir] = useState("");
   const [rescanning, setRescanning] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [openMenu, setOpenMenu] = useState<null | "movies" | "tv">(null);
+  const [openMenu, setOpenMenu] = useState<null | "movies" | "tv" | "more">(null);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -405,14 +405,64 @@ export function NavBar() {
               </Link>
             </li>
             <li>
-              <Link to="/foryou" className="oss-nav-link" onClick={() => setNavOpen(false)}>
-                Recommendations
-              </Link>
-            </li>
-            <li>
               <Link to="/explore" className="oss-nav-link" onClick={() => setNavOpen(false)}>
                 Explore
               </Link>
+            </li>
+            <li className={`oss-genre-trigger${openMenu === "more" ? " oss-genre-open" : ""}`}>
+              <button
+                type="button"
+                className="oss-nav-link oss-nav-more"
+                aria-haspopup="true"
+                aria-expanded={openMenu === "more"}
+                onClick={() => {
+                  // desktop opens on hover/focus; only the mobile overlay needs toggle state
+                  if (navOpen) setOpenMenu((v) => (v === "more" ? null : "more"));
+                }}
+              >
+                More
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <div className="oss-genre-dropdown">
+                <div className="oss-genre-header">
+                  <span>More</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenu(null);
+                    }}
+                    className="oss-genre-close"
+                    aria-label="Close menu"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+                <Link
+                  to="/foryou"
+                  className="oss-genre-item"
+                  onClick={() => {
+                    setNavOpen(false);
+                    setOpenMenu(null);
+                  }}
+                >
+                  Recommendations
+                </Link>
+              </div>
             </li>
 
             {/* Rescan — inside overlay on mobile, visible in navbar on desktop */}

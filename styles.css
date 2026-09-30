@@ -71,8 +71,15 @@ html, body, #root {
 .oss-navbar-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 1rem;
+  /* Take the space left over after the brand + links, and let the search shrink into it
+     so the profile button never gets pushed off-screen. */
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 1rem;
 }
+.oss-navbar-profile { flex-shrink: 0; }
 
 /* Menu-only items (rescan/profile inside overlay) hidden on desktop */
 .oss-nav-menu-rescan,
@@ -97,6 +104,15 @@ html, body, #root {
   font-weight: 500;
   transition: all var(--oss-transition);
   white-space: nowrap;
+}
+.oss-nav-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
 }
 .oss-nav-link:hover {
   color: var(--oss-text);
@@ -138,6 +154,8 @@ html, body, #root {
   z-index: 1001;
 }
 .oss-genre-trigger:hover .oss-genre-dropdown,
+/* :focus-visible so keyboard users can open it, but a mouse click doesn't leave it stuck open */
+.oss-genre-trigger:has(:focus-visible) .oss-genre-dropdown,
 .oss-genre-dropdown:hover {
   opacity: 1;
   pointer-events: auto;
@@ -179,6 +197,13 @@ html, body, #root {
 /* ── Search ── */
 .oss-search {
   position: relative;
+  flex: 0 1 400px;
+  min-width: 140px;
+  transition: flex-basis var(--oss-transition);
+}
+.oss-search:focus-within,
+.oss-search:has(input:not(:placeholder-shown)) {
+  flex-basis: 800px;
 }
 .oss-search input {
   background: var(--oss-bg-elevated);
@@ -187,14 +212,13 @@ html, body, #root {
   color: var(--oss-text);
   padding: 7px 16px 7px 36px;
   font-size: 0.85rem;
-  width: 400px;
+  width: 100%;
   outline: none;
   transition: all var(--oss-transition);
 }
 .oss-search input::placeholder { color: var(--oss-text-muted); }
 .oss-search input:focus,
 .oss-search input:not(:placeholder-shown) {
-  width: 800px;
   border-color: var(--oss-accent);
   box-shadow: 0 0 0 3px var(--oss-accent-glow);
 }
@@ -235,6 +259,7 @@ html, body, #root {
   top: calc(100% + 8px);
   right: 0;
   width: 800px;
+  max-width: calc(100vw - 2rem);
   max-height: 420px;
   overflow-y: auto;
   background: var(--oss-bg-elevated);
@@ -352,8 +377,9 @@ html, body, #root {
 .oss-hero {
   position: relative;
   width: 100%;
-  height: 70vh;
-  min-height: 450px;
+  /* Follow the viewport height, but don't get taller than a wide banner shape on narrow windows */
+  height: min(70vh, 56vw);
+  min-height: 280px;
   max-height: 720px;
   overflow: hidden;
 }
@@ -368,6 +394,8 @@ html, body, #root {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* Key art usually has faces/titles in the upper part — bias the crop upward */
+  object-position: center 25%;
 }
 .oss-hero-vignette {
   position: absolute;
@@ -381,11 +409,11 @@ html, body, #root {
   position: absolute;
   bottom: 15%;
   left: 4%;
-  max-width: 520px;
+  max-width: min(520px, 60%);
   z-index: 2;
 }
 .oss-hero-title {
-  font-size: 2.8rem;
+  font-size: clamp(1.6rem, 6vh, 2.8rem);
   font-weight: 800;
   line-height: 1.1;
   margin: 0 0 12px;
@@ -404,6 +432,11 @@ html, body, #root {
 .oss-hero-actions {
   display: flex;
   gap: 12px;
+}
+/* Short viewports (laptops, zoomed browsers): trim the text so it fits the smaller banner */
+@media (max-height: 700px) {
+  .oss-hero-content { bottom: 12%; }
+  .oss-hero-desc { -webkit-line-clamp: 2; margin-bottom: 14px; }
 }
 
 /* ── Carousel indicators ── */
@@ -624,11 +657,16 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 }
 
 /* ── Row carousel chevrons ── */
+/* Card width shrinks on short viewports (laptops, zoomed browsers) so more than one row fits on screen.
+   Height follows at the 224×314 poster ratio. */
+:root {
+  --oss-card-w: clamp(140px, 26vh, 224px);
+}
 .oss-row-wrapper {
   position: relative;
-  /* Cap the row to ~6 cards (224px × 6 + 14px × 5 gaps = 1414px), centered in the section
+  /* Cap the row to ~6 cards (6 × card width + 5 × 14px gaps), centered in the section
      so the empty space on left and right is equal. */
-  max-width: 1414px;
+  max-width: calc(var(--oss-card-w) * 6 + 70px);
   margin-left: auto;
   margin-right: auto;
 }
@@ -677,7 +715,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 .oss-card {
   position: relative;
   flex-shrink: 0;
-  width: 224px;
+  width: var(--oss-card-w);
   border-radius: var(--oss-radius);
   overflow: hidden;
   cursor: pointer;
@@ -691,7 +729,7 @@ body:has(.oss-row-chevron:hover) .oss-section:not(:has(.oss-row-chevron:hover)) 
 }
 .oss-card-img {
   width: 100%;
-  height: 314px;
+  height: calc(var(--oss-card-w) * 1.4);
   object-fit: cover;
   display: block;
 }
@@ -838,13 +876,38 @@ body.modal-open #root {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
 }
-.oss-detail-modal .oss-modal-banner {
-  flex: 0 0 auto;
+/* Don't let flex squash sections on short screens — the body scrolls instead */
+.oss-detail-modal .oss-detail-body > * {
+  flex-shrink: 0;
+}
+/* Episode hover preview shown when the banner is scrolled out of view. Sticky + zero height pins it
+   to the top of the scrolling body without taking up space; pointer-events: none so it never steals
+   the hover from the episode row underneath (which would end the preview and flicker). */
+.oss-detail-modal .oss-hover-preview-float {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.oss-hover-preview-float-inner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(340px, 55%);
+  aspect-ratio: 16 / 9;
+  border-radius: var(--oss-radius);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--oss-border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  animation: ossSlideUp 0.2s ease;
 }
 .oss-detail-modal .oss-episode-list-scroll {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
   max-height: calc(var(--oss-episode-row-h, 46px) * 5 + 12px);
   overflow-y: auto;
@@ -1220,14 +1283,14 @@ body.modal-open #root {
 }
 .skeleton-card {
   flex-shrink: 0;
-  width: 224px;
+  width: var(--oss-card-w);
   border-radius: var(--oss-radius);
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 .skeleton-card-img {
   width: 100%;
-  height: 314px;
+  height: calc(var(--oss-card-w) * 1.4);
   border-radius: var(--oss-radius);
 }
 .skeleton-card-title {
@@ -1795,14 +1858,11 @@ body.modal-open #root {
 
 /* ── Responsive: 1024px (tablets) ── */
 @media (max-width: 1024px) {
-  .oss-card { width: 170px; }
-  .oss-card-img { height: 250px; }
-  .skeleton-card { width: 170px; }
-  .skeleton-card-img { height: 250px; }
+  :root { --oss-card-w: clamp(130px, 26vh, 170px); }
+  .oss-navbar { padding: 0 1.25rem; }
+  .oss-nav-link { padding: 6px 9px; font-size: 0.85rem; }
   .oss-hero { height: 60vh; }
   .oss-hero-title { font-size: 2.2rem; }
-  /* 6 cards × 170px + 5 × 14px gap */
-  .oss-row-wrapper { max-width: 1090px; }
 }
 
 /* ── Responsive: 768px (small tablets / large phones) ── */
