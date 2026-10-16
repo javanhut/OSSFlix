@@ -7,8 +7,8 @@
 # users see no interruption.
 #
 # Common targets:
-#   sudo make install      One-time setup: user, data dir, systemd unit, start instance a
-#   sudo make update       Pull latest code, install deps, swap to the idle instance
+#   sudo make install      One-time setup: ffmpeg, user, data dir, systemd unit, start instance a
+#   sudo make update       Pull latest code, install deps (incl. ffmpeg), swap to the idle instance
 #   sudo make uninstall    Stop both instances and remove the unit
 #   make status            Show which instance(s) are active
 #   make logs              Tail journalctl for both instances
@@ -49,6 +49,28 @@ define need_bun
 	fi
 endef
 
+# ffmpeg/ffprobe are only used at playback time (transcoding MKV, AVI, etc.),
+# so without them the service starts and serves MP4s fine but every other
+# format fails. Install them with whichever package manager the host has.
+define need_ffmpeg
+	@if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then \
+		echo "→ ffmpeg found at $$(command -v ffmpeg)"; \
+	else \
+		echo "→ ffmpeg not found — installing"; \
+		if command -v rvn >/dev/null 2>&1; then rvn install ffmpeg; \
+		elif command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends ffmpeg; \
+		elif command -v dnf >/dev/null 2>&1; then dnf install -y ffmpeg || dnf install -y ffmpeg-free; \
+		elif command -v pacman >/dev/null 2>&1; then pacman -S --needed --noconfirm ffmpeg; \
+		elif command -v apk >/dev/null 2>&1; then apk add ffmpeg; \
+		else echo "✗ no supported package manager found — install ffmpeg manually"; exit 1; \
+		fi; \
+		if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then \
+			echo "✗ ffmpeg install failed — install ffmpeg manually and re-run"; exit 1; \
+		fi; \
+		echo "✓ ffmpeg installed at $$(command -v ffmpeg)"; \
+	fi
+endef
+
 .PHONY: help install update rollback uninstall status logs restart deps build _emit_unit _swap _record_sha _preflight
 
 help:
@@ -73,6 +95,7 @@ help:
 install:
 	$(call need_root)
 	$(call need_bun)
+	$(call need_ffmpeg)
 	@echo "→ ensuring user $(RS_USER) exists"
 	@id -u $(RS_USER) >/dev/null 2>&1 || useradd --system --home-dir $(RS_DATA) --shell /usr/sbin/nologin $(RS_USER)
 	@echo "→ preparing data dir $(RS_DATA)"
@@ -149,6 +172,7 @@ _emit_unit:
 update:
 	$(call need_root)
 	$(call need_bun)
+	$(call need_ffmpeg)
 	@$(MAKE) --no-print-directory _record_sha
 	@echo "→ git pull"
 	@sudo -u $(RS_USER) -H sh -c 'cd $(RS_DIR) && git pull --ff-only'

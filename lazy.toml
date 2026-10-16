@@ -1,0 +1,129 @@
+# ImLazy configuration file
+#
+# Development tasks wrap the package.json scripts. The deploy tasks (install,
+# update, rollback, …) run scripts/deploy.sh, a bare-metal install on a
+# systemd host with zero-downtime rolling updates; see README.md. Never
+# `sudo imlazy …`: the tasks that need root escalate on their own.
+#
+# Override the deploy configuration at run time, e.g.
+#   imlazy install rs_dir=/opt/reelscape rs_port=8080 bun=/usr/local/bin/bun
+
+[settings]
+default = "dev"
+
+[variables]
+rs_user = "reelscape"
+# Empty means the directory holding this file.
+rs_dir = ""
+rs_data = "/var/lib/reelscape"
+rs_port = "3000"
+# Empty means search PATH, then /usr/local/bin, /opt/bun, root's and every
+# /home user's ~/.bun (sudo strips PATH to secure_path on Debian-likes).
+bun = ""
+deploy = "RS_USER={{rs_user}} RS_DIR={{rs_dir}} RS_DATA={{rs_data}} RS_PORT={{rs_port}} BUN={{bun}} bash scripts/deploy.sh"
+
+[commands]
+
+# ── Development ──────────────────────────────────────────────────────────────
+
+[commands.system-deps]
+desc = "Install the system packages Reelscape needs (bun, ffmpeg, curl) with rvn"
+alias = ["setup"]
+dir = "."
+run = ["bash scripts/system-deps.sh"]
+
+[commands.deps]
+desc = "Install JavaScript dependencies from bun.lock"
+dep = ["system-deps"]
+dir = "."
+run = ["bun install --frozen-lockfile"]
+
+[commands.dev]
+desc = "Run the server with hot reload"
+alias = ["d"]
+dep = ["deps"]
+dir = "."
+run = ["bun --hot index.ts"]
+
+[commands.start]
+desc = "Run the server in production mode"
+dep = ["deps"]
+dir = "."
+run = ["NODE_ENV=production bun index.ts"]
+
+[commands.test]
+desc = "Run the test suite"
+alias = ["t"]
+dep = ["deps"]
+dir = "."
+run = ["bun test"]
+
+[commands.typecheck]
+desc = "Type-check with tsc"
+dep = ["deps"]
+dir = "."
+run = ["bunx tsc --noEmit"]
+
+[commands.lint]
+desc = "Lint with Biome"
+dep = ["deps"]
+dir = "."
+run = ["bunx biome lint ."]
+
+[commands.check]
+desc = "Biome check (format + lint), type-check and test"
+dep = ["deps"]
+dir = "."
+run = [
+  "bunx biome check .",
+  "bunx tsc --noEmit",
+  "bun test",
+]
+
+[commands.scan]
+desc = "Run the media autoresolver"
+dep = ["deps"]
+dir = "."
+run = ["bun scripts/autoresolver.ts"]
+
+# ── Deploy (systemd host) ────────────────────────────────────────────────────
+
+[commands.install]
+desc = "Install ffmpeg, the service user, data dir and systemd unit, then start instance a"
+escalate = true
+dir = "."
+run = ["{{deploy}} install"]
+
+[commands.update]
+desc = "Pull, install deps and roll over to the idle instance with zero downtime"
+escalate = true
+dir = "."
+run = ["{{deploy}} update"]
+
+[commands.rollback]
+desc = "Revert to the SHA recorded by the last update and roll over to it"
+escalate = true
+dir = "."
+run = ["{{deploy}} rollback"]
+
+[commands.uninstall]
+desc = "Stop both instances and remove the systemd unit (data dir kept)"
+escalate = true
+dir = "."
+run = ["{{deploy}} uninstall"]
+
+[commands.restart]
+desc = "Restart the active instance (brief drop; use update for zero downtime)"
+escalate = true
+dir = "."
+run = ["{{deploy}} restart"]
+
+[commands.status]
+desc = "Show instance state, current HEAD and rollback target"
+dir = "."
+run = ["{{deploy}} status"]
+
+[commands.logs]
+desc = "Tail the journal for both instances"
+dir = "."
+run = ["{{deploy}} logs"]

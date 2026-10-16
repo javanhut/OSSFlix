@@ -117,6 +117,7 @@ sudo make install
 > 💡 If you ran `sudo make install` and got `bun not found on PATH`, that's because Debian's `sudo` strips `PATH` to `secure_path`. The Makefile now also searches `/root/.bun/bin`, `/home/*/.bun/bin`, and `/usr/local/bin` — but if it still can't find bun, pass it explicitly: `sudo make install BUN=$(which bun)`.
 
 This will:
+- install `ffmpeg` if it's missing (via `rvn`, `apt-get`, `dnf`, `pacman` or `apk`) — needed to play MKV, AVI, WMV and other non-MP4 files
 - create a system `reelscape` user
 - create the data dir at `/var/lib/reelscape`
 - run `bun install --frozen-lockfile`
