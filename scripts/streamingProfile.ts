@@ -82,10 +82,12 @@ export function buildCacheTranscodeArgs(
   sourcePath: string,
   selectedAudio: SelectedAudioStream | null,
   outputPath: string,
+  inputArgs: string[] = [],
 ): string[] {
   return [
     "ffmpeg",
     "-y",
+    ...inputArgs,
     "-i",
     sourcePath,
     "-fflags",
@@ -130,6 +132,7 @@ export function buildLiveTranscodeArgs(
   selectedVideo: SelectedVideoStream | null,
   startTime: number,
   isRemote: boolean = false,
+  inputArgs: string[] = [],
 ): string[] {
   const seekWindow = 30;
   const preSeek = startTime > 0 ? Math.max(0, startTime - seekWindow) : 0;
@@ -159,6 +162,7 @@ export function buildLiveTranscodeArgs(
     "-analyzeduration",
     probeSize,
     ...(preSeek > 0 ? ["-ss", String(preSeek)] : []),
+    ...inputArgs,
     "-i",
     sourcePath,
     ...(postSeek > 0 ? ["-ss", String(postSeek), "-accurate_seek"] : []),

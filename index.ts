@@ -65,6 +65,7 @@ import {
   getKaidadbStatus,
   videoSrcToKaidadbKey,
   kaidadbMediaUrl,
+  kaidadbFfmpegInputArgs,
 } from "./scripts/kaidadb";
 import type { ProfileData } from "./scripts/profile";
 import {
@@ -117,7 +118,9 @@ function queryDirProgress(profileId: number, dir: string): any[] {
 }
 function queryDirTimings(dir: string): any[] {
   return db
-    .query("SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?")
+    .query(
+      "SELECT video_src, intro_start, intro_end, outro_start, outro_end FROM episode_timings WHERE video_src LIKE ?",
+    )
     .all(`${dir}%`) as any[];
 }
 function queryDirAltTitles(dir: string): { video_src: string; alt_title: string }[] {
@@ -443,8 +446,23 @@ const CACHE_QUEUE_POLL_MS = 2_000;
 const CACHE_RETRY_DELAY_MS = 20_000;
 const MAX_CACHE_JOB_RETRIES = 2;
 
+// What ffmpeg actually reads. Cache entries are keyed by sourcePath; for KaidaDB
+// sources that is the "kaidadb:..." path while ffmpeg reads the HTTP URL.
+type TranscodeInput = { url: string; inputArgs: string[] };
+
+function localTranscodeInput(sourcePath: string): TranscodeInput {
+  return { url: sourcePath, inputArgs: [] };
+}
+
+function kaidadbTranscodeInput(srcParam: string): TranscodeInput | null {
+  const kaidadbKey = getKaidadbKey(srcParam);
+  const url = kaidadbKey ? kaidadbMediaUrl(kaidadbKey) : null;
+  return url ? { url, inputArgs: kaidadbFfmpegInputArgs() } : null;
+}
+
 type PendingCacheJob = {
   sourcePath: string;
+  input: TranscodeInput;
   audioIndex: number;
   reason: string;
   timer: ReturnType<typeof setTimeout>;
@@ -503,7 +521,13 @@ function clearPendingCacheJob(cacheKey: string): void {
   pendingCacheJobs.delete(cacheKey);
 }
 
-function scheduleCacheRetry(sourcePath: string, audioIndex: number, cacheKey: string, reason: string): void {
+function scheduleCacheRetry(
+  sourcePath: string,
+  audioIndex: number,
+  cacheKey: string,
+  reason: string,
+  input: TranscodeInput,
+): void {
   const attempts = cacheRetryCounts.get(cacheKey) ?? 0;
   if (attempts >= MAX_CACHE_JOB_RETRIES) {
     cacheRetryCounts.delete(cacheKey);
@@ -514,7 +538,7 @@ function scheduleCacheRetry(sourcePath: string, audioIndex: number, cacheKey: st
   }
   cacheRetryCounts.set(cacheKey, attempts + 1);
   const retryReason = reason.startsWith("prefetch") ? `prefetch-retry-${attempts + 1}` : `retry-${attempts + 1}`;
-  queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, retryReason);
+  queueCacheTranscode(sourcePath, audioIndex, CACHE_RETRY_DELAY_MS, retryReason, input);
 }
 
 function queueCacheTranscode(
@@ -522,6 +546,7 @@ function queueCacheTranscode(
   audioIndex: number,
   delayMs = CACHE_PREWARM_DELAY_MS,
   reason = "stream",
+  input: TranscodeInput = localTranscodeInput(sourcePath),
 ): string {
   const cacheKey = getCacheKey(sourcePath, audioIndex);
   if (activeTranscodes.has(cacheKey)) return cacheKey;
@@ -555,18 +580,19 @@ function queueCacheTranscode(
     pendingCacheJobs.delete(cacheKey);
 
     try {
-      await startCacheTranscode(sourcePath, audioIndex);
+      await startCacheTranscode(sourcePath, audioIndex, input);
       cacheRetryCounts.delete(cacheKey);
     } catch (err) {
       console.error(
         `[stream] queued cache start failed for ${basename(sourcePath)} (audio=${audioIndex}, reason=${reason}): ${String(err)}`,
       );
-      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, "start-failed");
+      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, "start-failed", input);
     }
   };
 
   const entry: PendingCacheJob = {
     sourcePath,
+    input,
     audioIndex,
     reason,
     timer: setTimeout(() => {
@@ -626,7 +652,7 @@ const ffprobeCache = new Map<string, any>();
 async function runFfprobe(
   sourcePath: string,
   showEntries: string[],
-  opts: { cache?: boolean } = {},
+  opts: { cache?: boolean; inputArgs?: string[] } = {},
 ): Promise<FfprobeResult> {
   const useCache = opts.cache !== false;
   let cacheKey = "";
@@ -646,7 +672,7 @@ async function runFfprobe(
   for (const entry of showEntries) {
     args.push("-show_entries", entry);
   }
-  args.push("-of", "json", sourcePath);
+  args.push(...(opts.inputArgs ?? []), "-of", "json", sourcePath);
 
   const probe = Bun.spawn(args, {
     stdout: "pipe",
@@ -709,7 +735,11 @@ function drainFfmpegStderr(process: ReturnType<typeof Bun.spawn>, maxChars = 400
 }
 
 // Start a background full-file transcode and save to cache
-async function startCacheTranscode(sourcePath: string, audioIndex: number): Promise<string> {
+async function startCacheTranscode(
+  sourcePath: string,
+  audioIndex: number,
+  input: TranscodeInput = localTranscodeInput(sourcePath),
+): Promise<string> {
   const cacheKey = getCacheKey(sourcePath, audioIndex);
   const cachePath = getCachePath(cacheKey);
   clearPendingCacheJob(cacheKey);
@@ -719,7 +749,11 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
   const file = Bun.file(cachePath);
   if (await file.exists()) return cacheKey;
 
-  const probe = await runFfprobe(sourcePath, ["stream=index,codec_type,channels", "format=duration"]);
+  // The probe cache is keyed by file mtime, which a remote URL doesn't have.
+  const probe = await runFfprobe(input.url, ["stream=index,codec_type,channels", "format=duration"], {
+    cache: input.url === sourcePath,
+    inputArgs: input.inputArgs,
+  });
   if (!probe.ok) {
     throw new Error(probe.error);
   }
@@ -727,7 +761,7 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
   const duration = parseFloat(probe.data.format?.duration || "0");
 
   const tmpPath = `${cachePath}.tmp`;
-  const args = buildCacheTranscodeArgs(sourcePath, selectedAudio, tmpPath);
+  const args = buildCacheTranscodeArgs(input.url, selectedAudio, tmpPath, input.inputArgs);
 
   const ffmpeg = Bun.spawn(args, {
     stdout: "ignore",
@@ -777,7 +811,7 @@ async function startCacheTranscode(sourcePath: string, audioIndex: number): Prom
         `[stream] ffmpeg cache transcode failed for ${basename(sourcePath)} (audio=${audioIndex}, code=${code})` +
           (getStderrTail() ? `: ${getStderrTail()}` : ""),
       );
-      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, `ffmpeg-exit-${code}`);
+      scheduleCacheRetry(sourcePath, audioIndex, cacheKey, `ffmpeg-exit-${code}`, input);
       // Clean up tmp file
       try {
         const { unlink } = await import("node:fs/promises");
@@ -1468,13 +1502,13 @@ const server = Bun.serve({
             }
           } else if (isRemoteSource) {
             // Non web-safe remote content (mkv, avi, etc.) — transcode via kaidadb URL
-            const remoteUrl = kaidadbMediaUrl(kaidadbKey);
-            if (!remoteUrl) {
+            const input = kaidadbTranscodeInput(srcParam);
+            if (!input) {
               return new Response("KaidaDB URL not configured", { status: 502 });
             }
 
             // Check if we have a completed cache for this remote source
-            const cache = await getCacheStatus(srcParam, audioIndex);
+            const cache = await getCacheStatus(sourcePath, audioIndex);
             if (cache.cached && !cache.transcoding) {
               const cachedFile = Bun.file(cache.cachePath);
               const fileSize = cachedFile.size;
@@ -1513,9 +1547,9 @@ const server = Bun.serve({
             // Use stream-relative audio mapping (0:a:N) since we don't know absolute indices.
             const selectedAudio: SelectedAudioStream = { index: -1, channels: 6, codecName: "unknown" };
 
-            queueCacheTranscode(remoteUrl, audioIndex, 2_000, "stream-start");
+            queueCacheTranscode(sourcePath, audioIndex, 2_000, "stream-start", input);
 
-            const args = buildLiveTranscodeArgs(remoteUrl, selectedAudio, null, startTime, true);
+            const args = buildLiveTranscodeArgs(input.url, selectedAudio, null, startTime, true, input.inputArgs);
             // Fix audio mapping: replace the absolute `-map 0:-1` with stream-relative `-map 0:a:N`
             for (let i = 0; i < args.length; i++) {
               if (args[i] === "-map" && args[i + 1] === "0:-1") {
@@ -1524,7 +1558,7 @@ const server = Bun.serve({
               }
             }
 
-            registerLiveStream(srcParam, audioIndex);
+            registerLiveStream(sourcePath, audioIndex);
             const ffmpeg = Bun.spawn(args, {
               stdout: "pipe",
               stderr: "pipe",
@@ -1534,7 +1568,7 @@ const server = Bun.serve({
             const releaseLiveStream = () => {
               if (liveStreamReleased) return;
               liveStreamReleased = true;
-              unregisterLiveStream(srcParam, audioIndex);
+              unregisterLiveStream(sourcePath, audioIndex);
             };
             ffmpeg.exited.then((code) => {
               releaseLiveStream();
@@ -1718,18 +1752,15 @@ const server = Bun.serve({
               });
             }
             // Non-web-safe remote content — check local transcode cache
-            const remoteUrl = kaidadbMediaUrl(kaidadbKey);
-            if (remoteUrl) {
-              const cache = await getCacheStatus(remoteUrl, audioIndex);
-              return Response.json({
-                cached: cache.cached,
-                transcoding: cache.transcoding,
-                bytesWritten: cache.bytesWritten,
-                duration: cache.duration,
-                fileSize: cache.fileSize,
-                kaidadb: true,
-              });
-            }
+            const cache = await getCacheStatus(sourcePath, audioIndex);
+            return Response.json({
+              cached: cache.cached,
+              transcoding: cache.transcoding,
+              bytesWritten: cache.bytesWritten,
+              duration: cache.duration,
+              fileSize: cache.fileSize,
+              kaidadb: true,
+            });
           }
           return Response.json({
             cached: false,
@@ -1784,7 +1815,18 @@ const server = Bun.serve({
           return Response.json({ error: "Not found" }, { status: 404 });
         }
         const audioIndex = parseInt(url.searchParams.get("audio") || "0", 10) || 0;
-        const cacheKey = queueCacheTranscode(sourcePath, audioIndex, 0, "prefetch");
+        let input = localTranscodeInput(sourcePath);
+        if (sourcePath.startsWith("kaidadb:")) {
+          // Web-safe remote files are streamed straight from KaidaDB; only transcode the rest.
+          const kStatus = getKaidadbStatus(srcParam);
+          if (kStatus.content_type && WEB_SAFE_VIDEO_TYPES.has(kStatus.content_type)) {
+            return Response.json({ prefetching: false, queued: false });
+          }
+          const remoteInput = kaidadbTranscodeInput(srcParam);
+          if (!remoteInput) return Response.json({ error: "Not found" }, { status: 404 });
+          input = remoteInput;
+        }
+        const cacheKey = queueCacheTranscode(sourcePath, audioIndex, 0, "prefetch", input);
         return Response.json({ prefetching: true, queued: true, cacheKey });
       },
     },

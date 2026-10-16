@@ -11,6 +11,13 @@ export function kaidadbAuthHeaders(): Record<string, string> {
   return password ? { "X-Server-Pass": password } : {};
 }
 
+// ffmpeg/ffprobe fetch KaidaDB URLs themselves, so the auth header has to be
+// passed as an input option. Without it any non-loopback KaidaDB returns 401.
+export function kaidadbFfmpegInputArgs(): string[] {
+  const password = getGlobalSettings().kaidadb_password;
+  return password ? ["-headers", `X-Server-Pass: ${password}\r\n`] : [];
+}
+
 // Classify a fetch() failure so callers can surface a useful message.
 // Bun's "Unable to connect. Is the computer able to access the url?" ends up
 // as a TypeError here; an AbortSignal.timeout firing shows up as AbortError.
